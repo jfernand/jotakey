@@ -28,29 +28,46 @@ induction. -/
 
 /-- `toLE k n`: the low `k` bytes of `n`, least significant first. -/
 def toLE : Nat → Nat → List Nat
-  | 0, _ => []
-  | k + 1, n => n % 256 :: toLE k (n / 256)
+  | 0,     _ => []
+  | k + 1, n => n % 256 :: toLE k (n / 256) -- :: puts an element in front of a list
+
+#guard toLE 2 1000 == [232, 3]
+#guard toLE 4 1000 == [232, 3, 0, 0]
 
 /-- Interpret a byte list as a little-endian number. -/
 def fromLE : List Nat → Nat
   | [] => 0
   | b :: t => b + 256 * fromLE t
 
+#guard fromLE [232, 3] == 1000
+
 /-- `toBE k n`: the low `k` bytes of `n`, most significant first. -/
 def toBE (k n : Nat) : List Nat := (toLE k n).reverse
+
+#guard toBE 2 1000 == [3, 232]
+#guard toBE 4 1000 == [0, 0, 3, 232]
 
 /-- Interpret a byte list as a big-endian number. -/
 def fromBE (l : List Nat) : Nat := fromLE l.reverse
 
+/-- Prove that the length of the list returned by toLE is k.
+    `induction k` introduces two goals; `generalizing n` makes the induction hypothesis
+    hold for every n, not just the n we started with:
+    zero case: (toLE 0 n).length = 0
+    succ k ih case: (toLE (k+1) n).length = k + 1, with ih : ∀ n, (toLE k n).length = k -/
 theorem length_toLE (k n : Nat) : (toLE k n).length = k := by
   induction k generalizing n with
-  | zero => rfl
-  | succ k ih => simp [toLE, ih]
+  | zero => rfl -- (toLE 0 n).length is 0 by the base case
+  | succ k ih => simp [toLE, ih] -- toLE (k+1) n = n % 256 :: toLE k (n / 256), so its length is
+                                 -- (toLE k (n / 256)).length + 1. ih applied to n / 256 rewrites
+                                 -- that to k + 1, leaving k + 1 = k + 1.
 
+/-- Prove that the length of a list returned by toBE is k -/
 theorem length_toBE (k n : Nat) : (toBE k n).length = k := by
   simp [toBE, length_toLE]
 
-theorem fromLE_toLE (k n : Nat) (h : n < 256 ^ k) : fromLE (toLE k n) = n := by
+/-- Prove that converting a number to LE and back yields the same number -/
+theorem fromLE_toLE (k n : Nat) (h : n < 256 ^ k) : fromLE (toLE k n) = n := by -- round trip only works if n < 256 ^ k
   induction k generalizing n with
   | zero => simp [toLE, fromLE]; omega
   | succ k ih =>
@@ -60,10 +77,15 @@ theorem fromLE_toLE (k n : Nat) (h : n < 256 ^ k) : fromLE (toLE k n) = n := by
     simp only [toLE, fromLE, ih _ hk]
     omega
 
+/-- Prove that converting a number to BE and back yields the same number -/
 theorem fromBE_toBE (k n : Nat) (h : n < 256 ^ k) : fromBE (toBE k n) = n := by
   simp [fromBE, toBE, fromLE_toLE k n h]
 
-theorem fromLE_lt (l : List Nat) (hb : ∀ b ∈ l, b < 256) : fromLE l < 256 ^ l.length := by
+/-- Prove that the number returned by fromLE l is < 256 ^ l.length.
+    We need it further down (`fromBE_take_lt`): the argument bytes the decoder reads always
+    give a number that fits back into the same number of bytes, so re-encoding it loses
+    nothing (`encodeHead_of_decodeHead`). -/
+theorem fromLE_lt (l : List Nat) (hb : ∀ b ∈ l, b < 256) : fromLE l < (256 ^ l.length) := by -- hb restricts the elements of l from Nats to bytes
   induction l with
   | nil => simp [fromLE]
   | cons b t ih =>
@@ -76,10 +98,16 @@ theorem fromLE_lt (l : List Nat) (hb : ∀ b ∈ l, b < 256) : fromLE l < 256 ^ 
     rw [Nat.mul_comm (256 ^ t.length)]
     omega
 
+/-- Prove that the number returned by fromBE l is < 256 ^ l.length -/
 theorem fromBE_lt (l : List Nat) (hb : ∀ b ∈ l, b < 256) : fromBE l < 256 ^ l.length := by
   have := fromLE_lt l.reverse (fun b h => hb b (List.mem_reverse.mp h))
   simpa [fromBE] using this
 
+/-- Prove that converting an LE list to a number and back yields the same list.
+    A property test only checks the inputs it happens to generate; this proof covers every
+    byte list. We have both: `accepted_heads_are_canonical` in `cbor.rs` is the Rust property
+    test (decode random bytes, re-encode, compare), and the differential test ties the Rust
+    decoder to this model. -/
 theorem toLE_fromLE (l : List Nat) (hb : ∀ b ∈ l, b < 256) : toLE l.length (fromLE l) = l := by
   induction l with
   | nil => rfl
@@ -91,17 +119,26 @@ theorem toLE_fromLE (l : List Nat) (hb : ∀ b ∈ l, b < 256) : toLE l.length (
     have e2 : (b + 256 * fromLE t) / 256 = fromLE t := by omega
     rw [e1, e2, ih']
 
+/-- Prove that converting a BE list to a number and back yields the same list -/
 theorem toBE_fromBE (l : List Nat) (hb : ∀ b ∈ l, b < 256) : toBE l.length (fromBE l) = l := by
   have := toLE_fromLE l.reverse (fun b h => hb b (List.mem_reverse.mp h))
   simp only [List.length_reverse] at this
   simp [toBE, fromBE, this]
 
-/-! ## Heads -/
+/-! ## Heads
+
+A head is the first 1–9 bytes of every CBOR data item. The initial byte holds the _major_
+type in its top 3 bits and the additional _info_ in its low 5 bits: `ib = major * 32 + info`.
+The _argument_ (an integer value, a length or a count, depending on the major type) is:
+* info < 24: the info value itself (immediate, no further bytes);
+* info 24, 25, 26, 27: the next 1, 2, 4 or 8 bytes, big-endian;
+* info 28‥30: reserved, rejected; info 31: indefinite length, rejected by our strict decoder. -/
 
 /-- Largest argument representable in a head (64-bit). -/
 def argLimit : Nat := 2 ^ 64
 
-/-- Shortest-form head for `major` (0‥7) and `arg` (< 2⁶⁴), as `Encoder::head` emits it. -/
+/-- Shortest-form head for `major` (0‥7, it must fit in 3 bits) and `arg` (< 2⁶⁴), as
+`Encoder::head` emits it. -/
 def encodeHead (major arg : Nat) : List Nat :=
   if arg < 24 then [major * 32 + arg]
   else if arg < 2 ^ 8 then (major * 32 + 24) :: toBE 1 arg
@@ -147,7 +184,8 @@ theorem readArg_toBE (k lo v : Nat) (rest : List Nat) (hlo : lo ≤ v) (hv : v <
 /-- **Round trip.** For data-carrying major types (0‥6) and any 64-bit argument, decoding
 the encoded head returns the major type, the argument and the untouched remainder. -/
 theorem decodeHead_encodeHead (major arg : Nat) (rest : List Nat)
-    (hm : major < 7) (ha : arg < argLimit) :
+    (hm : major < 7) (ha : arg < argLimit) : -- 0 ≤ major ≤ 6: the decoder rejects major 7
+                                              -- with info 24‥27 (floats)
     decodeHead (encodeHead major arg ++ rest) = some (major, arg, rest) := by
   unfold encodeHead argLimit at *
   by_cases h0 : arg < 24
