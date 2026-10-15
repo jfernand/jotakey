@@ -10,8 +10,8 @@
 //!
 //! Strictness removes parser ambiguity. Two parsers cannot disagree about a message that only
 //! has one valid reading. Every function is total: malformed input yields a [`CborError`],
-//! never a panic. The executable Lean model in `formal/Jotakey/Cbor.lean` mirrors
-//! [`Decoder::head`] and [`Encoder::head`].
+//! never a panic. The executable Lean model in `formal/Jotakey/Cbor/` mirrors
+//! [`Decoder::head`] and [`Encoder::head`] (`Heads.lean`) and [`Decoder::skip`] (`Cbor.lean`).
 
 /// Maximum nesting depth of arrays and maps accepted by the decoder.
 pub const MAX_DEPTH: u8 = 4;

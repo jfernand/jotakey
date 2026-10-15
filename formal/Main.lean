@@ -1,4 +1,4 @@
-import Jotakey.Cbor
+import Jotakey.Cbor.Cbor
 
 /-!
 # `jotakey-spec`: the executable CBOR specification
@@ -10,7 +10,7 @@ validate <hex>   →  ok <consumed> | err        (Decoder::skip(0) on the input)
 head <hex>       →  ok <major> <arg> <consumed> | err   (Decoder::head)
 ```
 
-The answers come from the very definitions the theorems in `Jotakey/Cbor.lean` are about,
+The answers come from the very definitions the theorems in `Jotakey/Cbor/` (`Heads.lean`, `Cbor.lean`) are about,
 so agreement with Rust on many inputs ties the proofs to the shipped decoder.
 -/
 

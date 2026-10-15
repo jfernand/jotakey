@@ -153,11 +153,11 @@ A model is a deliberate simplification. Jotakey's models follow three rules:
 
 == Case study: CBOR has exactly one encoding
 
-The first model, `formal/Jotakey/Cbor.lean`, mirrors the decoder of §5.1. The key
+The first model, `formal/Jotakey/Cbor/`, mirrors the decoder of §5.1. The key
 theorem says that whatever bytes the decoder accepts are *exactly* the canonical
 encoding of what it returned:
 
-#codepanel(title: "formal/Jotakey/Cbor.lean")[
+#codepanel(title: "formal/Jotakey/Cbor/Heads.lean")[
 ```lean
 theorem encodeHead_of_decodeHead (l : List Nat) (major arg : Nat) (rest : List Nat)
     (hb : ∀ b ∈ l, b < 256)                         -- l is a list of bytes
