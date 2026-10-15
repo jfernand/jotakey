@@ -27,7 +27,7 @@ lean:
 
 diff:
     cd formal && lake build jotakey-spec
-    JOTAKEY_SPEC=formal/.lake/build/bin/jotakey-spec cargo test -p jotakey-core --test differential -- --nocapture
+    cargo test -p jotakey-core --test differential -- --nocapture
 
 fw:
     cd crates/jotakey-fw && cargo build --release
