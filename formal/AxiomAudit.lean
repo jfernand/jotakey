@@ -1,7 +1,8 @@
+import Jotakey
+
 /-! Axiom audit: `just lean` fails if any theorem depends on `sorryAx`, on
 `Lean.ofReduceBool` (native_decide) or on any axiom beyond Lean's standard three
 (`propext`, `Quot.sound`, `Classical.choice`). -/
-import Jotakey
 open Jotakey
 #print axioms Cbor.decodeHead_encodeHead
 #print axioms Cbor.encodeHead_of_decodeHead

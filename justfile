@@ -23,7 +23,7 @@ mutants:
 lean:
     cd formal && lake build
     ! grep -rn --include=*.lean -E '\bsorry\b|^\s*axiom |native_decide' formal/Jotakey formal/Main.lean
-    cd formal && lake env lean AxiomAudit.lean | sed -n 's/.*axioms: \[\(.*\)\]/\1/p' | tr ',' '\n' | tr -d ' ' | grep -v -x -E 'propext|Quot.sound|Classical.choice' | (! grep .)
+    scripts/axiom-audit.sh
 
 diff:
     cd formal && lake build jotakey-spec
