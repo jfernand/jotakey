@@ -1,7 +1,7 @@
 //! Differential test: the Rust CBOR decoder against the executable Lean specification.
 //!
 //! The Lean definitions `decodeHead` and `validate` are the ones the theorems in
-//! `formal/Jotakey/Cbor.lean` are proved about. This test sends tens of thousands of inputs to
+//! `formal/Jotakey/Cbor/` are proved about. This test sends tens of thousands of inputs to
 //! both implementations and requires identical verdicts (accept + consumed length, or
 //! reject). Agreement links the proofs to the code that ships.
 //!
