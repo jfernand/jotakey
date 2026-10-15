@@ -1,0 +1,42 @@
+[package]
+name = "jotakey-testfw"
+description = "On-device tests for Jotakey (ESP32-C6), run with probe-rs over the USB-JTAG port"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+test = false
+harness = false
+
+[[test]]
+name = "on_device"
+harness = false
+
+[features]
+# Tests that need a human: press the BOOT button when asked.
+interactive = []
+
+[dependencies]
+esp-hal = { version = "1.2", features = ["esp32c6", "unstable", "defmt"] }
+esp-bootloader-esp-idf = { version = "0.6", features = ["esp32c6"] }
+esp-storage = { version = "0.10", features = ["esp32c6", "embedded-storage"] }
+embedded-storage = "0.3"
+jotakey-core = { path = "../jotakey-core" }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa"] }
+defmt = "1"
+defmt-rtt = "1"
+nb = "1"
+
+[dev-dependencies]
+embedded-test = { version = "0.7", default-features = false, features = ["defmt", "semihosting", "panic-handler"] }
+
+[profile.dev]
+opt-level = "s"
+overflow-checks = true
+
+[profile.release]
+opt-level = "s"
+debug = true
+overflow-checks = true

@@ -1,0 +1,63 @@
+[package]
+name = "jotakey-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+jotakey-core = { path = "../crates/jotakey-core", features = ["mock"] }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa"] }
+
+# Standalone workspace: built with nightly + sanitizers, separate from the main one.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+overflow-checks = true
+
+[[bin]]
+name = "cbor_decode"
+path = "fuzz_targets/cbor_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ctap_dispatch"
+path = "fuzz_targets/ctap_dispatch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ctaphid_stack"
+path = "fuzz_targets/ctaphid_stack.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ble_stream"
+path = "fuzz_targets/ble_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "credential_unwrap"
+path = "fuzz_targets/credential_unwrap.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "serial_deframe"
+path = "fuzz_targets/serial_deframe.rs"
+test = false
+doc = false
+bench = false

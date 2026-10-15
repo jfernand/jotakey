@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/jotakey-core",
+    "crates/jotakey-bridge",
+    "crates/jotakey-host-tests",
+]
+# Firmware crates target riscv32imac-unknown-none-elf and the fuzz crate needs nightly +
+# libFuzzer; they are built from their own directories.
+exclude = ["crates/jotakey-fw", "crates/jotakey-testfw", "fuzz"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[profile.dev]
+overflow-checks = true
+
+[profile.release]
+overflow-checks = true
+debug = true

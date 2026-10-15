@@ -1,0 +1,10 @@
+# Jotakey development udev rules. Install:
+#   sudo cp scripts/99-jotakey.rules /etc/udev/rules.d/ && sudo udevadm control --reload
+#
+# Let members of group "plugdev" run jotakey-bridge without root (it creates the virtual
+# FIDO device through /dev/uhid).
+KERNEL=="uhid", GROUP="plugdev", MODE="0660"
+
+# The bridge's virtual FIDO device (pid.codes 1209:0001). systemd >= 244 already grants the
+# logged-in user access to FIDO devices via the fido_id helper; this rule covers older setups.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0001", TAG+="uaccess", GROUP="plugdev", MODE="0660"

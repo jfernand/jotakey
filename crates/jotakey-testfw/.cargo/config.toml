@@ -1,0 +1,16 @@
+[build]
+target = "riscv32imac-unknown-none-elf"
+
+[target.riscv32imac-unknown-none-elf]
+# probe-rs talks to the ESP32-C6's built-in USB-JTAG (the "USB" port). No extra probe.
+runner = "probe-rs run --chip esp32c6 --preverify"
+rustflags = [
+  "--cfg", "embedded_test",
+  "-C", "link-arg=-Tembedded-test.x",
+  "-C", "link-arg=-Tdefmt.x",
+  "-C", "link-arg=-Tlinkall.x",
+  "-C", "force-frame-pointers",
+]
+
+[env]
+DEFMT_LOG = "info"
