@@ -1,0 +1,24 @@
+# cargo-mutants configuration (https://mutants.rs).
+# Policy (AGENTS.md §4): zero surviving mutants in protocol logic. Every exclusion below
+# must say why the mutant is equivalent or untestable.
+
+test_package = ["jotakey-core"]
+examine_globs = ["crates/jotakey-core/src/**/*.rs"]
+
+# The mock platform is test scaffolding, never shipped.
+exclude_globs = ["crates/jotakey-core/src/mock.rs"]
+
+exclude_re = [
+    # Default impls just call new(); no protocol logic.
+    "impl Default for",
+    # Equivalent mutants: every `|` in the core combines disjoint bit fields
+    # (`cmd | 0x80` with cmd < 0x80, `major << 5 | info` with info < 32, `(v << 8) | byte`,
+    # disjoint flag/capability constants), where `^` yields the identical value.
+    # `| -> &` mutants are NOT excluded and are killed by literal-value tests.
+    "replace \\| with \\^",
+    # The mock flash inside storage.rs is test scaffolding (compiled only for tests and
+    # fuzzing); its own behaviour is pinned by the storage tests that use it.
+    "storage.rs.*mock::",
+    # Equivalent: sequence numbers in a log are unique, so `>` and `>=` pick the same record.
+    "storage.rs:.*replace > with >= in RecordLog<N>::mount",
+]

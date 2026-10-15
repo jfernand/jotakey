@@ -1,0 +1,12 @@
+[package]
+name = "jotakey-host-tests"
+description = "End-to-end tests: CTAPHID client against the simulator and against a real Jotakey via hidraw"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+jotakey-core = { path = "../jotakey-core", features = ["mock"] }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "std"] }
+ecdsa = { version = "0.16", default-features = false, features = ["der", "verifying"] }
+sha2 = "0.10"

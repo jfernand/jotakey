@@ -1,0 +1,25 @@
+[package]
+name = "jotakey-core"
+description = "Transport-agnostic, no_std FIDO2/CTAP2 authenticator core"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa"] }
+ecdsa = { version = "0.16", default-features = false, features = ["der", "hazmat", "signing", "verifying"] }
+sha2 = { version = "0.10", default-features = false }
+hmac = { version = "0.12", default-features = false }
+hkdf = { version = "0.12", default-features = false }
+subtle = { version = "2.6", default-features = false }
+zeroize = { version = "1.8", default-features = false }
+hex-literal = "0.4"
+
+[features]
+# Deterministic software platform for tests, fuzzing and differential testing. Never in firmware.
+mock = []
+
+[dev-dependencies]
+jotakey-core = { path = ".", features = ["mock"] }
+proptest = "1"
+serde_json = "1"

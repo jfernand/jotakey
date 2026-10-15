@@ -1,0 +1,10 @@
+name = "jotakey"
+version = "0.1.0"
+defaultTargets = ["Jotakey", "jotakey-spec"]
+
+[[lean_lib]]
+name = "Jotakey"
+
+[[lean_exe]]
+name = "jotakey-spec"
+root = "Main"

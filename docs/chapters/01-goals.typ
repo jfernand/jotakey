@@ -1,0 +1,106 @@
+#import "../isss-template.typ": *
+#import "../lib.typ": *
+
+= Goals and threat model
+
+== What we are building
+
+A *security key* is a small device that holds private keys and uses them to prove the
+holder's identity to websites, without ever letting those keys out. You plug it in (or
+bring it close, or pair it over Bluetooth), the browser asks it to sign a challenge, a
+light blinks, you touch it, and you are logged in. The YubiKey is the best-known example.
+
+Jotakey does the same job on an inexpensive, open development board: the Espressif
+*ESP32-C6 DevKit*, a 160 MHz RISC-V microcontroller with Wi-Fi 6, Bluetooth LE and
+802.15.4 radios, 512 KiB of SRAM and 4–8 MiB of flash. The board has two USB-C ports and
+two buttons, *BOOT* and *RESET*, plus one addressable RGB LED. Jotakey uses the BOOT button as
+its "touch" sensor and the LED as its only display.
+
+#spec(
+  ("Protocol", [FIDO2: CTAP 2.0 authenticator, WebAuthn-compatible]),
+  ("Algorithms", [ES256 (ECDSA P-256 with SHA-256), HMAC-SHA256, HKDF-SHA256]),
+  ("Transports", [CTAPHID over USB (through a host bridge), FIDO over BLE]),
+  ("Credentials", [Non-resident ("server-side") credentials, unlimited in number]),
+  ("User presence", [BOOT button, debounced, fresh press required for every signature]),
+  ("Language", [Rust, `no_std`, no heap in the protocol core, no `unsafe` in the core]),
+  ("Verification", [Lean 4 models and proofs of the security-critical state machines]),
+)
+
+== Why this needs to be right
+
+A security key that is subtly wrong is worse than none. Its user believes they are
+protected. Three classes of failure matter:
+
++ *Key compromise.* If an attacker learns a credential's private key, they can log in as
+  the user from anywhere, forever, and the user cannot tell.
++ *Silent use.* If the key can be made to sign without the user's knowledge (no touch, or a
+  touch meant for something else), an attacker who controls the computer can log in to any
+  account registered with the key.
++ *Denial and confusion.* Crashes, lockups or ambiguous parsing let a malicious host wedge
+  the device, or worse, make two components disagree about what was signed.
+
+The rest of this report is about making these failures impossible by construction where we
+can, unlikely where we cannot, and *documented* everywhere.
+
+== Threat model
+
+We assume a strong attacker and list exactly what the device does and does not resist.
+
+#dtable(
+  columns: (1.15fr, 2fr, 1.2fr),
+  ("Attacker", "Capabilities", "Outcome for Jotakey"),
+  ([Phishing site], [Lures the user to `examp1e.com` and relays their login to `example.com`.],
+    [*Defeated.* Credentials are bound to the RP ID. The browser enforces the origin; the key
+     enforces the binding (§4.3, invariant 3).]),
+  ([Malware on the host], [Full control of the computer and browser: can send any CTAP
+    message at any time, read every response.],
+    [*Contained.* It cannot extract keys. It can ask for signatures, but each one needs a fresh
+     physical touch (invariant 1). It can trick the user into touching for the wrong site.
+     That is inherent to every security key without a display.]),
+  ([Malicious USB/BLE peer], [Sends malformed, oversized or out-of-order frames.],
+    [*Defeated.* Total parsers, bounded buffers, strict canonical CBOR, channel isolation
+     (invariants 4–5). Verified by fuzzing and Lean proofs.]),
+  ([Network eavesdropper], [Sees all WebAuthn traffic between browser and website.],
+    [*Irrelevant.* Only public keys and signatures over fresh challenges travel.]),
+  ([Database breach at the RP], [Steals every stored public key and credential ID.],
+    [*Irrelevant.* Public keys cannot be used to log in; credential IDs are useless without
+     the device's root key.]),
+  ([Thief, casual], [Holds the device for minutes, no lab.],
+    [*Partially defeated.* No PIN in the MVP: the thief can log in where the user only needs
+     a security key. Accounts that also require a password stay safe. (Adding a PIN is in the
+     roadmap, §10.)]),
+  ([Thief, laboratory], [Decapsulation, voltage/EM fault injection, power analysis.],
+    [*Not defeated.* Published attacks bypass secure boot and flash encryption on this chip
+     family (§7.4). A secure element is the documented mitigation.]),
+  ([Supply chain], [Tampered board or toolchain before provisioning.],
+    [*Out of scope* for the MVP; partially mitigated by reproducible builds and secure boot.]),
+)
+
+#callout(kind: "trap", "The honest summary")[
+  Jotakey is a strong defence against *remote* attackers: phishing, malware and network
+  attackers, which are by far the most common. It is *not* a defence against a
+  well-equipped attacker with physical possession of the device. Commercial keys use
+  certified secure elements for that. We say so plainly in the threat model, in `AGENTS.md`,
+  and in the roadmap.
+]
+
+== Security invariants
+
+The design is anchored by nine invariants. They are written in `AGENTS.md` (normative for
+anyone changing the code). Each is enforced in code and checked by tests. Where marked
+⊢, it is also proved in Lean. Appendix A traces each invariant to its implementation,
+tests and theorems.
+
+#dtable(
+  columns: (0.3fr, 2.6fr, 0.35fr),
+  ("#", "Invariant", "Lean"),
+  ([1], [No signature without a user-presence event consumed within the same command.], [⊢]),
+  ([2], [The signature counter strictly increases, across power loss.], [⊢]),
+  ([3], [A credential ID unwraps only for the relying party it was minted for.], [⊢]),
+  ([4], [Parsers are total and bounded: every input yields a result, never a crash.], [⊢]),
+  ([5], [CTAPHID channels are isolated from each other.], [⊢]),
+  ([6], [Reset only within 10 s of power-up, and only with a touch.], [⊢]),
+  ([7], [Fail closed: failed self tests disable the authenticator permanently.], [⊢]),
+  ([8], [The root key never leaves the HMAC peripheral; secrets are zeroized, never logged.], []),
+  ([9], [No secret-dependent branches or memory accesses in our code.], []),
+)

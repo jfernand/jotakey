@@ -1,0 +1,53 @@
+[package]
+name = "jotakey-fw"
+description = "Jotakey firmware for the ESP32-C6 DevKit"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "jotakey-fw"
+path = "src/main.rs"
+test = false
+bench = false
+
+[features]
+# INSECURE development fallback when the eFuse HMAC key is not provisioned: derives the
+# root key in software from the chip MAC. Never enable for a device that holds real
+# credentials. See scripts/provision.sh.
+dev-key = []
+
+[dependencies]
+jotakey-core = { path = "../jotakey-core" }
+esp-hal = { version = "1.2", features = ["esp32c6", "unstable"] }
+esp-rtos = { version = "0.4", features = ["esp32c6", "embassy", "esp-radio"] }
+esp-radio = { version = "1.0.0-beta.1", features = ["esp32c6", "ble", "unstable"] }
+esp-alloc = { version = "0.11", features = ["esp32c6"] }
+esp-bootloader-esp-idf = { version = "0.6", features = ["esp32c6"] }
+esp-backtrace = { version = "0.20", features = ["esp32c6", "panic-handler", "println"] }
+esp-println = { version = "0.18", default-features = false, features = ["esp32c6", "uart", "critical-section", "log-04"] }
+esp-storage = { version = "0.10", features = ["esp32c6", "embedded-storage"] }
+embedded-storage = "0.3"
+embassy-executor = "0.10"
+embassy-time = "0.5"
+embassy-sync = "0.8"
+embassy-futures = "0.1"
+embedded-io-async = "0.7"
+trouble-host = { version = "0.7", features = ["default-packet-pool-mtu-255", "derive", "security"] }
+static_cell = "2"
+nb = "1"
+zeroize = { version = "1.8", default-features = false }
+heapless = "0.9"
+log = "0.4"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+debug = true
+overflow-checks = true
+panic = "abort"
+
+[profile.dev]
+opt-level = "s"
+overflow-checks = true

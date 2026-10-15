@@ -1,0 +1,11 @@
+[build]
+target = "riscv32imac-unknown-none-elf"
+
+[target.riscv32imac-unknown-none-elf]
+# Flash, then show the log. The log comes from the *UART* port; the USB-Serial/JTAG port
+# carries the CTAPHID tunnel. Adjust --port if needed.
+runner = "espflash flash --monitor --partition-table partitions.csv"
+rustflags = ["-C", "link-arg=-Tlinkall.x", "-C", "force-frame-pointers"]
+
+[env]
+ESP_LOG = "info"
