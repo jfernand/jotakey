@@ -277,14 +277,12 @@ This is the weakest link: it relies on human care.
 
 === 2. Differential testing against an executable specification
 
-Lean definitions are executable. `formal/Main.lean` compiles the CBOR model into a
-program, `jotakey-spec`. The Rust test `tests/differential.rs` sends it about 100 000
-inputs: structured CBOR, random mutations of it, random bytes, and every possible head
-byte. It requires the Rust decoder and the Lean model to agree on *every* one: accept or
-reject, and how many bytes were consumed. They do. Any future change to the Rust decoder
-that departs from the proved model fails this test. Differential testing does not prove
-equivalence, but it ties the proofs to the code with a mechanical check rather than
-review alone.
+Lean definitions are executable. The very functions the CBOR theorems are about are
+compiled into a program, and a Rust test asks it and the Rust decoder the same 101 536
+questions. Every answer must match. Any future change to the Rust decoder that departs
+from the proved model fails this test. Differential testing does not prove equivalence,
+but it ties the proofs to the code with a mechanical check rather than review alone.
+§9.8 shows how it works.
 
 The fuzz targets play a similar role for the other models: their oracles are the theorem
 statements ("counter moves only on a confirmed signature", "reassembly never exceeds the
@@ -319,6 +317,144 @@ experiment is recorded in the roadmap. Other tools could close the same gap diff
 
 Kani is the cheapest next step. It could prove, for all inputs up to a bound, that
 `Decoder::skip` and `CtapHid::handle_packet` never panic, directly on the Rust code.
+
+== Differential testing, step by step
+
+*Differential testing* gives the same input to two implementations of the same thing and
+compares their answers. It needs no expected outputs: each implementation is the other's
+oracle, and any disagreement means at least one of them is wrong. The technique is old
+(McKeeman named it in 1998), and it is how tools like Csmith found hundreds of bugs in
+GCC and LLVM by comparing compilers against each other.
+
+Jotakey uses a stronger version. One side is the shipped Rust decoder. The other side is
+not a second hand-written decoder but *the Lean model itself*, the functions `decodeHead`
+and `validate` that §9.5 proves theorems about. A test failure therefore means one precise
+thing: the Rust code does something the proved model does not.
+
+=== Step 1: the model becomes a program
+
+Lean is a programming language as well as a prover, so the same definitions that appear
+in the theorems can be compiled. `formal/Main.lean` wraps them in a short program,
+`jotakey-spec`, that reads one question per line and answers it:
+
+#codepanel(title: "A conversation with jotakey-spec")[
+```text
+head 1817            →  err          0x18 says "1-byte argument", but 0x17 = 23 fits in the
+                                      initial byte: non-minimal, rejected
+head 1818            →  ok 0 24 2    major 0 (unsigned), value 24, 2 bytes consumed
+head 190100          →  ok 0 256 3   2-byte argument 0x0100 = 256
+validate a201000200  →  ok 5         map {1: 0, 2: 0}: keys in canonical order
+validate a202000100  →  err          map {2: 0, 1: 0}: keys out of order
+validate 5f          →  err          indefinite-length byte string: not canonical
+```
+]
+
+`head` asks for one CBOR head: major type, argument, and how many bytes it used. `validate`
+asks whether the input starts with one complete, canonical data item, and how long it is.
+The program contains no decoding logic of its own. Hex parsing and printing are the only
+code between the question and the proved definitions.
+
+=== Step 2: the same questions to Rust
+
+`crates/jotakey-core/tests/differential.rs` asks `Decoder::head` and `Decoder::skip` the
+same questions and prints the answers in the same format. It starts `jotakey-spec` as a
+child process, writes every question to its input, reads every answer back, and compares
+the two strings exactly.
+
+#sequence(
+  ("Rust test", "Rust decoder", "jotakey-spec (Lean)"),
+  (
+    (0, 0, [generate 50 768 inputs (fixed seed)]),
+    (0, 1, [Decoder::head / skip]),
+    (1, 0, [`ok 0 256 3`]),
+    (0, 2, [`head 190100`]),
+    (2, 0, [`ok 0 256 3`]),
+    (0, 0, [equal? next input : fail with both answers]),
+  ),
+  caption: [One round of the differential test. All questions are sent in one batch.],
+)
+
+Agreement means more than "both accepted". They must agree on the decoded values and on
+the *number of bytes consumed*. A decoder that accepted the right item but stopped one byte
+early would leave that byte to be misread as the next item. That is how parser
+differentials are exploited, so it is checked.
+
+=== Step 3: questions worth asking
+
+Purely random bytes are almost always rejected in the first byte or two, so they would
+test little more than the error path. The test builds four families of inputs:
+
+#dtable(
+  columns: (1.15fr, 0.55fr, 2.3fr),
+  ("Family", "Inputs", "What it exercises"),
+  ([Generated values], [20 000], [Random nested arrays, maps, integers, byte and text strings, booleans and null, encoded by the Rust encoder. Half of the integers are boundary values: 0, 23, 24, 255, 256, 65 535, 65 536, 2³²−1, 2³², 2⁶³−1, 2⁶³, 2⁶⁴−2, 2⁶⁴−1. These exercise the accepting paths deep inside maps and arrays.]),
+  ([Mutated values], [20 000], [Each generated value again, with up to two random edits: overwrite a byte, truncate, append, swap two neighbours, or insert a byte known to be dangerous (`5f` indefinite length, `ff` break, `f7` undefined, `c0` tag, `f9` half float, `1c` reserved, `18` one-byte head). These land just beside valid inputs, where bugs live.]),
+  ([Random bytes], [10 000], [0 to 11 random bytes.]),
+  ([All heads], [768], [Every possible initial byte 0x00–0xFF, alone, followed by eight `00` bytes, and followed by eight `ff` bytes. Together these cover every head shape, every width and both extremes of every argument.]),
+)
+
+Each input is asked both ways, as `head` and as `validate`, which gives 101 536 questions.
+They take about a quarter of a second. The generator uses a fixed seed, so a failure is
+reproducible. The test also checks that more than a tenth of the answers are
+acceptances; at present 80 069 are. Otherwise a broken generator could produce only
+garbage, both sides would answer `err` to everything, and the test would pass while
+testing nothing.
+
+=== Seeing it catch a bug
+
+To check that the test has teeth, we broke the Rust decoder on purpose. In `Decoder::head`,
+a 2-byte argument must be at least 256, otherwise it should have used one byte. We changed
+`if v <= 0xFF` to `if v < 0xFF`, a one-character off-by-one that lets exactly one
+non-canonical encoding through. The differential test failed at once:
+
+#codepanel(title: "cargo test -p jotakey-core --test differential")[
+```text
+assertion `left == right` failed: Rust and Lean disagree on `validate 3900ff4bc5d540`
+  left: "ok 3"
+ right: "err"
+```
+]
+
+`39` is major type 1 (negative integer) with a 2-byte argument, `00 ff`. That is 255,
+which fits in one byte, so the encoding is not canonical. The broken Rust accepted it
+(`ok 3`); the model refused it (`err`). The input came from the "mutated values" family.
+
+The same bug was also caught by a unit test, `rejects_non_minimal_heads`, which checks this
+exact boundary (`19 00 ff`) by hand. The random property test
+`accepted_heads_are_canonical` did *not* catch it: random bytes rarely land on a value of
+exactly 255 after a `39`. Each net has different holes.
+
+=== What a pass does and does not mean
+
+A pass means: on 101 536 inputs, chosen to sit on the boundaries, the shipped decoder gives
+exactly the answers of a function proved to have canonical uniqueness, termination and the
+round-trip property. It is the strongest link between the proofs and the Rust code that
+Jotakey has today. It does not mean:
+
+- *Equivalence on all inputs.* The test samples. An input outside the four families could
+  still differ. The Aeneas route of §9.7 would close this gap with a proof.
+- *Coverage of the other models.* Only the CBOR decoder has an executable specification so
+  far. The state-machine models are linked to the Rust code by fuzz oracles that check the
+  theorem statements (chapter 8), not by differential tests.
+- *Protection against a shared misreading of the standard.* If the model and the Rust code
+  both misunderstand RFC 8949 in the same way, they agree and the test passes. The theorems
+  help here because they state the intended properties independently of either
+  implementation. Reviewing the model against the standard remains a human job.
+
+The Lean compiler and runtime that build `jotakey-spec` are also trusted, but they would
+have to fail in a way that exactly mimics a Rust bug for the test to wrongly pass.
+
+Running it takes two commands. Without the spec binary the test reports that it skipped;
+setting `JOTAKEY_REQUIRE_SPEC=1` turns a missing binary into a failure, which is the right
+setting for continuous integration.
+
+#codepanel(title: "Running the differential test")[
+```sh
+cd formal && lake build jotakey-spec && cd ..
+cargo test -p jotakey-core --test differential -- --nocapture
+# differential: 101536 queries agree (80069 accepted)
+```
+]
 
 == What remains trusted
 
