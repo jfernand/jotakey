@@ -13,7 +13,7 @@ fuzz target time="300":
     cd fuzz && cargo +nightly fuzz run {{target}} -- -max_total_time={{time}}
 
 fuzz-all time="120":
-    for t in cbor_decode ctap_dispatch ctaphid_stack ble_stream credential_unwrap; do \
+    for t in cbor_decode ctap_dispatch ctaphid_stack ble_stream serial_deframe credential_unwrap; do \
         (cd fuzz && cargo +nightly fuzz run $t -- -max_total_time={{time}}) || exit 1; \
     done
 
