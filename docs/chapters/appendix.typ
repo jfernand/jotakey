@@ -85,6 +85,8 @@ python3 scripts/fido2_check.py               # or register at https://webauthn.i
 - H. Krawczyk, P. Eronen. *RFC 5869: HKDF*, 2010.
 - NIST. *SP 800-90B: Recommendation for the Entropy Sources Used for Random Bit Generation*, 2018.
 - Espressif. *ESP32-C6 Technical Reference Manual*; *Security Advisory AR2023-007* (2024).
+- W. M. McKeeman. *Differential Testing for Software*, Digital Technical Journal 10(1), 1998.
+- X. Yang, Y. Chen, E. Eide, J. Regehr. *Finding and Understanding Bugs in C Compilers (Csmith)*, PLDI 2011.
 - G. Klein et al. *seL4: Formal Verification of an OS Kernel*, SOSP 2009.
 - X. Leroy. *Formal verification of a realistic compiler*, CACM 2009.
 - J.-K. Zinzindohoué et al. *HACL\*: A Verified Modern Cryptographic Library*, CCS 2017.
