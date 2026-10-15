@@ -380,6 +380,7 @@ name = "jotakey-bridge"
 version = "0.1.0"
 dependencies = [
  "jotakey-core",
+ "nix",
  "serialport",
 ]
 

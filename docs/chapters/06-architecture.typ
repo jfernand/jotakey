@@ -307,7 +307,7 @@ the host retries. The firmware never prints anything on this port. Logs go to th
 === Lifecycle and failure modes
 
 The bridge creates the virtual device once, then loops: open the serial port, pump reports
-until the port fails, wait 500 ms, try again.
+until the port hangs up or fails, wait 500 ms, try again.
 
 #dtable(
   columns: (1.15fr, 2.4fr),
@@ -372,13 +372,16 @@ browser on the machine see the key. Stop the bridge with Ctrl-C.
   ("Part", "Evidence"),
   ([uhid encoding], [Unit tests pin the event size (4 376 bytes) and the `CREATE2` layout to the kernel's, and check `OUTPUT` decoding and the `EIO` replies.]),
   ([Framing], [Round trip of every possible report (property test), all-zero and zero-free reports, corruption and resynchronisation, and the `serial_deframe` fuzz target.]),
+  ([Pump loop], [The real `pump` runs between a fake uhid (a datagram socket pair, which keeps event boundaries like `/dev/uhid`) and a pseudo-terminal standing in for the serial port. The test checks one report in each direction, that the idle bridge wakes at most twice in 300 ms (the earlier 5 ms polling loop woke 60 times), and that a hang-up ends the pump so the bridge can reconnect.]),
   ([Whole path], [`jotakey-host-tests` runs a simulated device wired exactly like the usb task (framing → `CtapHid` → authenticator), so every simulated request crosses the real framing code in both directions.]),
   ([On hardware], [*Not yet run.* No board was attached while it was written, and `/dev/uhid` needs the permissions above. `just host-tests` with a board attached is the first check to run.]),
 )
 
-Two limitations are known. The bridge is *Linux-only*, because `uhid` is a Linux
-interface; other systems would need their own virtual-HID mechanism. And it *polls*:
-each loop drains uhid events, then waits up to 5 ms for serial data. That adds a few
-milliseconds of latency, which is nothing next to a human touch, but it wakes the CPU
-about 200 times a second while idle. Waiting on both file descriptors with `poll(2)` would
-remove both costs.
+The bridge sleeps in `poll(2)` on both file descriptors, the uhid device and the serial
+port, with no timeout. It wakes only when the host writes a report or the board sends
+bytes, forwards them at once, and uses no CPU while idle. It needs no timer of its own,
+because all CTAPHID timeouts run on the device. A hang-up or error on the serial port ends
+the loop, and the bridge goes back to waiting for the board.
+
+One limitation is known. The bridge is *Linux-only*, because `uhid` is a Linux interface;
+other systems would need their own virtual-HID mechanism.

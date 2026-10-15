@@ -7,6 +7,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::io::{AsRawFd, RawFd};
 
 const UHID_DESTROY: u32 = 1;
 const UHID_OUTPUT: u32 = 6;
@@ -121,13 +122,19 @@ impl Device {
         Ok(Self { file })
     }
 
+    /// Wrap an already open, non-blocking event channel (tests use a datagram socket pair).
+    #[cfg(test)]
+    pub fn from_file(file: File) -> Self {
+        Self { file }
+    }
+
     /// Send one input report to the host.
     pub fn send(&mut self, report: &[u8]) -> io::Result<()> {
         self.file.write_all(&input2(report))
     }
 
     /// Next event, or `Ok(None)` if none is queued.
-    pub fn poll(&mut self) -> io::Result<Option<Event>> {
+    pub fn next_event(&mut self) -> io::Result<Option<Event>> {
         let mut buf = vec![0u8; EVENT_SIZE];
         match self.file.read(&mut buf) {
             Ok(n) => {
@@ -143,12 +150,39 @@ impl Device {
     }
 }
 
+impl AsRawFd for Device {
+    /// For `poll(2)`: readable when the kernel has an event for us.
+    fn as_raw_fd(&self) -> RawFd {
+        self.file.as_raw_fd()
+    }
+}
+
 impl Drop for Device {
     fn drop(&mut self) {
         let mut ev = vec![0u8; EVENT_SIZE];
         put(&mut ev, 0, &UHID_DESTROY.to_ne_bytes());
         let _ = self.file.write_all(&ev);
     }
+}
+
+/// Test helper: the `UHID_OUTPUT` event the kernel sends when the host writes `report`.
+#[cfg(test)]
+pub fn output_event(report: &[u8]) -> Vec<u8> {
+    let mut ev = vec![0u8; EVENT_SIZE];
+    put(&mut ev, 0, &UHID_OUTPUT.to_ne_bytes());
+    put(&mut ev, 4, report);
+    put(&mut ev, 4 + DATA_MAX, &(report.len() as u16).to_ne_bytes());
+    ev
+}
+
+/// Test helper: the report carried by a `UHID_INPUT2` event, if `ev` is one.
+#[cfg(test)]
+pub fn input2_report(ev: &[u8]) -> Option<Vec<u8>> {
+    if ev.len() < 6 || u32::from_ne_bytes([ev[0], ev[1], ev[2], ev[3]]) != UHID_INPUT2 {
+        return None;
+    }
+    let n = usize::from(u16::from_ne_bytes([ev[4], ev[5]]));
+    ev.get(6..6 + n).map(<[u8]>::to_vec)
 }
 
 #[cfg(test)]

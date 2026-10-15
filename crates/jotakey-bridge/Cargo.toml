@@ -8,3 +8,5 @@ publish.workspace = true
 [dependencies]
 jotakey-core = { path = "../jotakey-core" }
 serialport = { version = "4", default-features = false }
+# Already in the tree through serialport (same version and feature): poll(2) on two fds.
+nix = { version = "0.26", default-features = false, features = ["poll"] }
