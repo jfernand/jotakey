@@ -33,7 +33,7 @@ see an ordinary FIDO security key.
   every signature needs a touch on the device itself. The bridge runs *on* the host, so it
   can do nothing that host malware could not do anyway. It never sees key material, only the
   same CTAP messages any USB host sees. The cost is convenience: the bridge is Linux-only.
-  The roadmap (§10) lists a small USB-capable co-processor as the path to a standalone,
+  The roadmap (§11) lists a small USB-capable co-processor as the path to a standalone,
   OS-independent device.
 ]
 
@@ -120,8 +120,8 @@ because the RP ID hash is inside the tag (invariant 3). A forged or foreign ID f
 The nonce is not secret, and the private key is never in the ID, not even encrypted.
 
 #callout(kind: "ok", "Proved in Lean (§9.6)")[
-  `unwrap_sound`: anything `unwrap` accepts is *exactly* `wrap(rp, nonce)` for the recovered
-  nonce. `rp_binding`: an ID minted for one RP never unwraps at another, *assuming* the MAC
+  `unwrap_accepts_only_wrapped_ids`: anything `unwrap` accepts is *exactly* `wrap(rp, nonce)` for the recovered
+  nonce. `credential_bound_to_relying_party`: an ID minted for one RP never unwraps at another, *assuming* the MAC
   does not collide across RPs. That assumption is the cryptographic part. It holds for
   HMAC-SHA256/128 except with probability ≈ 2#super[−128], and it is stated explicitly as a
   hypothesis of the theorem rather than hidden.

@@ -6,19 +6,19 @@ import Jotakey
 open Jotakey
 -- Syntax: `#print axioms t` lists every axiom the proof of `t` depends on, directly or through
 -- the lemmas it uses. `scripts/axiom-audit.sh` runs this file and checks the output.
-#print axioms Cbor.decodeHead_encodeHead
-#print axioms Cbor.encodeHead_of_decodeHead
-#print axioms Cbor.decodeHead_shrinks
-#print axioms CtapHid.run_isolated
-#print axioms CtapHid.step_wf
-#print axioms CtapHid.run_wf
-#print axioms CtapHid.reassemble_fragment
-#print axioms Authenticator.signature_needs_touch
-#print axioms Authenticator.no_double_sign
-#print axioms Authenticator.trace_counters_increasing
-#print axioms Authenticator.reset_needs_touch
-#print axioms Authenticator.reset_needs_window
-#print axioms Authenticator.faulted_never_signs
-#print axioms Credential.unwrap_wrap
-#print axioms Credential.unwrap_sound
-#print axioms Credential.rp_binding
+#print axioms Cbor.decodeHead_inverts_encodeHead
+#print axioms Cbor.decodeHead_accepts_only_canonical
+#print axioms Cbor.decodeHead_consumes_input
+#print axioms CtapHid.receivePackets_ignores_other_channels
+#print axioms CtapHid.receivePacket_preserves_well_formed
+#print axioms CtapHid.receivePackets_preserves_well_formed
+#print axioms CtapHid.fragmented_message_is_reassembled
+#print axioms Authenticator.signature_requires_confirmed_touch
+#print axioms Authenticator.one_touch_signs_at_most_once
+#print axioms Authenticator.trace_signature_counters_increase
+#print axioms Authenticator.epoch_change_requires_confirmed_touch
+#print axioms Authenticator.epoch_change_requires_reset_in_window
+#print axioms Authenticator.faulted_stays_faulted_and_never_signs
+#print axioms Credential.unwrap_recovers_nonce
+#print axioms Credential.unwrap_accepts_only_wrapped_ids
+#print axioms Credential.credential_bound_to_relying_party
