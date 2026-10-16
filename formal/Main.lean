@@ -15,6 +15,7 @@ so agreement with Rust on many inputs ties the proofs to the shipped decoder.
 -/
 
 open Jotakey.Cbor
+-- Syntax: `open` lets us write `validate` instead of `Jotakey.Cbor.validate` (Rust's `use`).
 
 def hexDigit (c : Char) : Option Nat :=
   if '0' ≤ c ∧ c ≤ '9' then some (c.toNat - '0'.toNat)
@@ -24,6 +25,8 @@ def hexDigit (c : Char) : Option Nat :=
 
 def parseHex : List Char → Option (List Nat)
   | [] => some []
+  -- Syntax: `do` notation in `Option`: each `let x ← e` unwraps `e`, or returns `none` from
+  -- the whole block if `e` is `none` (Rust's `let x = e?;`). `pure v` is `some v`.
   | a :: b :: rest => do
     let hi ← hexDigit a
     let lo ← hexDigit b
@@ -32,6 +35,8 @@ def parseHex : List Char → Option (List Nat)
   | [_] => none
 
 def answer (line : String) : String :=
+  -- Syntax: list patterns such as `["validate", hex]` match a list of exactly two strings, the
+  -- first being "validate". `s!"ok {n}"` is string interpolation (Rust's `format!`).
   match line.trimAscii.toString.splitOn " " with
   | ["validate", hex] =>
     match parseHex hex.toList with
@@ -51,6 +56,11 @@ def answer (line : String) : String :=
   | ["head"] => "err"
   | _ => "bad"
 
+-- Syntax: `partial def` lets a function recurse without a termination proof (it reads until
+-- end of input). Lean then refuses to unfold it inside proofs, which is fine: no theorem is
+-- about `loop`. `IO Unit` is the type of a program with side effects returning nothing; in
+-- an `IO` `do` block, `let x ← act` runs `act` and binds its result, and `(← act)` does the
+-- same inline.
 partial def loop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO Unit := do
   let line ← stdin.getLine
   if line.isEmpty then return
