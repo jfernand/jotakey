@@ -7,6 +7,10 @@ Formal model of `Decoder::skip` in `crates/jotakey-core/src/cbor.rs`, built on t
 `Jotakey/Cbor/Heads.lean`. `skipItem` is the whole strict validator: canonical heads,
 definite lengths, UTF-8 text, canonically ordered unique map keys, depth ≤ 4, only
 `false`/`true`/`null` simple values.
+
+This file has no theorems. Its definitions are the executable specification that
+`jotakey-spec` (`Main.lean`) runs in the differential test against the Rust decoder, and the
+`#guard`s at the end check them on hand-picked inputs at build time.
 -/
 
 namespace Jotakey.Cbor
@@ -22,10 +26,14 @@ def takeN (n : Nat) (l : List Nat) : Option (List Nat × List Nat) :=
 
 /-- UTF-8 validity, as Rust's `core::str::from_utf8` checks it. -/
 def validUtf8 (l : List Nat) : Bool :=
+  -- Syntax: `⟨x⟩` builds a structure from its fields in order (here a `ByteArray` from an
+  -- `Array UInt8`), like `ByteArray { data: x }` in Rust.
   ByteArray.validateUTF8 ⟨(l.map Nat.toUInt8).toArray⟩
 
 /-- Bytewise lexicographic order. -/
 def lexLt : List Nat → List Nat → Bool
+  -- Syntax: `Bool` is a computable true/false, as in Rust, with `||`, `&&` and `==`. It is
+  -- distinct from `Prop` (`∧`, `∨`, `=`), the type of statements that theorems prove.
   | [], [] => false
   | [], _ :: _ => true
   | _ :: _, [] => false
@@ -38,6 +46,9 @@ def canonicalLt (a b : List Nat) : Bool :=
 /-- A map key: integer fitting in `i64`, or valid text. Returns the rest of the input. -/
 def readKey (l : List Nat) : Option (List Nat) :=
   match decodeHead l with
+  -- Syntax: patterns nest, as in Rust: `some (0, a, r)` matches only a decoded head whose
+  -- major type is 0, binding the argument to `a` and the remainder to `r`. `_` matches
+  -- anything left over.
   | some (0, a, r) => if a < 2 ^ 63 then some r else none
   | some (1, a, r) => if a < 2 ^ 63 then some r else none
   | some (3, a, r) =>
@@ -46,6 +57,15 @@ def readKey (l : List Nat) : Option (List Nat) :=
     | none => none
   | _ => none
 
+-- Syntax: `mutual … end` groups definitions that call each other (an array holds items, an
+-- item may be an array). Lean accepts recursive definitions only if it can see they
+-- terminate. Each `termination_by` gives a *measure*: a value that must get smaller at every
+-- recursive call. Here the measures are pairs, compared lexicographically (first component
+-- first, the second breaking ties):
+--   * skipItem (fuel+1) → skipArray/skipMap fuel:  (fuel+1, 0) > (fuel, n+1)  first drops;
+--   * skipArray/skipMap fuel (n+1) → skipItem fuel: (fuel, n+1) > (fuel, 0)   second drops;
+--   * skipArray/skipMap fuel (n+1) → itself with n: (fuel, n+1) > (fuel, n).
+-- So every call chain ends, and Lean checks this before accepting the definitions.
 mutual
 /-- Validate one complete data item at nesting `depth`; return the remaining input.
 `fuel` only bounds nesting (it decreases on entering a container) and is never the
@@ -57,6 +77,7 @@ def skipItem : Nat → Nat → List Nat → Option (List Nat)
     | none => none
     | some (m, a, r) =>
       if m == 0 || m == 1 then some r
+      -- Syntax: `(·.2)` is shorthand for `fun p => p.2`: keep the second half of the pair.
       else if m == 2 then (takeN a r).map (·.2)
       else if m == 3 then
         match takeN a r with
@@ -70,6 +91,8 @@ def skipItem : Nat → Nat → List Nat → Option (List Nat)
         if a == 20 || a == 21 || a == 22 then some r else none
       else none
   termination_by fuel _ _ => (fuel, 0)
+  -- `fuel _ _ =>` names the function's three arguments (the first is the whole fuel, i.e.
+  -- `fuel + 1` in the second pattern above); `_` ignores the other two.
 
 /-- Validate `n` consecutive items. -/
 def skipArray : Nat → Nat → Nat → List Nat → Option (List Nat)
@@ -88,6 +111,7 @@ def skipMap : Nat → Nat → Nat → List Nat → Bool → List Nat → Option 
     | none => none
     | some r =>
       let raw := l.take (l.length - r.length)
+      -- `raw` is the key's own encoded bytes: what `readKey` consumed.
       if hasPrev && !canonicalLt prev raw then none
       else
         match skipItem fuel depth r with
@@ -102,14 +126,15 @@ def validate (l : List Nat) : Option Nat :=
 
 /-! ### Sanity checks, evaluated at build time (`#guard` fails the build if false) -/
 
-#guard validate [0xa2, 0x01, 0x00, 0x02, 0x00] == some 5
-#guard validate [0xa2, 0x02, 0x00, 0x01, 0x00] == none
-#guard validate [0xa2, 0x01, 0x00, 0x01, 0x00] == none
-#guard validate [0x81, 0x81, 0x81, 0x81, 0x00] == some 5
-#guard validate [0x81, 0x81, 0x81, 0x81, 0x81, 0x00] == none
-#guard validate [0x18, 0x17] == none
-#guard validate [0x5f] == none
-#guard validate [0xf9, 0x3c, 0x00] == none
-#guard validate [0xf5, 0x00] == some 1
+-- Syntax: `0xa2` is a hexadecimal `Nat` literal, as in Rust.
+#guard validate [0xa2, 0x01, 0x00, 0x02, 0x00] == some 5       -- {1: 0, 2: 0}
+#guard validate [0xa2, 0x02, 0x00, 0x01, 0x00] == none         -- keys out of order
+#guard validate [0xa2, 0x01, 0x00, 0x01, 0x00] == none         -- duplicate key
+#guard validate [0x81, 0x81, 0x81, 0x81, 0x00] == some 5       -- depth 4: allowed
+#guard validate [0x81, 0x81, 0x81, 0x81, 0x81, 0x00] == none   -- depth 5: too deep
+#guard validate [0x18, 0x17] == none                           -- 23 in two bytes: not minimal
+#guard validate [0x5f] == none                                 -- indefinite-length bytes
+#guard validate [0xf9, 0x3c, 0x00] == none                     -- half-precision float 1.0
+#guard validate [0xf5, 0x00] == some 1                         -- `true`; trailing byte left
 
 end Jotakey.Cbor
