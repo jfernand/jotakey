@@ -11,10 +11,12 @@ open Jotakey
 #print axioms Cbor.decodeHead_shrinks
 #print axioms CtapHid.run_isolated
 #print axioms CtapHid.step_wf
+#print axioms CtapHid.run_wf
 #print axioms CtapHid.reassemble_fragment
 #print axioms Authenticator.signature_needs_touch
 #print axioms Authenticator.no_double_sign
 #print axioms Authenticator.trace_counters_increasing
+#print axioms Authenticator.reset_needs_touch
 #print axioms Authenticator.reset_needs_window
 #print axioms Authenticator.faulted_never_signs
 #print axioms Credential.unwrap_wrap
