@@ -4936,7 +4936,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_SON:Microchip_USON-10-1EP_3x3mm_P0.5mm_EP1.8x2.5mm"
+		(property "Footprint" "jotakey:Infineon_PG-USON-10-2_3x3mm_P0.5mm_EP1.7x2.5mm"
 			(at 248.92 101.6 0)
 			(hide yes)
 			(effects
