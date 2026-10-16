@@ -58,23 +58,27 @@ There is no separate VCC_IO pin; the I2C level follows VCC (1.62–5.5 V).
   cannot initialise it.
 - **Package:** 3 × 3 mm, 0.5 mm pitch, leads 0.25 × 0.4 mm, exposed pad 2.5 × 1.7 mm
   (datasheet Figure 6).
-- **Part:** SLS32AIA010MLUSON10XTMA2 (OPTIGA Trust M V3, −40…+105 °C), LCSC C3232507, JLCPCB
-  Extended. V3 rather than V1, because V3 adds HMAC-SHA256, HKDF and AES, which the key
-  hierarchy will need.
+- **Part:** SLS32AIA010MH (OPTIGA Trust M V1, −40…+105 °C), LCSC C539250, JLCPCB Extended.
+  V3 (SLS32AIA010MK/ML), which adds HMAC-SHA256, HKDF and AES, was the first choice, but
+  JLCPCB has none in stock (C17444580: 0 units). V1 does ECDSA P-256 key generation and
+  signing, SHA-256 and the TLS PRF, so the firmware derives keys on the MCU. Both versions
+  share the package and pinout, so moving to V3 later changes only the BOM line.
 
 ## 4. User presence, status and debug
 
 - **User presence: capacitive touch pad** read by the STM32L432 touch sensing controller
   (TSC), group 2:
-  - PB4 (pin 27), TSC_G2_IO1: sampling capacitor to GND (value from AN4310; ≈22 nF X7R to
-    start);
+  - PB4 (pin 27), TSC_G2_IO1: 10 nF C0G sampling capacitor to GND. AN4310 requires a
+    low-absorption dielectric (C0G/NP0) when the MCU uses low-power modes, which an idle key
+    will;
   - PB5 (pin 28), TSC_G2_IO2: the touch electrode, through a series resistor near the MCU
     (≈1 kΩ);
   - the electrode is a copper area at the far end of the dongle, laid out as AN4312 describes.
   A touch is required for every signature. This is what stops a remote attacker from silently
   logging into accounts.
-- **Status LED:** a single LED with a series resistor on PA8 (pin 18). Blink patterns signal
-  "touch requested", OK and fault.
+- **Status LED:** a single red LED with a 1 kΩ series resistor on PA8 (pin 18), about 1.3 mA.
+  Blink patterns signal "touch requested", OK and fault. Red because white and blue LEDs need
+  up to 3.1 V, too close to the 3.3 V rail.
 - **BOOT0** (PH3, pin 31): 10 kΩ pull-down, so the MCU always boots from flash.
 - **NRST** (pin 4): 100 nF to GND.
 - **SWD:** PA13 (SWDIO), PA14 (SWCLK), NRST, 3V3 and GND on five test pads, for a pogo-pin
@@ -85,9 +89,26 @@ There is no separate VCC_IO pin; the I2C level follows VCC (1.62–5.5 V).
 JLCPCB fabricates and assembles the board, so every part is chosen from its catalogue with an
 LCSC number. Prefer Basic parts.
 
-- **STM32L432KCU6:** LCSC C1337280, Extended.
-- **OPTIGA Trust M:** C3232507, Extended.
-- **Stock:** for both, check before ordering.
+The BOM, as chosen from the JLCPCB parts database on 2026-10-16 (stock is a snapshot; check it
+before ordering):
+
+| Ref | Part | LCSC | Class |
+|---|---|---|---|
+| U1 | STM32L432KCU6, UFQFPN-32 | C1337280 | Extended (62 in stock) |
+| U2 | OPTIGA Trust M SLS32AIA010MH, USON-10 | C539250 | Extended (60 in stock) |
+| U3 | XC6206P332MR-G LDO, SOT-23 | C5446 | Basic |
+| U4 | USBLC6-2SC6 ESD, SOT-23-6 | C7519 | Extended |
+| D1 | KT-0603R red LED, 0603 | C2286 | Basic |
+| C1, C2, C7 | 1 µF 25 V X5R, 0402 | C52923 | Basic |
+| C3 | 4.7 µF 16 V X5R, 0603 | C19666 | Basic |
+| C4, C5, C6, C8, C9 | 100 nF 16 V X7R, 0402 | C1525 | Basic |
+| C10 | 10 nF 50 V C0G, 0402 (touch sampling) | C22400107 | Extended |
+| R1, R2 | 1 kΩ 1 %, 0402 | C11702 | Basic |
+| R3, R4 | 4.7 kΩ 1 %, 0402 | C25900 | Basic |
+| R5 | 10 kΩ 1 %, 0402 | C25744 | Basic |
+
+J1 (edge contacts), E1 (touch electrode) and TP1–TP5 (SWD pads) are copper on the board, not
+parts. Four Extended parts each add JLCPCB's per-part setup fee.
 - **Missing parts:** if JLCPCB lacks one, it is sourced through JLCPCB global sourcing or
   consigned, and recorded in `MANUFACTURING.md`.
 - **Board:** 2 layers, 2.0 mm thick, ENIG finish, gold fingers with a bevelled edge. All parts
