@@ -35,7 +35,7 @@ namespace Jotakey.Authenticator
 /-- `RESET_WINDOW_MS`: a reset is accepted only this many milliseconds after power-up. -/
 def resetWindowMs : Nat := 10000
 
-/-- Result of waiting for the user (`UpResult` in Rust). -/
+/-- Result of waiting for the user (`PresenceResult` in Rust). -/
 inductive PresenceResult where
   | confirmed | timeout | cancelled
   deriving DecidableEq, Repr

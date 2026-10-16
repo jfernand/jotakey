@@ -29,22 +29,24 @@ def initPayloadSize : Nat := 57
 /-- Payload bytes in a continuation packet. -/
 def continuationPayloadSize : Nat := 59
 
-/-- A host→device packet, already split into fields. -/
-inductive Packet where
+/-- A host→device packet, already split into fields. The Rust `Packet` is the raw 64-byte
+report; `CtapHid::handle_packet` does this parsing itself, so the model starts after it. -/
+inductive ParsedPacket where
   -- Syntax: `inductive` declares a type by listing its constructors, like a Rust `enum`
-  -- whose variants carry fields. A value is built as `Packet.init …`, or `.init …` where
-  -- Lean already knows the expected type is `Packet`.
+  -- whose variants carry fields. A value is built as `ParsedPacket.init …`, or `.init …` where
+  -- Lean already knows the expected type is `ParsedPacket`.
   | init (channel command announcedLength : Nat) (payload : List Nat)
   | continuation (channel sequence : Nat) (payload : List Nat)
 
 /-- Channel of a packet. -/
-def Packet.channel : Packet → Nat
-  -- Syntax: naming a function `Packet.channel` puts it in the `Packet` namespace, so
-  -- `p.channel` calls it for any `p : Packet`, like a method in an `impl` block.
+def ParsedPacket.channel : ParsedPacket → Nat
+  -- Syntax: naming a function `ParsedPacket.channel` puts it in the `ParsedPacket` namespace, so
+  -- `p.channel` calls it for any `p : ParsedPacket`, like a method in an `impl` block.
   | .init channel _ _ _ => channel
   | .continuation channel _ _ => channel
 
-/-- Receive state (`Rx` in Rust). -/
+/-- Receive state (`ReceiveState` in Rust, which counts received bytes instead of holding
+them and also records the time of the last packet). -/
 inductive ReceiveState where
   | idle
   /-- Part of a message has arrived on `channel`; `total` bytes were announced. -/
@@ -68,7 +70,7 @@ def deliverIfComplete (channel command total : Nat) (buffer : List Nat) (nextSeq
   else .busy channel buffer
 
 /-- One packet (`handle_packet`). -/
-def receivePacket : ReceiveState → Packet → ReceiveState
+def receivePacket : ReceiveState → ParsedPacket → ReceiveState
   | .idle, .init channel command announcedLength payload =>
     if announcedLength > maxMessageSize then .idle
     else deliverIfComplete channel command announcedLength
@@ -85,7 +87,7 @@ def receivePacket : ReceiveState → Packet → ReceiveState
   | .busy owner message, _ => .busy owner message
 
 /-- Feed a list of packets. -/
-def receivePackets (state : ReceiveState) (packets : List Packet) : ReceiveState :=
+def receivePackets (state : ReceiveState) (packets : List ParsedPacket) : ReceiveState :=
   packets.foldl receivePacket state
 -- Syntax: `packets.foldl receivePacket state` is Rust's
 -- `packets.iter().fold(state, receive_packet)`: start from `state` and apply `receivePacket` to
@@ -101,7 +103,7 @@ is impossible. In `receiving`, `hOwner` says the owner is the state's own channe
 it, then for either kind of packet `receivePacket` first compares the packet's channel with
 the owner, and `hOtherChannel` says they differ, so `simp` picks the "unchanged" branch. In
 `busy`, `receivePacket` ignores every packet, so both sides are already equal (`rfl`). -/
-theorem receivePacket_ignores_other_channels (state : ReceiveState) (packet : Packet)
+theorem receivePacket_ignores_other_channels (state : ReceiveState) (packet : ParsedPacket)
     (owner : Nat) (hOwner : state.owner = some owner) (hOtherChannel : packet.channel ≠ owner) :
     receivePacket state packet = state := by
   cases state with
@@ -115,9 +117,9 @@ theorem receivePacket_ignores_other_channels (state : ReceiveState) (packet : Pa
     -- other side everywhere and drops `h`.
     cases packet with
     | init packetChannel _ _ _ =>
-      simp only [Packet.channel] at hOtherChannel; simp [receivePacket, hOtherChannel]
+      simp only [ParsedPacket.channel] at hOtherChannel; simp [receivePacket, hOtherChannel]
     | continuation packetChannel _ _ =>
-      simp only [Packet.channel] at hOtherChannel; simp [receivePacket, hOtherChannel]
+      simp only [ParsedPacket.channel] at hOtherChannel; simp [receivePacket, hOtherChannel]
   | busy channel message => cases packet <;> rfl
     -- Syntax: `t1 <;> t2` runs `t2` on every goal that `t1` produces (here: both packet kinds).
 
@@ -131,7 +133,7 @@ inject, drop, reorder or abort anything in the owner's message.
 **How:** induction on the packet list. The first packet leaves `state` unchanged by
 `receivePacket_ignores_other_channels`, so the rest of the list runs from the same `state`,
 and the induction hypothesis (for the shorter list) finishes. -/
-theorem receivePackets_ignores_other_channels (state : ReceiveState) (packets : List Packet)
+theorem receivePackets_ignores_other_channels (state : ReceiveState) (packets : List ParsedPacket)
     (owner : Nat) (hOwner : state.owner = some owner)
     (hOtherChannels : ∀ other ∈ packets, other.channel ≠ owner) :
     receivePackets state packets = state := by
@@ -187,7 +189,7 @@ malformed or hostile.
   bytes appended are cut to `total - buffer.length`, so the new buffer is at most `total`
   long and `deliverIfComplete_is_well_formed` applies;
 * busy: unchanged. -/
-theorem receivePacket_preserves_well_formed (state : ReceiveState) (packet : Packet)
+theorem receivePacket_preserves_well_formed (state : ReceiveState) (packet : ParsedPacket)
     (hWellFormed : WellFormed state) : WellFormed (receivePacket state packet) := by
   cases state with
   | idle =>
@@ -226,7 +228,7 @@ theorem receivePacket_preserves_well_formed (state : ReceiveState) (packet : Pac
 
 **How:** induction on the packet list, applying `receivePacket_preserves_well_formed` at each
 packet. -/
-theorem receivePackets_preserves_well_formed (state : ReceiveState) (packets : List Packet)
+theorem receivePackets_preserves_well_formed (state : ReceiveState) (packets : List ParsedPacket)
     (hWellFormed : WellFormed state) : WellFormed (receivePackets state packets) := by
   induction packets generalizing state with
   | nil => exact hWellFormed
@@ -236,7 +238,7 @@ theorem receivePackets_preserves_well_formed (state : ReceiveState) (packets : L
 /-! ## Fragmentation and reassembly -/
 
 /-- Continuation packets for `rest`, starting at sequence number `sequence` (host side). -/
-def continuationPackets (channel sequence : Nat) (rest : List Nat) : List Packet :=
+def continuationPackets (channel sequence : Nat) (rest : List Nat) : List ParsedPacket :=
   -- Syntax: `if h : c then … else …` also names the condition: inside the branches, `h`
   -- proves `c` (or `¬c`). The termination proof below uses it.
   if hEmpty : rest = [] then []
@@ -250,7 +252,7 @@ def continuationPackets (channel sequence : Nat) (rest : List Nat) : List Packet
     simp [continuationPayloadSize]; omega
 
 /-- How a host fragments a message on `channel` (CTAP 2.0 §8.1.4). -/
-def fragmentMessage (channel command : Nat) (message : List Nat) : List Packet :=
+def fragmentMessage (channel command : Nat) (message : List Nat) : List ParsedPacket :=
   .init channel command message.length (message.take initPayloadSize) ::
     continuationPackets channel 0 (message.drop initPayloadSize)
 
