@@ -98,6 +98,11 @@ Each invariant is enforced in code, tested, and (where marked ⊢) proved in the
 - Every change to protocol logic needs: tests, a fuzz target that reaches it, no new surviving
   mutants (`cargo mutants -p jotakey-core` → 0 missed; exclusions in `.cargo/mutants.toml`
   need a written reason), and an update to the Lean model if it touches an invariant.
+- Names: Rust and Lean each follow their own conventions, and `formal/NAMES.md` is the
+  translation table between them. Any rename or new modelled item on either side updates
+  `formal/NAMES.md` and the table in chapter 10 of the doc in the same change. Prefer
+  descriptive names over spec abbreviations (`channel`, not `cid`), except for constants
+  that quote the CTAP spec (`BROADCAST_CID`, `cmd::CBOR`).
 - Lean: no `sorry`, no new `axiom`, no `native_decide`; `formal/AxiomAudit.lean` must list only
   `propext`, `Quot.sound`, `Classical.choice`. Keep `jotakey-spec` and the Rust decoder in
   agreement (`just diff`).
@@ -131,7 +136,7 @@ crates/jotakey-testfw    on-device test firmware (embedded-test + probe-rs)
 crates/jotakey-bridge    Linux serial↔uhid bridge
 crates/jotakey-host-tests end-to-end tests against a real device through the bridge
 fuzz/                    cargo-fuzz targets
-formal/                  Lean 4 models, proofs, executable spec for differential testing
+formal/                  Lean 4 models, proofs, executable spec; NAMES.md maps Rust ↔ Lean names
 docs/                    Typst document (ISSS design)
 scripts/provision.sh     human-run, irreversible device provisioning (dry-run by default)
 scripts/fido2_check.py   independent check with python-fido2 (client + RP server)

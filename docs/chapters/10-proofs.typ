@@ -119,7 +119,8 @@ credential_bound_to_relying_party ─ unwrap_accepts_only_wrapped_ids
 
 The reading order follows the files: numbers and bytes first (§10.2), then CBOR heads
 (§10.3) and the validator built on them (§10.4), CTAPHID (§10.5), the authenticator state
-machine (§10.6) and credential IDs (§10.7). §10.8 lists what the proofs leave out. The Lean
+machine (§10.6) and credential IDs (§10.7). §10.8 lists what the proofs leave out, and
+§10.9 maps every Rust name to its Lean counterpart. The Lean
 syntax is introduced in the same order in the comments of the source files, and
 `formal/Jotakey.lean` repeats the order.
 
@@ -138,7 +139,8 @@ Four conventions run through all the files:
   `completePresence`), theorems after what they state
   (`decodeHead_accepts_only_canonical`), and variables after what they hold (`width`,
   `relyingParty`, `nextSequence`). The one deliberate exception is `ih`, the conventional
-  name for an induction hypothesis.
+  name for an induction hypothesis. The Rust code follows the same rule in its own
+  conventions; §10.9 translates between the two.
 - *Hypotheses are arguments.* `(hFits : value < 256 ^ width)` in a theorem's signature
   means "assuming the value fits in `width` bytes". Hypothesis names start with `h` and
   say what they assume. Calling the theorem requires a proof of each, so every assumption
@@ -689,3 +691,67 @@ part of the system that no theorem mentions. That is the standard to keep as the
 grow. When a new feature is added, its invariant goes into the model first, the proof
 goes into `AxiomAudit.lean`, and anything the proof assumes stays visible in the
 signature.
+
+== Rust and Lean names
+
+Each side follows its own language's conventions. Rust writes functions in `snake_case`
+and constants in `SCREAMING_SNAKE_CASE`; Lean writes definitions in `lowerCamelCase` and
+names theorems in `snake_case` after what they state. Constants that quote the CTAP
+specification (`BROADCAST_CID`, `cmd::CBOR`) keep the spec's spelling in Rust. Everything
+else uses descriptive words on both sides, so most names differ only in casing. The tables
+below list every modelled item (Rust paths are under `crates/jotakey-core/src`, Lean
+paths under `formal/Jotakey`); `formal/NAMES.md` holds the same table next to the code,
+and `AGENTS.md` requires both to change together with any rename.
+
+#breakable-code[
+#dtable(
+  columns: (1.3fr, 1.3fr, 1.4fr),
+  ("Rust", "Lean", "Notes"),
+  ([*CBOR*], [], []),
+  ([`Decoder::head`, `Encoder::head`], [`decodeHead`, `encodeHead`], [Rust advances a cursor; Lean returns the rest of the input.]),
+  ([`Decoder::read_be` + minimality check], [`readArgument`], []),
+  ([`Decoder::skip(depth)`], [`skipItem`, `skipArray`, `skipMap`], [One function with loops; three mutually recursive ones.]),
+  ([`skip(0)` + `position()`], [`validate`], [Answers `validate <hex>` in `jotakey-spec`.]),
+  ([`read_slice`, `next_key`, `canonical_lt`], [`takeExactly`, `readMapKey`, `canonicalKeyLess`], []),
+  ([`core::str::from_utf8`, `MAX_DEPTH`], [`isValidUtf8`, `maxNestingDepth`], []),
+  ([*CTAPHID*], [], []),
+  ([`ReceiveState` (`Idle`, `Receiving`, `Busy`)], [`ReceiveState` (`idle`, `receiving`, `busy`)], [Same names.]),
+  ([`Receiving { channel, command, total, received, next_sequence, last_packet_ms }`], [`receiving channel command total buffer nextSequence`], [Rust counts the bytes received; Lean holds them. Lean has no clock.]),
+  ([`Busy { channel }`], [`busy channel message`], [Rust keeps the message in `receive_buffer`.]),
+  ([`CtapHid::handle_packet`, `maybe_dispatch`], [`receivePacket`, `deliverIfComplete`], [Lean leaves out INIT, CANCEL and timeouts.]),
+  ([`Packet` (raw `[u8; 64]`)], [`ParsedPacket` (`init`, `continuation`)], [Different on purpose: the model starts after parsing.]),
+  ([`MAX_MSG_SIZE`, `INIT_DATA`, `CONT_DATA`], [`maxMessageSize`, `initPayloadSize`, `continuationPayloadSize`], []),
+  ([—], [`receivePackets`, `WellFormed`, `fragmentMessage`, `continuationPackets`], [Model only: packet sequences, the invariant, the host side.]),
+  ([*Authenticator*], [], []),
+  ([`Authenticator::process`, `complete`], [`processRequest`, `completePresence`], [Rust parses CBOR; Lean receives a classified `Command`.]),
+  ([`PresenceResult`], [`PresenceResult`], [Same name.]),
+  ([`Pending`], [`PendingCommand`], [Same variants.]),
+  ([`Outcome` + response bytes], [`Output`], []),
+  ([`Platform::increment_counter`, `rotate_epoch`, `uptime_ms`], [`State.signCounter`, `State.resetEpoch`, `uptimeMs`], [Rust keeps them behind the platform trait.]),
+  ([`RESET_WINDOW_MS`], [`resetWindowMs`], []),
+  ([—], [`Command`, `Event`, `handleEvent`, `runTrace`, `signatureCounters`], [Model only.]),
+  ([*Credential IDs*], [], []),
+  ([`wrap`, `unwrap` (`mac_key`, `rp_id_hash`, `id`)], [`wrap`, `unwrap` (`key`, `relyingParty`, `credentialId`)], [Lean takes the MAC as a parameter `mac`.]),
+  ([`VERSION`, `NONCE_LEN`, `TAG_LEN`], [`formatVersion`, `nonceLength`, `tagLength`], []),
+  ([return type `[u8; TAG_LEN]`], [hypothesis `MacOutputsTagLength mac`], [The Rust type guarantees what Lean must assume.]),
+)
+]
+
+The properties line up the same way: the Rust tests and fuzz oracles check on the real code
+what the Lean theorems prove about the model.
+
+#breakable-code[
+#dtable(
+  columns: (1.6fr, 1.4fr),
+  ("Rust test or fuzz oracle", "Lean theorem"),
+  ([`head_roundtrip`], [`decodeHead_inverts_encodeHead`]),
+  ([`accepted_heads_are_canonical`, `cbor_decode` oracle], [`decodeHead_accepts_only_canonical`]),
+  ([`other_channel_gets_busy…`, `ctaphid_stack`], [`receivePackets_ignores_other_channels`]),
+  ([`ctaphid_stack` buffer assertions], [`receivePackets_preserves_well_formed`]),
+  ([`no_signature_without_presence`, `ctap_dispatch` oracle], [`signature_requires_confirmed_touch`, `one_touch_signs_at_most_once`]),
+  ([`monotonic_across_power_cuts`], [`trace_signature_counters_increase`]),
+  ([`reset_window_and_effect`], [`epoch_change_requires_confirmed_touch`, `epoch_change_requires_reset_in_window`]),
+  ([`fails_closed`], [`faulted_stays_faulted_and_never_signs`]),
+  ([`roundtrip`, `bound_to_rp` (`credential.rs`)], [`unwrap_recovers_nonce`, `credential_bound_to_relying_party`]),
+)
+]
