@@ -6,7 +6,7 @@
 
 use jotakey_core::ctap::{Authenticator, Outcome};
 use jotakey_core::mock::MockPlatform;
-use jotakey_core::platform::UpResult;
+use jotakey_core::platform::PresenceResult;
 use jotakey_core::transport::ble::{BleEvent, BleFramer, MAX_FRAGMENT};
 use jotakey_core::{AAGUID, MAX_MSG_SIZE};
 use libfuzzer_sys::fuzz_target;
@@ -31,7 +31,7 @@ fuzz_target!(|data: &[u8]| {
                 let req = ble.request().to_vec();
                 let n = match auth.process(&mut platform, &req, &mut out) {
                     Outcome::Response(n) => n,
-                    Outcome::NeedsUserPresence => auth.complete(&mut platform, UpResult::Confirmed, &mut out),
+                    Outcome::NeedsUserPresence => auth.complete(&mut platform, PresenceResult::Confirmed, &mut out),
                 };
                 ble.respond(&out[..n]);
             }

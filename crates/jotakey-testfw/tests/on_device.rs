@@ -23,7 +23,7 @@ mod tests {
     use jotakey_core::cbor::Encoder;
     use jotakey_core::credential::CRED_ID_LEN;
     use jotakey_core::ctap::{Authenticator, Outcome, command};
-    use jotakey_core::platform::UpResult;
+    use jotakey_core::platform::PresenceResult;
     use jotakey_core::selftest::{self, RngHealth, SelfTestError};
     use jotakey_core::storage::{Flash, RecordLog, SECTOR_SIZE};
     use jotakey_core::{AAGUID, MAX_MSG_SIZE, crypto};
@@ -227,7 +227,7 @@ mod tests {
 
         let n = make_credential_request(&mut req);
         assert_eq!(auth.process(&mut platform, &req[..n], &mut out), Outcome::NeedsUserPresence);
-        let len = auth.complete(&mut platform, UpResult::Confirmed, &mut out);
+        let len = auth.complete(&mut platform, PresenceResult::Confirmed, &mut out);
         assert_eq!(out[0], 0);
         // authData follows map key 2 and a one-byte-length byte-string head (0x58 len).
         let ad = after(&out[1..len], &[0x02, 0x58]);
@@ -244,7 +244,7 @@ mod tests {
 
         let n = get_assertion_request(&mut req, &cred_id);
         assert_eq!(auth.process(&mut platform, &req[..n], &mut out), Outcome::NeedsUserPresence);
-        let len = auth.complete(&mut platform, UpResult::Confirmed, &mut out);
+        let len = auth.complete(&mut platform, PresenceResult::Confirmed, &mut out);
         assert_eq!(out[0], 0);
         let ad = &after(&out[1..len], &[0x02, 0x58, 37])[..37];
         let sig_field = after(&out[1..len], &[0x03, 0x58]);
@@ -255,7 +255,7 @@ mod tests {
         // No touch, no signature.
         let n = get_assertion_request(&mut req, &cred_id);
         let _ = auth.process(&mut platform, &req[..n], &mut out);
-        let len = auth.complete(&mut platform, UpResult::Timeout, &mut out);
+        let len = auth.complete(&mut platform, PresenceResult::Timeout, &mut out);
         assert_eq!((len, out[0]), (1, 0x2F));
         assert_eq!(platform.counter, 2);
     }

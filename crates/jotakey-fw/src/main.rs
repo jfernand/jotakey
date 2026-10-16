@@ -216,7 +216,7 @@ async fn fault_forever(auth: &mut Authenticator, out: &mut Response) -> ! {
         // `process` in the fault state touches no hardware; any platform type works.
         let n = match auth.process(&mut NoPlatform, &req.data, out) {
             Outcome::Response(n) => n,
-            Outcome::NeedsUserPresence => auth.complete(&mut NoPlatform, jotakey_core::platform::UpResult::Timeout, out),
+            Outcome::NeedsUserPresence => auth.complete(&mut NoPlatform, jotakey_core::platform::PresenceResult::Timeout, out),
         };
         link::reply(req.transport, out.get(..n).unwrap_or(&[]));
     }

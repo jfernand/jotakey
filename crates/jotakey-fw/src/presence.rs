@@ -6,7 +6,7 @@
 
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::gpio::Input;
-use jotakey_core::platform::UpResult;
+use jotakey_core::platform::PresenceResult;
 
 use crate::link::{self, CANCEL, Transport};
 
@@ -20,17 +20,17 @@ pub const DEBOUNCE_POLLS: u8 = 2;
 const KEEPALIVE_EVERY: u32 = 4; // 4 × 20 ms
 
 /// Wait for a fresh, debounced press, sending `UP_NEEDED` keepalives to `transport`.
-pub async fn wait(button: &mut Input<'_>, transport: Transport, keepalive_status: u8) -> UpResult {
+pub async fn wait(button: &mut Input<'_>, transport: Transport, keepalive_status: u8) -> PresenceResult {
     let deadline = Instant::now() + UP_TIMEOUT;
     let mut released_seen = false;
     let mut pressed_polls = 0u8;
     let mut tick = 0u32;
     loop {
         if CANCEL.signaled() && CANCEL.try_take() == Some(transport) {
-            return UpResult::Cancelled;
+            return PresenceResult::Cancelled;
         }
         if Instant::now() >= deadline {
-            return UpResult::Timeout;
+            return PresenceResult::Timeout;
         }
         if button.is_high() {
             released_seen = true;
@@ -38,7 +38,7 @@ pub async fn wait(button: &mut Input<'_>, transport: Transport, keepalive_status
         } else if released_seen {
             pressed_polls = pressed_polls.saturating_add(1);
             if pressed_polls >= DEBOUNCE_POLLS {
-                return UpResult::Confirmed;
+                return PresenceResult::Confirmed;
             }
         }
         if tick.is_multiple_of(KEEPALIVE_EVERY) {

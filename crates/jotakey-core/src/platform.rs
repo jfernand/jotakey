@@ -3,7 +3,7 @@
 //! The firmware implements [`Platform`] on top of the ESP32-C6 peripherals; tests implement
 //! it with deterministic mocks. User presence is deliberately *not* part of this trait: the
 //! core returns [`crate::ctap::Outcome::NeedsUserPresence`] and the caller resumes it with a
-//! [`UpResult`]. That keeps the core synchronous and makes "no signature without presence"
+//! [`PresenceResult`]. That keeps the core synchronous and makes "no signature without presence"
 //! a property of a pure state machine rather than of an async callback.
 
 /// A hardware or storage failure. Carries no detail so nothing sensitive can leak.
@@ -32,7 +32,7 @@ impl SecretLabel {
 
 /// Result of waiting for the user to touch the device.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UpResult {
+pub enum PresenceResult {
     /// The button was pressed after the request arrived.
     Confirmed,
     /// Nobody pressed the button before the deadline.

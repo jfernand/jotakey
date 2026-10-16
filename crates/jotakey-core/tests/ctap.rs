@@ -7,12 +7,12 @@ use jotakey_core::authdata::{FLAG_AT, FLAG_UP};
 use jotakey_core::cbor::Decoder;
 use jotakey_core::crypto::{sha256, verify};
 use jotakey_core::ctap::{Outcome, Pending, command::*};
-use jotakey_core::platform::UpResult;
+use jotakey_core::platform::PresenceResult;
 use jotakey_core::status::Status;
 
 /// Register a credential; returns (credential id, public key, authData counter).
 fn register(h: &mut Harness, rp: &str) -> (Vec<u8>, p256::PublicKey, u32) {
-    let (st, body) = h.run(&request(MAKE_CREDENTIAL, make_credential_params(rp)), UpResult::Confirmed);
+    let (st, body) = h.run(&request(MAKE_CREDENTIAL, make_credential_params(rp)), PresenceResult::Confirmed);
     assert_eq!(st, 0, "makeCredential failed");
     // Strict decoder must accept our own response.
     let mut d = Decoder::new(&body);
@@ -45,7 +45,7 @@ fn register(h: &mut Harness, rp: &str) -> (Vec<u8>, p256::PublicKey, u32) {
 }
 
 fn assert_ok(h: &mut Harness, rp: &str, id: &[u8], pk: &p256::PublicKey) -> u32 {
-    let (st, body) = h.run(&request(GET_ASSERTION, get_assertion_params(rp, &[id])), UpResult::Confirmed);
+    let (st, body) = h.run(&request(GET_ASSERTION, get_assertion_params(rp, &[id])), PresenceResult::Confirmed);
     assert_eq!(st, 0);
     let (resp, _) = V::decode(&body);
     let cred = resp.get(&V::U(1)).unwrap();
@@ -60,7 +60,7 @@ fn assert_ok(h: &mut Harness, rp: &str, id: &[u8], pk: &p256::PublicKey) -> u32 
 #[test]
 fn get_info() {
     let mut h = Harness::new();
-    let (st, body) = h.run(&[GET_INFO], UpResult::Confirmed);
+    let (st, body) = h.run(&[GET_INFO], PresenceResult::Confirmed);
     assert_eq!(st, 0);
     let (info, _) = V::decode(&body);
     assert_eq!(info.get(&V::U(1)), Some(&V::A(vec![V::t("FIDO_2_0")])));
@@ -101,7 +101,7 @@ fn foreign_and_tampered_ids_are_rejected_and_first_valid_is_used() {
     bad[10] ^= 1;
     let st = h.status(&request(GET_ASSERTION, get_assertion_params(RP, &[&bad, &[0u8; 64]])));
     assert_eq!(st, Status::NoCredentials.code());
-    let (st, body) = h.run(&request(GET_ASSERTION, get_assertion_params(RP, &[&bad, &id])), UpResult::Confirmed);
+    let (st, body) = h.run(&request(GET_ASSERTION, get_assertion_params(RP, &[&bad, &id])), PresenceResult::Confirmed);
     assert_eq!(st, 0);
     let (resp, _) = V::decode(&body);
     assert_eq!(resp.get(&V::U(1)).unwrap().get(&V::t("id")).unwrap().bytes(), &id[..]);
@@ -114,7 +114,7 @@ fn no_signature_without_presence() {
     let mut h = Harness::new();
     let (id, _, _) = register(&mut h, RP);
     let counter = h.platform.counter;
-    for (up, want) in [(UpResult::Timeout, Status::UserActionTimeout), (UpResult::Cancelled, Status::KeepaliveCancel)] {
+    for (up, want) in [(PresenceResult::Timeout, Status::UserActionTimeout), (PresenceResult::Cancelled, Status::KeepaliveCancel)] {
         let (st, body) = h.run(&request(GET_ASSERTION, get_assertion_params(RP, &[&id])), up);
         assert_eq!(st, want.code());
         assert!(body.is_empty());
@@ -135,13 +135,13 @@ fn processing_parks_and_complete_consumes() {
     assert!(matches!(h.auth.process(&mut h.platform, &[GET_INFO], &mut h.out), Outcome::Response(_)));
     assert_eq!(h.auth.pending(), &Pending::Idle);
     // Completing with nothing pending is an error, never a signature.
-    let n = h.auth.complete(&mut h.platform, UpResult::Confirmed, &mut h.out);
+    let n = h.auth.complete(&mut h.platform, PresenceResult::Confirmed, &mut h.out);
     assert_eq!((n, h.out[0]), (1, Status::Other.code()));
     // Completing twice signs at most once.
     assert_eq!(h.auth.process(&mut h.platform, &req, &mut h.out), Outcome::NeedsUserPresence);
-    let n = h.auth.complete(&mut h.platform, UpResult::Confirmed, &mut h.out);
+    let n = h.auth.complete(&mut h.platform, PresenceResult::Confirmed, &mut h.out);
     assert!(n > 1);
-    let n = h.auth.complete(&mut h.platform, UpResult::Confirmed, &mut h.out);
+    let n = h.auth.complete(&mut h.platform, PresenceResult::Confirmed, &mut h.out);
     assert_eq!((n, h.out[0]), (1, Status::Other.code()));
 }
 
@@ -243,7 +243,7 @@ fn reset_window_and_effect() {
     h.platform.uptime = 10_001;
     assert_eq!(h.status(&[RESET]), Status::NotAllowed.code());
     h.platform.uptime = 9_000;
-    assert_eq!(h.run(&[RESET], UpResult::Timeout).0, Status::UserActionTimeout.code());
+    assert_eq!(h.run(&[RESET], PresenceResult::Timeout).0, Status::UserActionTimeout.code());
     let counter = h.platform.counter;
     assert_eq!(h.status(&[RESET]), 0);
     assert_eq!(h.platform.counter, counter, "reset never rewinds the counter");
@@ -310,7 +310,7 @@ fn fault_and_abort_accessors() {
     assert_eq!(h.auth.process(&mut h.platform, &req, &mut h.out), Outcome::NeedsUserPresence);
     h.auth.abort();
     assert_eq!(h.auth.pending(), &Pending::Idle);
-    let n = h.auth.complete(&mut h.platform, UpResult::Confirmed, &mut h.out);
+    let n = h.auth.complete(&mut h.platform, PresenceResult::Confirmed, &mut h.out);
     assert_eq!((n, h.out[0]), (1, 0x7F), "aborted command must not complete");
     h.auth.fault();
     assert!(h.auth.is_faulted());
@@ -319,7 +319,7 @@ fn fault_and_abort_accessors() {
 #[test]
 fn complete_with_nothing_pending_is_other_whatever_the_presence_result() {
     let mut h = Harness::new();
-    for up in [UpResult::Confirmed, UpResult::Timeout, UpResult::Cancelled] {
+    for up in [PresenceResult::Confirmed, PresenceResult::Timeout, PresenceResult::Cancelled] {
         let n = h.auth.complete(&mut h.platform, up, &mut h.out);
         assert_eq!((n, h.out[0]), (1, 0x7F), "{up:?}");
     }
