@@ -17,40 +17,41 @@ so agreement with Rust on many inputs ties the proofs to the shipped decoder.
 open Jotakey.Cbor
 -- Syntax: `open` lets us write `validate` instead of `Jotakey.Cbor.validate` (Rust's `use`).
 
-def hexDigit (c : Char) : Option Nat :=
-  if '0' ≤ c ∧ c ≤ '9' then some (c.toNat - '0'.toNat)
-  else if 'a' ≤ c ∧ c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
-  else if 'A' ≤ c ∧ c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+def hexDigit (digit : Char) : Option Nat :=
+  if '0' ≤ digit ∧ digit ≤ '9' then some (digit.toNat - '0'.toNat)
+  else if 'a' ≤ digit ∧ digit ≤ 'f' then some (digit.toNat - 'a'.toNat + 10)
+  else if 'A' ≤ digit ∧ digit ≤ 'F' then some (digit.toNat - 'A'.toNat + 10)
   else none
 
 def parseHex : List Char → Option (List Nat)
   | [] => some []
   -- Syntax: `do` notation in `Option`: each `let x ← e` unwraps `e`, or returns `none` from
   -- the whole block if `e` is `none` (Rust's `let x = e?;`). `pure v` is `some v`.
-  | a :: b :: rest => do
-    let hi ← hexDigit a
-    let lo ← hexDigit b
-    let tl ← parseHex rest
-    pure ((hi * 16 + lo) :: tl)
+  | highDigit :: lowDigit :: rest => do
+    let high ← hexDigit highDigit
+    let low ← hexDigit lowDigit
+    let restBytes ← parseHex rest
+    pure ((high * 16 + low) :: restBytes)
   | [_] => none
 
 def answer (line : String) : String :=
   -- Syntax: list patterns such as `["validate", hex]` match a list of exactly two strings, the
-  -- first being "validate". `s!"ok {n}"` is string interpolation (Rust's `format!`).
+  -- first being "validate". `s!"ok {consumed}"` is string interpolation (Rust's `format!`).
   match line.trimAscii.toString.splitOn " " with
   | ["validate", hex] =>
     match parseHex hex.toList with
     | some bytes => match validate bytes with
-      | some n => s!"ok {n}"
+      | some consumed => s!"ok {consumed}"
       | none => "err"
     | none => "bad"
   | ["validate"] => match validate [] with
-      | some n => s!"ok {n}"
+      | some consumed => s!"ok {consumed}"
       | none => "err"
   | ["head", hex] =>
     match parseHex hex.toList with
     | some bytes => match decodeHead bytes with
-      | some (m, a, r) => s!"ok {m} {a} {bytes.length - r.length}"
+      | some (majorType, argument, rest) =>
+        s!"ok {majorType} {argument} {bytes.length - rest.length}"
       | none => "err"
     | none => "bad"
   | ["head"] => "err"

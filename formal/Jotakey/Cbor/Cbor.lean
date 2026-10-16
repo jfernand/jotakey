@@ -18,42 +18,43 @@ namespace Jotakey.Cbor
 /-! ## The strict validator (`Decoder::skip`) -/
 
 /-- Maximum container nesting (`MAX_DEPTH`). -/
-def maxDepth : Nat := 4
+def maxNestingDepth : Nat := 4
 
-/-- Split off exactly `n` bytes, or fail if fewer remain (`Decoder::read_slice`). -/
-def takeN (n : Nat) (l : List Nat) : Option (List Nat × List Nat) :=
-  if l.length < n then none else some (l.take n, l.drop n)
+/-- Split off exactly `count` bytes, or fail if fewer remain (`Decoder::read_slice`). -/
+def takeExactly (count : Nat) (bytes : List Nat) : Option (List Nat × List Nat) :=
+  if bytes.length < count then none else some (bytes.take count, bytes.drop count)
 
 /-- UTF-8 validity, as Rust's `core::str::from_utf8` checks it. -/
-def validUtf8 (l : List Nat) : Bool :=
+def isValidUtf8 (bytes : List Nat) : Bool :=
   -- Syntax: `⟨x⟩` builds a structure from its fields in order (here a `ByteArray` from an
   -- `Array UInt8`), like `ByteArray { data: x }` in Rust.
-  ByteArray.validateUTF8 ⟨(l.map Nat.toUInt8).toArray⟩
+  ByteArray.validateUTF8 ⟨(bytes.map Nat.toUInt8).toArray⟩
 
-/-- Bytewise lexicographic order. -/
-def lexLt : List Nat → List Nat → Bool
+/-- Bytewise lexicographic order: is the first list strictly before the second? -/
+def lexicographicLess : List Nat → List Nat → Bool
   -- Syntax: `Bool` is a computable true/false, as in Rust, with `||`, `&&` and `==`. It is
   -- distinct from `Prop` (`∧`, `∨`, `=`), the type of statements that theorems prove.
   | [], [] => false
   | [], _ :: _ => true
   | _ :: _, [] => false
-  | a :: as, b :: bs => a < b || (a == b && lexLt as bs)
+  | x :: xs, y :: ys => x < y || (x == y && lexicographicLess xs ys)
 
 /-- CTAP2 canonical key order: shorter encoding first, then bytewise. -/
-def canonicalLt (a b : List Nat) : Bool :=
-  a.length < b.length || (a.length == b.length && lexLt a b)
+def canonicalKeyLess (first second : List Nat) : Bool :=
+  first.length < second.length ||
+    (first.length == second.length && lexicographicLess first second)
 
 /-- A map key: integer fitting in `i64`, or valid text. Returns the rest of the input. -/
-def readKey (l : List Nat) : Option (List Nat) :=
-  match decodeHead l with
-  -- Syntax: patterns nest, as in Rust: `some (0, a, r)` matches only a decoded head whose
-  -- major type is 0, binding the argument to `a` and the remainder to `r`. `_` matches
+def readMapKey (bytes : List Nat) : Option (List Nat) :=
+  match decodeHead bytes with
+  -- Syntax: patterns nest, as in Rust: `some (0, argument, rest)` matches only a decoded
+  -- head whose major type is 0, binding the argument and the remainder. `_` matches
   -- anything left over.
-  | some (0, a, r) => if a < 2 ^ 63 then some r else none
-  | some (1, a, r) => if a < 2 ^ 63 then some r else none
-  | some (3, a, r) =>
-    match takeN a r with
-    | some (t, r') => if validUtf8 t then some r' else none
+  | some (0, argument, rest) => if argument < 2 ^ 63 then some rest else none
+  | some (1, argument, rest) => if argument < 2 ^ 63 then some rest else none
+  | some (3, length, rest) =>
+    match takeExactly length rest with
+    | some (text, afterText) => if isValidUtf8 text then some afterText else none
     | none => none
   | _ => none
 
@@ -62,67 +63,69 @@ def readKey (l : List Nat) : Option (List Nat) :=
 -- terminate. Each `termination_by` gives a *measure*: a value that must get smaller at every
 -- recursive call. Here the measures are pairs, compared lexicographically (first component
 -- first, the second breaking ties):
---   * skipItem (fuel+1) → skipArray/skipMap fuel:  (fuel+1, 0) > (fuel, n+1)  first drops;
---   * skipArray/skipMap fuel (n+1) → skipItem fuel: (fuel, n+1) > (fuel, 0)   second drops;
---   * skipArray/skipMap fuel (n+1) → itself with n: (fuel, n+1) > (fuel, n).
+--   * skipItem (fuel+1) → skipArray/skipMap fuel:   (fuel+1, 0) > (fuel, count+1)  first drops;
+--   * skipArray/skipMap fuel (count+1) → skipItem:   (fuel, count+1) > (fuel, 0)    second drops;
+--   * skipArray/skipMap fuel (count+1) → itself:     (fuel, count+1) > (fuel, count).
 -- So every call chain ends, and Lean checks this before accepting the definitions.
 mutual
 /-- Validate one complete data item at nesting `depth`; return the remaining input.
 `fuel` only bounds nesting (it decreases on entering a container) and is never the
-binding limit when ≥ `maxDepth + 2`. -/
+binding limit when ≥ `maxNestingDepth + 2`. -/
 def skipItem : Nat → Nat → List Nat → Option (List Nat)
   | 0, _, _ => none
-  | fuel + 1, depth, l =>
-    match decodeHead l with
+  | fuel + 1, depth, bytes =>
+    match decodeHead bytes with
     | none => none
-    | some (m, a, r) =>
-      if m == 0 || m == 1 then some r
+    | some (majorType, argument, rest) =>
+      if majorType == 0 || majorType == 1 then some rest
       -- Syntax: `(·.2)` is shorthand for `fun p => p.2`: keep the second half of the pair.
-      else if m == 2 then (takeN a r).map (·.2)
-      else if m == 3 then
-        match takeN a r with
-        | some (t, r') => if validUtf8 t then some r' else none
+      else if majorType == 2 then (takeExactly argument rest).map (·.2)
+      else if majorType == 3 then
+        match takeExactly argument rest with
+        | some (text, afterText) => if isValidUtf8 text then some afterText else none
         | none => none
-      else if m == 4 then
-        if depth + 1 > maxDepth then none else skipArray fuel (depth + 1) a r
-      else if m == 5 then
-        if depth + 1 > maxDepth then none else skipMap fuel (depth + 1) a [] false r
-      else if m == 7 then
-        if a == 20 || a == 21 || a == 22 then some r else none
+      else if majorType == 4 then
+        if depth + 1 > maxNestingDepth then none else skipArray fuel (depth + 1) argument rest
+      else if majorType == 5 then
+        if depth + 1 > maxNestingDepth then none
+        else skipMap fuel (depth + 1) argument [] false rest
+      else if majorType == 7 then
+        if argument == 20 || argument == 21 || argument == 22 then some rest else none
       else none
   termination_by fuel _ _ => (fuel, 0)
   -- `fuel _ _ =>` names the function's three arguments (the first is the whole fuel, i.e.
   -- `fuel + 1` in the second pattern above); `_` ignores the other two.
 
-/-- Validate `n` consecutive items. -/
+/-- Validate `count` consecutive items. -/
 def skipArray : Nat → Nat → Nat → List Nat → Option (List Nat)
-  | _, _, 0, l => some l
-  | fuel, depth, n + 1, l =>
-    match skipItem fuel depth l with
+  | _, _, 0, bytes => some bytes
+  | fuel, depth, count + 1, bytes =>
+    match skipItem fuel depth bytes with
     | none => none
-    | some r => skipArray fuel depth n r
-  termination_by fuel _ n _ => (fuel, n + 1)
+    | some rest => skipArray fuel depth count rest
+  termination_by fuel _ count _ => (fuel, count + 1)
 
-/-- Validate `n` key/value pairs; keys strictly increasing in canonical order. -/
+/-- Validate `count` key/value pairs; keys strictly increasing in canonical order.
+`previousKey` holds the encoded bytes of the last key read, if `hasPreviousKey`. -/
 def skipMap : Nat → Nat → Nat → List Nat → Bool → List Nat → Option (List Nat)
-  | _, _, 0, _, _, l => some l
-  | fuel, depth, n + 1, prev, hasPrev, l =>
-    match readKey l with
+  | _, _, 0, _, _, bytes => some bytes
+  | fuel, depth, count + 1, previousKey, hasPreviousKey, bytes =>
+    match readMapKey bytes with
     | none => none
-    | some r =>
-      let raw := l.take (l.length - r.length)
-      -- `raw` is the key's own encoded bytes: what `readKey` consumed.
-      if hasPrev && !canonicalLt prev raw then none
+    | some afterKey =>
+      let keyBytes := bytes.take (bytes.length - afterKey.length)
+      -- `keyBytes` is the key's own encoding: what `readMapKey` consumed.
+      if hasPreviousKey && !canonicalKeyLess previousKey keyBytes then none
       else
-        match skipItem fuel depth r with
+        match skipItem fuel depth afterKey with
         | none => none
-        | some r' => skipMap fuel depth n raw true r'
-  termination_by fuel _ n _ _ _ => (fuel, n + 1)
+        | some afterValue => skipMap fuel depth count keyBytes true afterValue
+  termination_by fuel _ count _ _ _ => (fuel, count + 1)
 end
 
-/-- `Decoder::new(l).skip(0)`: `some consumed` if the input starts with one valid item. -/
-def validate (l : List Nat) : Option Nat :=
-  (skipItem (maxDepth + 2) 0 l).map fun r => l.length - r.length
+/-- `Decoder::new(bytes).skip(0)`: `some consumed` if the input starts with one valid item. -/
+def validate (bytes : List Nat) : Option Nat :=
+  (skipItem (maxNestingDepth + 2) 0 bytes).map fun rest => bytes.length - rest.length
 
 /-! ### Sanity checks, evaluated at build time (`#guard` fails the build if false) -/
 
