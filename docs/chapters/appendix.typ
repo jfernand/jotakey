@@ -8,6 +8,7 @@
 
 Every invariant of `AGENTS.md` §2, with where it is enforced, tested and proved.
 
+#breakable-code[
 #dtable(
   columns: (0.25fr, 1.3fr, 1.3fr, 1.15fr),
   ("#", "Enforced in", "Tested / fuzzed", "Proved (formal/Jotakey/…)"),
@@ -21,6 +22,7 @@ Every invariant of `AGENTS.md` §2, with where it is enforced, tested and proved
   ([8], [`Zeroizing` secrets; HMAC peripheral; no `Debug` of secrets], [Review; `cargo deny`], [—]),
   ([9], [`subtle::ConstantTimeEq`; RustCrypto `p256`], [Review], [—]),
 )
+]
 
 = Repository map
 

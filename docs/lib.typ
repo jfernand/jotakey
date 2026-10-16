@@ -110,3 +110,12 @@
 #let keypoint(body) = block(width: 100%, inset: (left: 10pt, y: 4pt), stroke: (left: 2.5pt + brand-primary), above: 12pt, below: 12pt)[
   #text(font: font-display, stretch: 75%, weight: 700, size: 13pt)[#upper(body)]
 ]
+
+// Inside `body`, inline code is set as plain monospace text that may break after `_` or `.`.
+// For tables full of long Rust and Lean identifiers, which would otherwise overflow their
+// columns as unbreakable code boxes.
+#let breakable-code(body) = {
+  show raw.where(block: false): it => text(font: font-mono, size: 7.4pt, fill: c-ink,
+    it.text.replace("_", "_\u{200B}").replace(".", ".\u{200B}"))
+  body
+}
