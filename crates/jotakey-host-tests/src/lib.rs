@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use jotakey_core::ctap::{Authenticator, Outcome};
 use jotakey_core::mock::MockPlatform;
-use jotakey_core::platform::UpResult;
+use jotakey_core::platform::PresenceResult;
 use jotakey_core::transport::ctaphid::{CtapHid, HidEvent, PACKET_SIZE, Packet, keepalive};
 use jotakey_core::transport::serial::{Deframer, encode};
 use jotakey_core::{AAGUID, MAX_MSG_SIZE};
@@ -241,11 +241,11 @@ impl SimDevice {
     fn step_presence(&mut self) {
         let Some((cid, ticks)) = self.waiting else { return };
         let up = if std::mem::take(&mut self.cancelled) {
-            Some(UpResult::Cancelled)
+            Some(PresenceResult::Cancelled)
         } else {
             match self.user {
-                User::TouchAfter(n) if ticks >= n => Some(UpResult::Confirmed),
-                User::Absent if ticks >= 5 => Some(UpResult::Timeout),
+                User::TouchAfter(n) if ticks >= n => Some(PresenceResult::Confirmed),
+                User::Absent if ticks >= 5 => Some(PresenceResult::Timeout),
                 _ => None,
             }
         };

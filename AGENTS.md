@@ -32,7 +32,7 @@ Each invariant is enforced in code, tested, and (where marked ⊢) proved in the
    consumed *within the same command*. A UP timeout yields `CTAP2_ERR_USER_ACTION_TIMEOUT`.
    Deliberate deviation: getAssertion with `up: false` (silent assertion) is refused with
    `CTAP2_ERR_UNSUPPORTED_OPTION`. In the core, signing happens only in
-   `Authenticator::complete` under `UpResult::Confirmed`.
+   `Authenticator::complete` under `PresenceResult::Confirmed`.
 2. ⊢ **Monotonic counter:** the signature counter strictly increases across power loss.
    Persist `N+1` *before* releasing a signature that carries `N+1`.
 3. ⊢ **RP binding:** a credential ID unwraps only for the `rpIdHash` it was minted for. Tag
@@ -68,7 +68,7 @@ Each invariant is enforced in code, tested, and (where marked ⊢) proved in the
 - **Two USB ports, two roles:** "USB" (USB-Serial/JTAG) carries *only* framed CTAPHID
   reports (`transport/serial.rs`: COBS + CRC-32, `0x00`-delimited). Logs and panics go to the
   "UART" port. Never print on the USB-Serial/JTAG port in the firmware.
-- **Core is a resumable state machine:** `process` → `NeedsUserPresence` → `complete(UpResult)`.
+- **Core is a resumable state machine:** `process` → `NeedsUserPresence` → `complete(PresenceResult)`.
   Signing code is reachable only from `complete` with `Confirmed`. Do not add other paths.
 - **User presence:** the button must be seen released after the request, then pressed for
   ≥ 40 ms; 30 s timeout; keepalive `UP_NEEDED` every ≤ 100 ms.

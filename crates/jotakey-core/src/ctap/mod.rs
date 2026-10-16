@@ -3,10 +3,10 @@
 //! [`Authenticator::process`] parses and validates a request. Commands that need the user's
 //! touch return [`Outcome::NeedsUserPresence`] and park their validated parameters in
 //! [`Pending`]. The caller waits for the button, sending keepalives meanwhile, and then calls
-//! [`Authenticator::complete`] with the [`UpResult`].
+//! [`Authenticator::complete`] with the [`PresenceResult`].
 //!
 //! **Invariant 1** is structural: the only code paths that call [`crate::crypto::sign`] are
-//! inside `complete`, and only under `UpResult::Confirmed`. `formal/Jotakey/Authenticator.lean`
+//! inside `complete`, and only under `PresenceResult::Confirmed`. `formal/Jotakey/Authenticator.lean`
 //! models this state machine and proves the property over all command traces.
 
 mod get_assertion;
@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 use crate::MAX_MSG_SIZE;
 use crate::cbor::{CborError, Encoder};
 use crate::credential::{CRED_ID_LEN, NONCE_LEN};
-use crate::platform::{Platform, SecretLabel, UpResult};
+use crate::platform::{Platform, SecretLabel, PresenceResult};
 use crate::status::Status;
 
 /// CTAP2 command bytes.
@@ -158,15 +158,15 @@ impl Authenticator {
 
     /// Finish the pending command with the result of the presence check. Returns the
     /// response length. With nothing pending this answers `CTAP1_ERR_OTHER`.
-    pub fn complete<P: Platform>(&mut self, platform: &mut P, up: UpResult, out: &mut Response) -> usize {
+    pub fn complete<P: Platform>(&mut self, platform: &mut P, presence: PresenceResult, out: &mut Response) -> usize {
         let pending = core::mem::replace(&mut self.pending, Pending::Idle);
         if self.faulted || pending == Pending::Idle {
             return write_status(out, Status::Other);
         }
-        match up {
-            UpResult::Timeout => return write_status(out, Status::UserActionTimeout),
-            UpResult::Cancelled => return write_status(out, Status::KeepaliveCancel),
-            UpResult::Confirmed => {}
+        match presence {
+            PresenceResult::Timeout => return write_status(out, Status::UserActionTimeout),
+            PresenceResult::Cancelled => return write_status(out, Status::KeepaliveCancel),
+            PresenceResult::Confirmed => {}
         }
         let result = match pending {
             Pending::Idle => Err(Status::Other),

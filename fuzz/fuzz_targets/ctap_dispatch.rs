@@ -8,7 +8,7 @@
 //! Oracles:
 //! - no panic; response length is 1..=MAX_MSG_SIZE;
 //! - the counter moves only on a successful makeCredential/getAssertion completed with
-//!   `UpResult::Confirmed` (invariants 1 and 2), and then by exactly one;
+//!   `PresenceResult::Confirmed` (invariants 1 and 2), and then by exactly one;
 //! - every successful response body is canonical CBOR (strict decoder accepts it);
 //! - nothing stays parked once a response has been produced.
 
@@ -17,7 +17,7 @@
 use jotakey_core::cbor::{Decoder, Encoder};
 use jotakey_core::ctap::{Authenticator, Outcome, command};
 use jotakey_core::mock::MockPlatform;
-use jotakey_core::platform::UpResult;
+use jotakey_core::platform::PresenceResult;
 use jotakey_core::{AAGUID, MAX_MSG_SIZE};
 use libfuzzer_sys::fuzz_target;
 use std::sync::OnceLock;
@@ -83,7 +83,7 @@ fn setup() -> (MockPlatform, Vec<u8>) {
     let mut out = Box::new([0u8; MAX_MSG_SIZE]);
     let mc = template(false, &[0u8; 49]);
     let _ = auth.process(&mut platform, &mc, &mut out);
-    let n = auth.complete(&mut platform, UpResult::Confirmed, &mut out);
+    let n = auth.complete(&mut platform, PresenceResult::Confirmed, &mut out);
     assert_eq!(out[0], 0, "template registration must succeed");
     // authData is map key 2: 0x02, then a byte-string head 0x58 <len>.
     let body = &out[1..n];
@@ -95,9 +95,9 @@ fn setup() -> (MockPlatform, Vec<u8>) {
 fuzz_target!(|data: &[u8]| {
     let [mode, up, rest @ ..] = data else { return };
     let up = match up % 3 {
-        0 => UpResult::Confirmed,
-        1 => UpResult::Timeout,
-        _ => UpResult::Cancelled,
+        0 => PresenceResult::Confirmed,
+        1 => PresenceResult::Timeout,
+        _ => PresenceResult::Cancelled,
     };
     // A genuine credential (computed once) so mutated getAssertions reach the success path.
     let (base_platform, cred_id) = BASE.get_or_init(setup);
@@ -129,7 +129,7 @@ fuzz_target!(|data: &[u8]| {
     let cmd = request.first().copied();
     let signing_cmd = matches!(cmd, Some(command::MAKE_CREDENTIAL | command::GET_ASSERTION));
     if status == 0 && signing_cmd {
-        assert_eq!(up, UpResult::Confirmed, "signature without user presence");
+        assert_eq!(up, PresenceResult::Confirmed, "signature without user presence");
         assert_eq!(platform.counter, before + 1, "counter must move by exactly one");
     } else {
         assert_eq!(platform.counter, before, "counter moved without a signature");

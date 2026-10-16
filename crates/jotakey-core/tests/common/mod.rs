@@ -6,7 +6,7 @@
 
 use jotakey_core::ctap::{Authenticator, Outcome, Response};
 use jotakey_core::mock::MockPlatform;
-use jotakey_core::platform::UpResult;
+use jotakey_core::platform::PresenceResult;
 use jotakey_core::{AAGUID, MAX_MSG_SIZE};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -210,7 +210,7 @@ impl Harness {
     }
 
     /// Process a request; if presence is needed, answer with `up`. Returns (status, body).
-    pub fn run(&mut self, req: &[u8], up: UpResult) -> (u8, Vec<u8>) {
+    pub fn run(&mut self, req: &[u8], up: PresenceResult) -> (u8, Vec<u8>) {
         let n = match self.auth.process(&mut self.platform, req, &mut self.out) {
             Outcome::Response(n) => n,
             Outcome::NeedsUserPresence => self.auth.complete(&mut self.platform, up, &mut self.out),
@@ -219,6 +219,6 @@ impl Harness {
     }
 
     pub fn status(&mut self, req: &[u8]) -> u8 {
-        self.run(req, UpResult::Confirmed).0
+        self.run(req, PresenceResult::Confirmed).0
     }
 }

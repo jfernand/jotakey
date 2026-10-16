@@ -8,7 +8,7 @@
 
 use jotakey_core::ctap::{Authenticator, Outcome};
 use jotakey_core::mock::MockPlatform;
-use jotakey_core::platform::UpResult;
+use jotakey_core::platform::PresenceResult;
 use jotakey_core::transport::ctaphid::{BROADCAST_CID, CtapHid, HidEvent, PACKET_SIZE, ReceiveState};
 use jotakey_core::{AAGUID, MAX_MSG_SIZE};
 use libfuzzer_sys::fuzz_target;
@@ -43,7 +43,7 @@ fuzz_target!(|data: &[u8]| {
                 let n = match auth.process(&mut platform, &req, &mut out) {
                     Outcome::Response(n) => n,
                     Outcome::NeedsUserPresence => {
-                        let up = if flags & 0x80 != 0 { UpResult::Timeout } else { UpResult::Confirmed };
+                        let up = if flags & 0x80 != 0 { PresenceResult::Timeout } else { PresenceResult::Confirmed };
                         auth.complete(&mut platform, up, &mut out)
                     }
                 };
