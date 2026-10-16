@@ -1,0 +1,15 @@
+{
+  "design_rules": [],
+  "fab_constraints": {
+    "board_thickness_mm": 2,
+    "fab_house": "JLCPCB",
+    "gold_fingers": true,
+    "layer_count": 2,
+    "min_clearance_mm": 0.15,
+    "min_trace_width_mm": 0.15,
+    "min_via_drill_mm": 0.3,
+    "surface_finish": "ENIG"
+  },
+  "naming_conventions": {},
+  "sourcing": {}
+}
