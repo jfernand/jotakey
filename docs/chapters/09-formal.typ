@@ -5,7 +5,8 @@
 
 This chapter assumes no background in formal methods. It explains what formal
 verification is, surveys the techniques, teaches enough Lean 4 to read Jotakey's proofs,
-walks through those proofs, and is explicit about what they do *not* guarantee.
+walks through the main ones, and is explicit about what they do *not* guarantee. Chapter
+10 then goes through every theorem in detail.
 
 == What a proof buys you
 

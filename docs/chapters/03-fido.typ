@@ -64,7 +64,7 @@ credentials: the website must name the credential (send its ID) at login. This i
 security keys work as a second factor, and how many enterprise deployments use them.
 *Discoverable* credentials, where the device stores the user handle so the website does
 not need to send an ID ("username-less" passkeys), are the first item on the roadmap
-(§10). Their implementation is laid out step by step there.
+(§11). Their implementation is laid out step by step there.
 
 == The three parties
 

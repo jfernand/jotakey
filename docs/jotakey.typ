@@ -42,5 +42,6 @@
 #include "chapters/07-hardware.typ"
 #include "chapters/08-testing.typ"
 #include "chapters/09-formal.typ"
-#include "chapters/10-roadmap.typ"
+#include "chapters/10-proofs.typ"
+#include "chapters/11-roadmap.typ"
 #include "chapters/appendix.typ"

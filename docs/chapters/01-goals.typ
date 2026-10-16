@@ -68,7 +68,7 @@ We assume a strong attacker and list exactly what the device does and does not r
   ([Thief, casual], [Holds the device for minutes, no lab.],
     [*Partially defeated.* No PIN in the MVP: the thief can log in where the user only needs
      a security key. Accounts that also require a password stay safe. (Adding a PIN is in the
-     roadmap, §10.)]),
+     roadmap, §11.)]),
   ([Thief, laboratory], [Decapsulation, voltage/EM fault injection, power analysis.],
     [*Not defeated.* Published attacks bypass secure boot and flash encryption on this chip
      family (§7.4). A secure element is the documented mitigation.]),
