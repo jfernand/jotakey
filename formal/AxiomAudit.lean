@@ -4,6 +4,8 @@ import Jotakey
 `Lean.ofReduceBool` (native_decide) or on any axiom beyond Lean's standard three
 (`propext`, `Quot.sound`, `Classical.choice`). -/
 open Jotakey
+-- Syntax: `#print axioms t` lists every axiom the proof of `t` depends on, directly or through
+-- the lemmas it uses. `scripts/axiom-audit.sh` runs this file and checks the output.
 #print axioms Cbor.decodeHead_encodeHead
 #print axioms Cbor.encodeHead_of_decodeHead
 #print axioms Cbor.decodeHead_shrinks
