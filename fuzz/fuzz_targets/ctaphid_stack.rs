@@ -9,7 +9,7 @@
 use jotakey_core::ctap::{Authenticator, Outcome};
 use jotakey_core::mock::MockPlatform;
 use jotakey_core::platform::UpResult;
-use jotakey_core::transport::ctaphid::{BROADCAST_CID, CtapHid, HidEvent, PACKET_SIZE, Rx};
+use jotakey_core::transport::ctaphid::{BROADCAST_CID, CtapHid, HidEvent, PACKET_SIZE, ReceiveState};
 use jotakey_core::{AAGUID, MAX_MSG_SIZE};
 use libfuzzer_sys::fuzz_target;
 
@@ -37,7 +37,7 @@ fuzz_target!(|data: &[u8]| {
         }
 
         match hid.handle_packet(&p, now) {
-            HidEvent::Request { cid } => {
+            HidEvent::Request { channel: cid } => {
                 let req = hid.request().to_vec();
                 assert!(!req.is_empty() && req.len() <= MAX_MSG_SIZE);
                 let n = match auth.process(&mut platform, &req, &mut out) {
@@ -52,10 +52,10 @@ fuzz_target!(|data: &[u8]| {
             HidEvent::Abort { .. } | HidEvent::Cancel { .. } => auth.abort(),
             HidEvent::Wink | HidEvent::None => {}
         }
-        match hid.rx_state() {
-            Rx::Receiving { got, total, .. } => assert!(got <= total && total <= MAX_MSG_SIZE),
-            Rx::Busy { .. } => panic!("request left unanswered"),
-            Rx::Idle => {}
+        match hid.receive_state() {
+            ReceiveState::Receiving { received, total, .. } => assert!(received <= total && total <= MAX_MSG_SIZE),
+            ReceiveState::Busy { .. } => panic!("request left unanswered"),
+            ReceiveState::Idle => {}
         }
         let mut guard = 0;
         while hid.next_packet().is_some() {

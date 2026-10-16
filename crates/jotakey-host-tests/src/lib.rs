@@ -270,11 +270,11 @@ impl ReportIo for SimDevice {
         for &b in &frame[..n] {
             let Some(pkt) = self.wire_in.push(b) else { continue };
             match self.hid.handle_packet(&pkt, 0) {
-                HidEvent::Request { cid } => {
+                HidEvent::Request { channel } => {
                     let req = self.hid.request().to_vec();
                     match self.auth.process(&mut self.platform, &req, &mut self.out) {
-                        Outcome::Response(n) => self.hid.respond(cid, &self.out[..n]),
-                        Outcome::NeedsUserPresence => self.waiting = Some((cid, 0)),
+                        Outcome::Response(n) => self.hid.respond(channel, &self.out[..n]),
+                        Outcome::NeedsUserPresence => self.waiting = Some((channel, 0)),
                     }
                 }
                 HidEvent::Cancel { .. } => self.cancelled = true,

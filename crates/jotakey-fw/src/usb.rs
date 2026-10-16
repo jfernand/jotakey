@@ -24,7 +24,7 @@ pub async fn usb_task(usb: UsbSerialJtag<'static, Async>) {
     let (mut rx, mut tx) = usb.split();
     let hid = HID.init(CtapHid::new());
     let mut deframer = Deframer::new();
-    let mut busy_cid: Option<u32> = None;
+    let mut busy_channel: Option<u32> = None;
     let mut buf = [0u8; 64];
 
     loop {
@@ -34,14 +34,14 @@ pub async fn usb_task(usb: UsbSerialJtag<'static, Async>) {
                 for &b in buf.get(..n).unwrap_or(&[]) {
                     let Some(pkt) = deframer.push(b) else { continue };
                     match hid.handle_packet(&pkt, now) {
-                        HidEvent::Request { cid } => {
+                        HidEvent::Request { channel } => {
                             let mut data = Vec::new();
                             let _ = data.extend_from_slice(hid.request());
                             if REQUESTS.try_send(Request { transport: Transport::Usb, data }).is_ok() {
-                                busy_cid = Some(cid);
+                                busy_channel = Some(channel);
                             } else {
                                 // The authenticator is serving BLE right now.
-                                hid.respond(cid, &[Status::ChannelBusy.code()]);
+                                hid.respond(channel, &[Status::ChannelBusy.code()]);
                             }
                         }
                         HidEvent::Cancel { .. } | HidEvent::Abort { .. } => CANCEL.signal(Transport::Usb),
@@ -52,8 +52,8 @@ pub async fn usb_task(usb: UsbSerialJtag<'static, Async>) {
             }
             Either4::First(Err(_)) => {}
             Either4::Second(reply) => {
-                if let Some(cid) = busy_cid.take() {
-                    hid.respond(cid, &reply);
+                if let Some(channel) = busy_channel.take() {
+                    hid.respond(channel, &reply);
                 }
             }
             Either4::Third(status) => hid.keepalive(status),
