@@ -190,6 +190,7 @@ just host-tests    # end-to-end against a real device through the bridge (touch 
 just deny          # cargo deny (licences, advisories); firmware: cd crates/jotakey-fw && cargo deny check
 just bridge        # run the uhid bridge (Linux; needs /dev/uhid access)
 just doc           # typst compile docs/jotakey.typ
+just doc-print     # the same, for paper: plain white pages (docs/jotakey-print.pdf)
 ```
 
 The `fw`, `flash`, `testfw`, `host-tests` and `bridge` recipes target the ESP32-C6.

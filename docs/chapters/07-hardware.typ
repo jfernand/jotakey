@@ -5,7 +5,8 @@
 
 Software can be proved correct. Silicon can be attacked. This chapter describes what the
 ESP32-C6 offers, how Jotakey uses it, and where it falls short (§7.1–7.4). It then describes
-the jotakey key, which adds the secure element the C6 lacks (§7.5).
+the jotakey key, which adds the secure element the C6 lacks (§7.5), and how its board is
+designed (§7.6).
 
 == What the chip provides
 
@@ -141,3 +142,75 @@ The threat model (§1.3) records the result as *partially defeated*.
 The OPTIGA Trust M V3 adds HMAC, HKDF and AES. It was out of stock when the board's parts
 were chosen, so the key uses the V1, whose TLS PRF does the same job here. The two share a
 package and pinout, so a later board can switch; `F` would then become HMAC, as on the C6.
+
+== The jotakey key board
+
+The jotakey key is a two-layer board whose own edge is the USB plug. Hardware 0.1.0 (git tag
+`hw-v0.1.0`) is described here; `hardware/HARDWARE.md` records the part choices against
+their datasheets, and `hardware/MANUFACTURING.md` the order.
+
+#board-views(
+  caption: [The jotakey key, hardware 0.1.0, rendered from the KiCad design: 47 × 18 mm, 2.0 mm thick, black solder mask. The back is drawn as seen from below.],
+  ("figures/jotakey-key-front.png", [Front]),
+  ("figures/jotakey-key-back.png", [Back]),
+)
+
+=== Outline and parts
+
+The narrow end is a USB-A plug: a 12 mm tongue carrying four gold contacts laid out as in
+the USB 2.0 Series "A" plug drawing, with VBUS and GND longer than the data contacts so
+they mate first. The board is 2.0 mm thick, so the tongue sits firmly in a receptacle, and
+the contacts' edge is bevelled. The 18 mm body ends in a semicircle whose centre is the
+centre of the touch electrode.
+
+#dtable(
+  columns: (0.55fr, 1.35fr, 2.1fr),
+  ("Ref", "Part", "Role"),
+  ([U1], [STM32L432KCU6, QFN-32], [The microcontroller: USB full speed without a crystal (its clock is trimmed against the host's USB frames), the touch-sensing controller, I²C to the secure element, ECDSA signing.]),
+  ([U2], [OPTIGA Trust M V1, USON-10], [The secure element: the root secret, per-credential derivation and the signature counter (§7.5).]),
+  ([U3], [XC6206 3.3 V LDO, SOT-23], [Power from the USB 5 V.]),
+  ([U4], [USBLC6-2SC6, SOT-23-6], [ESD protection on D+, D− and VBUS, next to the contacts.]),
+  ([E1], [10 mm copper disc], [The touch electrode, user presence (invariant 1). The bolt logo is cut out of the copper.]),
+  ([D1], [Red LED, 0603], [The only display: touch requested, OK, fault.]),
+  ([TP1–5], [Test pads, bottom], [SWD (DIO, CLK, RST, 3V3, GND) for a pogo-pin jig.]),
+)
+
+=== Layout decisions
+
+- *The tongue carries contacts and nothing else.* No vias and no copper on its back: it slides
+  against the receptacle's metal shell.
+- *One crossing for USB.* The plug has D− on the left; the microcontroller's pins put D− on
+  the right. The two lines cross once, between the ESD chip and the microcontroller, where D+
+  drops to the back for a few millimetres. The ESD chip sits on the board's axis, and its
+  two identical channels are assigned so the crossing stays off the tongue.
+- *The touch electrode follows ST's AN4312.* Nothing on the top layer comes within 4 mm of
+  it except its own trace (the note asks for at least 2 mm, 4–5 mm recommended), which
+  arrives at 45°. Behind it, the back carries a ground hatch of 10 % copper instead of a
+  solid plane, trading a little noise immunity for sensitivity. Keeping that gap is why the
+  board is 47 mm long and not 45.5.
+- *The secure element sits in the corner* next to the microcontroller's I²C pins, rotated so
+  its clock, reset and supply pins face the microcontroller.
+- *Ground pours on both layers,* tied together under each chip's exposed pad.
+
+=== Silkscreen
+
+The mask is black, which hides the contrast between copper and bare board. So the bolt cut
+out of the electrode's copper is also printed in white, exactly over the cut-out. The front
+names the chips by function (MCU, OPTIGA, LDO, ESD); the reference designators live on the
+assembly drawing instead, because next to 0402 parts on a board this size they cannot avoid
+covering pads. The back carries the hardware version, the SWD pad names, and the two places
+where JLCPCB prints its marks: `JLCJLCJLCJLC` for the order number and a solid block for
+each board's serial number.
+
+=== How the board is made
+
+The layout is reproducible from scripts in `hardware/jotakey-key/tools/`, each run with
+KiCad's own Python or command line. `layout.py` draws the outline and places every part;
+`route.py` lays down the keep-outs and the hand-routed nets (USB, power, the touch trace,
+the parts under the microcontroller), lets the Freerouting autorouter connect the rest, and
+pours the ground; `silk.py` adds the silkscreen; `fab.py` refuses to build unless the
+schematic and board checks pass, then writes the Gerber, BOM and placement files for
+JLCPCB; `render.py` draws the figures above. The hardware version is set in one place, the
+KiCad project variable `HW_VERSION`, which the title blocks and the back of the board
+display.
+

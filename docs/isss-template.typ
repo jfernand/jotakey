@@ -30,9 +30,13 @@
 #let c-green      = rgb("#1A7A3C")
 #let c-blue       = rgb("#0A4A7A")
 
+// Print mode (`typst compile --input print=true`): plain white pages and a cover without
+// the black band, for paper. Everything else is unchanged.
+#let print-mode = sys.inputs.at("print", default: "false") == "true"
+
 // ─── SEMANTIC (light / print surface) ──────────────────────
 #let bg-base         = c-white
-#let bg-raised       = c-paper
+#let bg-raised       = if print-mode { rgb("#FFFFFF") } else { c-paper }
 #let bg-sunken       = rgb("#E8E3D8")
 #let fg-primary      = c-black
 #let fg-secondary    = c-steel-600
@@ -300,18 +304,21 @@
   // ── TITLE PAGE ──
   // `pad` with negative offsets (rather than `place`) so the band stays in
   // the layout flow and the abstract below it cannot be overlapped.
+  let cover-fill = if print-mode { none } else { c-black }
+  let cover-ink = if print-mode { c-black } else { c-paper }
+  let cover-sub = if print-mode { c-steel-600 } else { c-steel-300 }
   pad(x: -PAGE-MARGIN, top: -22mm, bottom: 12mm, block(
-    width: 210mm, fill: c-black, inset: (x: PAGE-MARGIN, top: 26mm, bottom: 18mm),
+    width: 210mm, fill: cover-fill, inset: (x: PAGE-MARGIN, top: 26mm, bottom: 18mm),
   )[
-    #label(fill: brand-primary, size: 7pt)[Industrial Strength Software Services]
+    #label(fill: if print-mode { brand-deep } else { brand-primary }, size: 7pt)[Industrial Strength Software Services]
     #v(2pt)
     #label-sm(fill: c-steel-500)[Technical Report · #docid]
     #v(16pt)
-    #display(size: 43pt, fill: c-paper)[#title]
+    #display(size: 43pt, fill: cover-ink)[#title]
     #v(7pt)
     #line(length: 46%, stroke: 3pt + brand-primary)
     #v(11pt)
-    #text(font: font-display, stretch: 75%, weight: 600, size: 16pt, fill: c-steel-300)[
+    #text(font: font-display, stretch: 75%, weight: 600, size: 16pt, fill: cover-sub)[
       #upper(subtitle)
     ]
     #v(20pt)
@@ -319,11 +326,11 @@
       columns: (1fr, 1fr, 1fr),
       column-gutter: 10pt,
       [#label-sm(fill: c-steel-500)[Author] \ #v(2pt)
-       #text(size: 9pt, fill: c-paper, weight: 500)[#author]],
+       #text(size: 9pt, fill: cover-ink, weight: 500)[#author]],
       [#label-sm(fill: c-steel-500)[Contact] \ #v(2pt)
-       #text(font: font-mono, size: 8pt, fill: c-paper)[#contact]],
+       #text(font: font-mono, size: 8pt, fill: cover-ink)[#contact]],
       [#label-sm(fill: c-steel-500)[Issued] \ #v(2pt)
-       #text(font: font-mono, size: 8pt, fill: c-paper)[#date]],
+       #text(font: font-mono, size: 8pt, fill: cover-ink)[#date]],
     )
   ])
 
