@@ -118,11 +118,11 @@ mod tests {
             nb::block!(hmac.finalize(&mut out)).ok()?;
             Some(out)
         };
-        let Some(a1) = run(b"jotakey/mac/v1") else {
+        let Some(a1) = run(b"jotakey/tag/v1") else {
             defmt::warn!("SKIPPED: eFuse KEY0 is not provisioned with purpose HMAC_UP (see scripts/provision.sh)");
             return;
         };
-        let a2 = run(b"jotakey/mac/v1").unwrap();
+        let a2 = run(b"jotakey/tag/v1").unwrap();
         let b = run(b"jotakey/seed/v1").unwrap();
         assert_eq!(a1, a2, "HMAC must be deterministic");
         assert_ne!(a1, b, "labels must separate keys");

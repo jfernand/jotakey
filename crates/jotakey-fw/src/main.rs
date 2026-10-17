@@ -119,7 +119,7 @@ async fn main(spawner: Spawner) {
     }
     // The root key must work (unprovisioned eFuse → HMAC peripheral refuses).
     let mut probe = zeroize::Zeroizing::new([0u8; 32]);
-    if platform.derive_secret(jotakey_core::platform::SecretLabel::CredentialMac, &mut probe).is_err() {
+    if platform.derive_secret(jotakey_core::platform::SecretLabel::CredentialTag, &[], &mut probe).is_err() {
         log::error!("root key unavailable: provision the eFuse HMAC key (scripts/provision.sh)");
         fault_forever(&mut auth, out).await
     }
@@ -233,6 +233,7 @@ impl Platform for NoPlatform {
     fn derive_secret(
         &mut self,
         _: jotakey_core::platform::SecretLabel,
+        _: &[u8],
         _: &mut [u8; 32],
     ) -> Result<(), jotakey_core::platform::PlatformError> {
         Err(jotakey_core::platform::PlatformError)

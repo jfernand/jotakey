@@ -4,7 +4,7 @@
 
 #![no_main]
 
-use jotakey_core::credential::{unwrap, wrap};
+use jotakey_core::credential::{HmacTagger, unwrap, wrap};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -15,13 +15,14 @@ fuzz_target!(|data: &[u8]| {
     let (rp, id) = rest.split_at(32);
     let key: [u8; 32] = key.try_into().unwrap();
     let rp: [u8; 32] = rp.try_into().unwrap();
-    if let Some(nonce) = unwrap(&key, &rp, id) {
-        assert_eq!(&wrap(&key, &rp, &nonce).unwrap()[..], id);
+    let mut tagger = HmacTagger(key);
+    if let Some(nonce) = unwrap(&mut tagger, &rp, id).unwrap() {
+        assert_eq!(&wrap(&mut tagger, &rp, &nonce).unwrap()[..], id);
     }
     // Round trip with the fuzzer-chosen nonce as well.
     if id.len() >= 32 {
         let nonce: [u8; 32] = id[..32].try_into().unwrap();
-        let minted = wrap(&key, &rp, &nonce).unwrap();
-        assert_eq!(unwrap(&key, &rp, &minted), Some(nonce));
+        let minted = wrap(&mut tagger, &rp, &nonce).unwrap();
+        assert_eq!(unwrap(&mut tagger, &rp, &minted), Ok(Some(nonce)));
     }
 });

@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 
 use crate::MAX_MSG_SIZE;
 use crate::cbor::{CborError, Encoder};
-use crate::credential::{CRED_ID_LEN, NONCE_LEN};
+use crate::credential::{self, CRED_ID_LEN, NONCE_LEN};
 use crate::platform::{Platform, SecretLabel, PresenceResult};
 use crate::status::Status;
 
@@ -208,10 +208,29 @@ pub(crate) fn write_success(
     e.len().checked_add(1).ok_or(Status::Other)
 }
 
-/// Derive a root secret for this operation; zeroized when dropped.
-pub(crate) fn derive<P: Platform>(platform: &mut P, label: SecretLabel) -> Result<Zeroizing<[u8; 32]>, Status> {
+/// Credential tags from the platform's hardware key store (`AGENTS.md` §3).
+pub(crate) struct PlatformTagger<'p, P: Platform>(pub(crate) &'p mut P);
+
+impl<P: Platform> credential::Tagger for PlatformTagger<'_, P> {
+    fn mac(&mut self, input: &[u8; credential::TAG_INPUT_LEN]) -> Result<[u8; 32], credential::TagError> {
+        let mut t = [0u8; 32];
+        self.0.derive_secret(SecretLabel::CredentialTag, input, &mut t).map_err(|_| credential::TagError)?;
+        Ok(t)
+    }
+}
+
+/// The private-key seed of the credential with `nonce` at `rp_id_hash`; zeroized when dropped.
+pub(crate) fn credential_seed<P: Platform>(
+    platform: &mut P,
+    rp_id_hash: &[u8; 32],
+    nonce: &[u8; credential::NONCE_LEN],
+) -> Result<Zeroizing<[u8; 32]>, Status> {
+    let mut context = [0u8; 32 + credential::NONCE_LEN];
+    let (rp, n) = context.split_at_mut(32);
+    rp.copy_from_slice(rp_id_hash);
+    n.copy_from_slice(nonce);
     let mut k = Zeroizing::new([0u8; 32]);
-    platform.derive_secret(label, &mut k).map_err(|_| Status::Other)?;
+    platform.derive_secret(SecretLabel::CredentialSeed, &context, &mut k).map_err(|_| Status::Other)?;
     Ok(k)
 }
 

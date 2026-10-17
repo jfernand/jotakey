@@ -2,8 +2,8 @@
 //! authenticatorReset (CTAP 2.0 §5.6).
 //!
 //! Invariant 6: reset is accepted only within [`RESET_WINDOW_MS`] of power-up and only after
-//! a touch. Rotating the epoch secret changes `K_mac` and `K_seed`, so every credential
-//! minted before the reset stops unwrapping. The signature counter is *not* reset; it
+//! a touch. The epoch secret is part of every credential's tag and seed derivation, so
+//! rotating it makes every credential minted before the reset stop unwrapping. The signature counter is *not* reset; it
 //! stays monotonic for the device's lifetime.
 
 use super::{Pending, RESET_WINDOW_MS, Response, write_status};

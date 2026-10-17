@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use jotakey_core::authdata::{FLAG_AT, FLAG_UP};
 use jotakey_core::cbor::Decoder;
-use jotakey_core::crypto::{sha256, verify};
+use jotakey_core::crypto::{derive_credential_key, hmac_sha256, sha256, verify};
 use jotakey_core::ctap::{Outcome, Pending, command::*};
 use jotakey_core::platform::PresenceResult;
 use jotakey_core::status::Status;
@@ -84,6 +84,22 @@ fn register_then_authenticate_with_monotonic_counter() {
     let c2 = assert_ok(&mut h, RP, &id, &pk);
     assert!(c0 < c1 && c1 < c2);
     assert_eq!(h.platform.counter, c2);
+}
+
+#[test]
+fn credentials_are_derived_one_at_a_time_as_specified() {
+    // AGENTS.md §3, recomputed outside the core with the mock's root and epoch:
+    // tag  = F(root, "jotakey/tag/v1"  ‖ epoch ‖ 0x01 ‖ rpIdHash ‖ nonce)[..16]
+    // seed = F(root, "jotakey/seed/v1" ‖ epoch ‖ rpIdHash ‖ nonce), key = HKDF(seed, …)
+    let mut h = Harness::new();
+    let (id, pk, _) = register(&mut h, RP);
+    let rp = sha256(&[RP.as_bytes()]);
+    let nonce: [u8; 32] = id[1..33].try_into().unwrap();
+    let (root, epoch) = (h.platform.root, h.platform.epoch);
+    let tag = hmac_sha256(&root, &[b"jotakey/tag/v1", &epoch, &[1], &rp, &nonce]).unwrap();
+    assert_eq!(&id[33..49], &tag[..16]);
+    let seed = hmac_sha256(&root, &[b"jotakey/seed/v1", &epoch, &rp, &nonce]).unwrap();
+    assert_eq!(derive_credential_key(&seed, &rp, &nonce).unwrap().public_key(), pk);
 }
 
 #[test]
@@ -266,6 +282,11 @@ fn fails_closed() {
     h.platform.fail_rng = false;
     h.platform.fail_derive = true;
     assert_eq!(h.status(&request(GET_ASSERTION, get_assertion_params(RP, &[&id]))), Status::Other.code());
+    // The exclude list is checked against the hardware too; a failure there is an error, not
+    // "none of these is ours" (which would go on to mint a duplicate credential).
+    let mut excluding = make_credential_params(RP);
+    excluding.push((V::U(5), V::A(vec![descriptor(&id)])));
+    assert_eq!(h.status(&request(MAKE_CREDENTIAL, excluding)), Status::Other.code());
     h.platform.fail_derive = false;
     h.auth.fault();
     assert_eq!(h.status(&[GET_INFO]), Status::Other.code());

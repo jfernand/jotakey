@@ -2,12 +2,12 @@
 //! authenticatorMakeCredential (CTAP 2.0 §5.1).
 
 use super::parse::{self, EntityId, PARAM_DEPTH};
-use super::{Pending, Response, derive, write_success};
+use super::{Pending, PlatformTagger, Response, credential_seed, write_success};
 use crate::authdata;
 use crate::cbor::{Decoder, Key};
 use crate::credential::{self, NONCE_LEN};
 use crate::crypto::{self, COSE_ALG_ES256};
-use crate::platform::{Platform, SecretLabel};
+use crate::platform::Platform;
 use crate::status::Status;
 
 /// Validated request.
@@ -100,11 +100,18 @@ pub fn process<P: Platform>(platform: &mut P, params: &[u8]) -> Result<Pending, 
 
     // Step 1: the exclude list. If any ID is ours for this RP, report it after a touch.
     if let Some(raw) = req.exclude_list {
-        let mac = derive(platform, SecretLabel::CredentialMac)?;
+        let mut tagger = PlatformTagger(platform);
         let hit = parse::find_in_list(raw, |desc| {
-            (desc.is_public_key && credential::unwrap(&mac, &req.rp_id_hash, desc.id).is_some()).then_some(())
+            if !desc.is_public_key {
+                return None;
+            }
+            match credential::unwrap(&mut tagger, &req.rp_id_hash, desc.id) {
+                Ok(Some(_)) => Some(Ok(())),
+                Ok(None) => None,
+                Err(_) => Some(Err(Status::Other)),
+            }
         })?;
-        if hit.is_some() {
+        if hit.transpose()?.is_some() {
             return Ok(Pending::Excluded);
         }
     }
@@ -135,9 +142,8 @@ pub fn complete<P: Platform>(
 ) -> Result<usize, Status> {
     let mut nonce = [0u8; NONCE_LEN];
     platform.random_bytes(&mut nonce).map_err(|_| Status::Other)?;
-    let mac = derive(platform, SecretLabel::CredentialMac)?;
-    let seed = derive(platform, SecretLabel::CredentialSeed)?;
-    let cred_id = credential::wrap(&mac, rp_id_hash, &nonce).map_err(|_| Status::Other)?;
+    let cred_id = credential::wrap(&mut PlatformTagger(&mut *platform), rp_id_hash, &nonce).map_err(|_| Status::Other)?;
+    let seed = credential_seed(platform, rp_id_hash, &nonce)?;
     let sk = crypto::derive_credential_key(&seed, rp_id_hash, &nonce).map_err(|_| Status::Other)?;
 
     // Invariant 2: the counter is persisted before any signature carrying it exists.
