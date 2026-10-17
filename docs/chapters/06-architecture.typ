@@ -123,13 +123,12 @@ The two platforms differ only in where the root lives and in the function `F`:
 The credential format and its proofs (§9.6) are the same on both platforms: the proofs treat
 the tag function as a parameter, and say nothing about where it is computed.
 
-#callout(kind: "info", "Where the code is today")[
-  The core still implements an earlier form of this hierarchy. There, the root yields two
-  epoch-wide keys, `K_mac` and `K_seed`, through `Platform::derive_secret`, and the
-  microcontroller computes every tag and every HKDF from them. That form gives an attacker who
-  runs code on the microcontroller exactly the "key to take away" described above. Moving the
-  core to per-credential derivation, with a tag call and a seed call in place of
-  `derive_secret`, is the first step of the jotakey key's firmware port.
+#callout(kind: "info", "In the code")[
+  `Platform::derive_secret(label, context)` returns `F(root, label ‖ epoch ‖ context)`, and
+  the core only ever passes one credential's context. An earlier version derived two
+  epoch-wide keys, `K_mac` and `K_seed`, and computed every tag and HKDF on the
+  microcontroller: exactly the "key to take away" described above. If the hardware fails
+  while the core checks an ID, the request fails; it never reads as "not our credential".
 ]
 
 Nothing secret is ever *stored* in the microcontroller's flash except the epoch (and, on the

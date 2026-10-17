@@ -96,14 +96,16 @@ fn ecdsa_kat(corrupt: bool) -> Result<(), SelfTestError> {
 }
 
 fn credential_kat(corrupt: bool) -> Result<(), SelfTestError> {
-    let mut id = credential::wrap(&[1; 32], &[2; 32], &[3; 32]).map_err(|_| SelfTestError::Credential)?;
+    // The ID format and the tag check, with a fixed-key HMAC standing in for the hardware.
+    let mut tagger = credential::HmacTagger([1; 32]);
+    let mut id = credential::wrap(&mut tagger, &[2; 32], &[3; 32]).map_err(|_| SelfTestError::Credential)?;
     if corrupt {
         id = [0; credential::CRED_ID_LEN];
     }
-    if credential::unwrap(&[1; 32], &[2; 32], &id) != Some([3; 32]) {
+    if credential::unwrap(&mut tagger, &[2; 32], &id) != Ok(Some([3; 32])) {
         return Err(SelfTestError::Credential);
     }
-    if credential::unwrap(&[1; 32], &[4; 32], &id).is_some() {
+    if credential::unwrap(&mut tagger, &[4; 32], &id) != Ok(None) {
         return Err(SelfTestError::Credential);
     }
     Ok(())

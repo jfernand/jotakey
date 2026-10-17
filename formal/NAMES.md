@@ -77,8 +77,8 @@ The BLE framer (`src/transport/ble.rs`) uses the same private names (`ReceiveSta
 
 | Rust | Lean | Notes |
 |---|---|---|
-| `wrap(mac_key, rp_id_hash, nonce)` | `wrap mac key relyingParty nonce` | Lean takes the MAC as a parameter. |
-| `unwrap(mac_key, rp_id_hash, id)` | `unwrap mac key relyingParty credentialId` | |
+| `wrap(tagger, rp_id_hash, nonce)` | `wrap mac key relyingParty nonce` | Lean takes the MAC as a parameter; Rust's `Tagger` is `mac key` (the hardware key store, or `HmacTagger` in tests). |
+| `unwrap(tagger, rp_id_hash, id)` | `unwrap mac key relyingParty credentialId` | Rust returns `Result<Option<_>>`: `Err` only when the tagger (hardware) fails, which the model leaves out. |
 | `tag` (HMAC-SHA256, truncated) | `mac` | Any function in Lean. |
 | `VERSION`, `NONCE_LEN`, `TAG_LEN`, `CRED_ID_LEN` | `formatVersion`, `nonceLength`, `tagLength`, `1 + nonceLength + tagLength` | |
 | `[u8; TAG_LEN]` return type | hypothesis `MacOutputsTagLength mac` | The Rust type guarantees what Lean must assume. |

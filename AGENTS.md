@@ -92,11 +92,10 @@ Both platforms share one hierarchy; only the root and the function that derives 
   (rejection-sampled until the value is a valid nonzero scalar). Signing runs on the MCU.
   The seed is derived only after the tag has verified.
 - `credId = 0x01 ‖ nonce(32) ‖ tag(16)`.
-- **Status:** `jotakey-core` still implements the earlier form, where the root yields two
-  epoch-wide keys `K_mac = HMAC(K_dev, "jotakey/mac/v1" ‖ epoch)` and
-  `K_seed = HMAC(K_dev, "jotakey/seed/v1" ‖ epoch)` and the MCU computes the tag and the HKDF
-  from them. Moving the core to the per-credential form (`Platform::derive_secret` becomes a
-  tag call and a seed call) is the first step of the key's firmware port.
+- **In code:** `Platform::derive_secret(label, context, out)` computes
+  `F(root, label ‖ epoch ‖ context)`; labels `CredentialTag` and `CredentialSeed`. The core
+  asks for one credential at a time (`ctap::PlatformTagger`, `ctap::credential_seed`), and a
+  failing derivation is an error, never "not our credential".
 - **Shielded connection (key):** OPTIGA ↔ STM32 traffic for the root and the counter is
   encrypted and authenticated with a 64-byte platform binding secret, held in OPTIGA object
   `0xE140` (read `NEV`, change `NEV`) and in STM32 flash. It is created on the device at

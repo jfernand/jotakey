@@ -41,8 +41,8 @@ impl Platform for TargetPlatform {
         self.trng.read(out);
         self.health.feed_all(out).map_err(|_| PlatformError)
     }
-    fn derive_secret(&mut self, label: SecretLabel, out: &mut [u8; 32]) -> Result<(), PlatformError> {
-        *out = hmac_sha256(&self.key, &[label.as_bytes(), &self.epoch]).map_err(|_| PlatformError)?;
+    fn derive_secret(&mut self, label: SecretLabel, context: &[u8], out: &mut [u8; 32]) -> Result<(), PlatformError> {
+        *out = hmac_sha256(&self.key, &[label.as_bytes(), &self.epoch, context]).map_err(|_| PlatformError)?;
         Ok(())
     }
     fn increment_counter(&mut self) -> Result<u32, PlatformError> {

@@ -141,12 +141,15 @@ impl Platform for EspPlatform<'_> {
         Ok(())
     }
 
-    fn derive_secret(&mut self, label: SecretLabel, out: &mut [u8; 32]) -> Result<(), PlatformError> {
+    fn derive_secret(&mut self, label: SecretLabel, context: &[u8], out: &mut [u8; 32]) -> Result<(), PlatformError> {
+        // label ‖ epoch ‖ context: at most 15 + 32 + 65 bytes (AGENTS.md §3).
         let l = label.as_bytes();
-        let mut msg = Zeroizing::new([0u8; 64]);
-        let n = l.len().checked_add(32).ok_or(PlatformError)?;
+        let mut msg = Zeroizing::new([0u8; 128]);
+        let e = l.len().checked_add(32).ok_or(PlatformError)?;
+        let n = e.checked_add(context.len()).ok_or(PlatformError)?;
         msg.get_mut(..l.len()).ok_or(PlatformError)?.copy_from_slice(l);
-        msg.get_mut(l.len()..n).ok_or(PlatformError)?.copy_from_slice(self.epoch.as_ref());
+        msg.get_mut(l.len()..e).ok_or(PlatformError)?.copy_from_slice(self.epoch.as_ref());
+        msg.get_mut(e..n).ok_or(PlatformError)?.copy_from_slice(context);
         let msg = msg.get(..n).ok_or(PlatformError)?;
         match &mut self.root {
             RootKey::Efuse(hmac) => Self::hmac_efuse(hmac, msg, out),

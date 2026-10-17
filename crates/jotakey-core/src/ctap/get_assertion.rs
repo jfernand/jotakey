@@ -6,12 +6,12 @@
 //! touch (invariant 1), even if a relying party forgets to check the UP flag.
 
 use super::parse::{self, PARAM_DEPTH};
-use super::{Pending, Response, derive, write_success};
+use super::{Pending, PlatformTagger, Response, credential_seed, write_success};
 use crate::authdata::{self, FLAG_UP};
 use crate::cbor::{Decoder, Key};
 use crate::credential::{self, CRED_ID_LEN, NONCE_LEN};
 use crate::crypto;
-use crate::platform::{Platform, SecretLabel};
+use crate::platform::Platform;
 use crate::status::Status;
 
 struct Request<'a> {
@@ -69,16 +69,23 @@ pub fn process<P: Platform>(platform: &mut P, params: &[u8]) -> Result<Pending, 
     let Some(raw) = req.allow_list else {
         return Err(Status::NoCredentials);
     };
-    let mac = derive(platform, SecretLabel::CredentialMac)?;
+    // Each candidate's tag comes from the hardware; a hardware failure stops the search with
+    // an error instead of reading as "not ours".
+    let mut tagger = PlatformTagger(platform);
     let found = parse::find_in_list(raw, |desc| {
         if !desc.is_public_key {
             return None;
         }
-        let nonce = credential::unwrap(&mac, &req.rp_id_hash, desc.id)?;
-        let id: [u8; CRED_ID_LEN] = desc.id.try_into().ok()?;
-        Some((id, nonce))
+        match credential::unwrap(&mut tagger, &req.rp_id_hash, desc.id) {
+            Ok(Some(nonce)) => {
+                let id: [u8; CRED_ID_LEN] = desc.id.try_into().ok()?;
+                Some(Ok((id, nonce)))
+            }
+            Ok(None) => None,
+            Err(_) => Some(Err(Status::Other)),
+        }
     })?;
-    let Some((cred_id, nonce)) = found else {
+    let Some((cred_id, nonce)) = found.transpose()? else {
         return Err(Status::NoCredentials);
     };
     Ok(Pending::GetAssertion { rp_id_hash: req.rp_id_hash, client_data_hash: req.client_data_hash, cred_id, nonce })
@@ -93,7 +100,7 @@ pub fn complete<P: Platform>(
     nonce: &[u8; NONCE_LEN],
     out: &mut Response,
 ) -> Result<usize, Status> {
-    let seed = derive(platform, SecretLabel::CredentialSeed)?;
+    let seed = credential_seed(platform, rp_id_hash, nonce)?;
     let sk = crypto::derive_credential_key(&seed, rp_id_hash, nonce).map_err(|_| Status::Other)?;
 
     // Invariant 2: persist the counter before the signature exists.

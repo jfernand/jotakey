@@ -732,7 +732,7 @@ and `AGENTS.md` requires both to change together with any rename.
   ([`RESET_WINDOW_MS`], [`resetWindowMs`], []),
   ([—], [`Command`, `Event`, `handleEvent`, `runTrace`, `signatureCounters`], [Model only.]),
   ([*Credential IDs*], [], []),
-  ([`wrap`, `unwrap` (`mac_key`, `rp_id_hash`, `id`)], [`wrap`, `unwrap` (`key`, `relyingParty`, `credentialId`)], [Lean takes the MAC as a parameter `mac`.]),
+  ([`wrap`, `unwrap` (`tagger`, `rp_id_hash`, `id`)], [`wrap`, `unwrap` (`mac key`, `relyingParty`, `credentialId`)], [Lean takes the MAC as a parameter `mac`; Rust's `Tagger` plays `mac key`. Rust's `unwrap` can also fail when the hardware does, which the model leaves out.]),
   ([`VERSION`, `NONCE_LEN`, `TAG_LEN`], [`formatVersion`, `nonceLength`, `tagLength`], []),
   ([return type `[u8; TAG_LEN]`], [hypothesis `MacOutputsTagLength mac`], [The Rust type guarantees what Lean must assume.]),
 )

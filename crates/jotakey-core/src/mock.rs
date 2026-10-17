@@ -60,11 +60,11 @@ impl Platform for MockPlatform {
         Ok(())
     }
 
-    fn derive_secret(&mut self, label: SecretLabel, out: &mut [u8; 32]) -> Result<(), PlatformError> {
+    fn derive_secret(&mut self, label: SecretLabel, context: &[u8], out: &mut [u8; 32]) -> Result<(), PlatformError> {
         if self.fail_derive {
             return Err(PlatformError);
         }
-        *out = hmac_sha256(&self.root, &[label.as_bytes(), &self.epoch]).map_err(|_| PlatformError)?;
+        *out = hmac_sha256(&self.root, &[label.as_bytes(), &self.epoch, context]).map_err(|_| PlatformError)?;
         Ok(())
     }
 
