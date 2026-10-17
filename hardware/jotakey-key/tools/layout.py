@@ -36,25 +36,26 @@ PLACEMENT = {
     "U4": (100.0, 85.0, 270, "F"),   # USB ESD on the board axis, connector side up, MCU side down
     # MCU in the middle: USB pins up, touch pins left, OPTIGA reset right.
     "U1": (100, 93.5, 90, "F"),
-    "C5": (102.6, 89.2, 0, "F"),     # VDD pin 17
     # Under the MCU, each capacitor below its pin, GND pads away from the package.
-    "C4": (98.2, 97.7, 270, "F"),    # VDD pin 1
-    "C8": (99.3, 97.7, 270, "F"),    # NRST pin 4
-    "C6": (100.4, 97.7, 270, "F"),   # VDDA pin 5, 100 nF
-    "C7": (101.5, 97.7, 270, "F"),   # VDDA pin 5, 1 uF
+    "C4": (97.8, 97.7, 270, "F"),    # VDD pin 1
+    "C8": (99.75, 97.7, 270, "F"),   # NRST pin 4; its via to TP3 sits between C4 and C8
+    "C6": (100.85, 97.7, 270, "F"),  # VDDA pin 5, 100 nF
+    "C7": (101.95, 97.7, 270, "F"),  # VDDA pin 5, 1 uF
     # Left of the MCU, beside the pins they serve.
     "C10": (95.8, 92.2, 180, "F"),   # touch sampling capacitor, pin 27
     "R2": (95.8, 93.3, 0, "F"),      # touch series resistor, pin 28; electrode side left
     "R5": (95.8, 94.6, 180, "F"),    # BOOT0 pull-down, pin 31
-    # Secure element to the right of the MCU, with its pull-ups and decoupling.
-    "U2": (106.0, 93.5, 0, "F"),
-    "R3": (104.4, 89.6, 90, "F"),    # SDA pull-up
-    "R4": (105.5, 89.6, 90, "F"),    # SCL pull-up
-    "C9": (107.6, 90.6, 90, "F"),    # OPTIGA VCC
+    # Secure element in the top-right corner: SCL, RST and VCC face down towards the MCU,
+    # SDA comes over the top. Pull-ups and decoupling on the way.
+    "U2": (105.9, 86.4, 270, "F"),
+    "R3": (103.0, 86.0, 270, "F"),   # SDA pull-up, on the SDA path left of U2
+    "R4": (105.0, 90.6, 90, "F"),    # SCL pull-up, below the SCL path
+    "C9": (107.9, 89.7, 270, "F"),   # OPTIGA VCC (pin 10)
+    "C5": (103.7, 90.9, 270, "F"),   # MCU VDD pin 17, at the package corner
     # Touch electrode, concentric with the rounded end.
     "E1": (100, 106.5, 0, "F"),
     # Status LED in the corner beside the electrode, visible from the top.
-    "R1": (107.6, 96.9, 90, "F"),
+    "R1": (107.6, 96.9, 270, "F"),   # LED end up, towards U1 pin 9; D1 end down
     "D1": (107.6, 100.5, 90, "F"),
     # SWD pogo pads on the bottom side, 2.54 mm pitch, between the MCU and the electrode.
     "TP1": (94.92, 98.4, 0, "B"),
