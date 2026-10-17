@@ -3,6 +3,10 @@
 - Reference designators move to the fab layers. On an 18 mm board with 0402 parts they
   cannot sit next to their parts without covering pads; the assembly drawing (F.Fab) and the
   position file carry them instead.
+- "HW <version>" on the bottom silkscreen, behind the touch electrode, and the title block.
+  Both use the project text variable HW_VERSION (jotakey-key.kicad_pro, File > Project
+  Settings > Text Variables), the one place the hardware version is set; KiCad substitutes it
+  when it draws or plots the board.
 - A solid 2 x 10 mm block on the bottom silkscreen marks where JLCPCB prints the board's
   serial number. Order with "Mark on PCB: Serial number, specify position"; without that
   option JLCPCB prints nothing there.
@@ -19,6 +23,13 @@ BOARD = pathlib.Path(__file__).resolve().parent.parent / "jotakey-key.kicad_pcb"
 
 # Bottom side, along the left edge: clear of tracks, vias and the SWD pads, over the GND pour.
 SERIAL_BLOCK = ((91.7, 85.0), (93.7, 95.0))
+# Bottom side, centred on the copper-free disc behind the touch electrode.
+VERSION_TEXT = ("HW ${HW_VERSION}", (100.0, 106.5), 1.0)  # text, position, height
+
+TITLE = "Jotakey key: STM32L432 + OPTIGA Trust M USB-A dongle"
+DATE = "2026-10-17"  # of the HW_VERSION release
+COMMENTS = ["Pin plan and parts: hardware/HARDWARE.md",
+            "Fabrication and assembly: JLCPCB, 2 layers, 2.0 mm, ENIG"]
 
 
 def mm(x, y):
@@ -32,17 +43,42 @@ def main():
         ref = fp.Reference()
         ref.SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
 
-    for d in list(board.GetDrawings()):
-        if d.GetLayer() == pcbnew.B_SilkS and d.GetClass() == "PCB_SHAPE" and \
-                d.GetShape() == pcbnew.SHAPE_T_RECTANGLE and d.IsFilled():
-            board.Remove(d)  # a previous run's block
-    block = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_RECTANGLE)
+    # Update a previous run's items in place: removing items through the bindings corrupts them.
+    block = text = None
+    for d in board.GetDrawings():
+        if d.GetLayer() != pcbnew.B_SilkS:
+            continue
+        if d.GetClass() == "PCB_SHAPE" and d.GetShape() == pcbnew.SHAPE_T_RECTANGLE:
+            block = d
+        elif d.GetClass() == "PCB_TEXT" and d.GetText().startswith("HW "):
+            text = d
+    if block is None:
+        block = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_RECTANGLE)
+        board.Add(block)
     block.SetStart(mm(*SERIAL_BLOCK[0]))
     block.SetEnd(mm(*SERIAL_BLOCK[1]))
     block.SetLayer(pcbnew.B_SilkS)
     block.SetFilled(True)
     block.SetWidth(0)
-    board.Add(block)
+
+    if text is None:
+        text = pcbnew.PCB_TEXT(board)
+        board.Add(text)
+    label, at, height = VERSION_TEXT
+    text.SetText(label)
+    text.SetLayer(pcbnew.B_SilkS)
+    text.SetPosition(mm(*at))
+    text.SetTextSize(mm(height, height))
+    text.SetTextThickness(pcbnew.FromMM(0.15))
+    text.SetMirrored(True)
+
+    tb = board.GetTitleBlock()
+    tb.SetTitle(TITLE)
+    tb.SetRevision("${HW_VERSION}")
+    tb.SetDate(DATE)
+    tb.SetCompany("Jotakey")
+    for i, c in enumerate(COMMENTS):
+        tb.SetComment(i, c)
 
     pcbnew.SaveBoard(str(BOARD), board)
 
