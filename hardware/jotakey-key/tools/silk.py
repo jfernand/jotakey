@@ -29,7 +29,7 @@ SERIAL_BLOCK = ((91.7, 85.0), (93.7, 95.0))
 # Bottom side, along the other long edge, below the last via; JLCPCB's minimum is 0.8 mm.
 ORDER_NUMBER_TEXT = ("JLCJLCJLCJLC", (107.6, 97.0), 0.8)  # text, position, height
 # Bottom side, centred on the copper-free disc behind the touch electrode.
-VERSION_TEXT = ("HW ${HW_VERSION}", (100.0, 106.5), 1.0)  # text, position, height
+VERSION_TEXT = ("HW ${HW_VERSION}", (100.0, 108.0), 1.0)  # text, position, height
 
 TITLE = "Jotakey key: STM32L432 + OPTIGA Trust M USB-A dongle"
 DATE = "2026-10-17"  # of the HW_VERSION release

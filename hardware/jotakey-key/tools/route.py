@@ -24,19 +24,25 @@ import tempfile
 
 import pcbnew
 
+from boardtext import strip_blocks
+
 HERE = pathlib.Path(__file__).resolve().parent
 BOARD = HERE.parent / "jotakey-key.kicad_pcb"
 
 VIA = (0.6, 0.3)            # diameter, drill
-ELECTRODE = (100.0, 106.5)  # touch electrode centre (E1), copper radius 5 mm
-ELECTRODE_KEEPOUT = 6.0     # top: ground >= 1 mm from the 5 mm electrode; bottom: the hatch below
+ELECTRODE = (100.0, 108.0)  # touch electrode centre (E1, layout.py), copper radius 5 mm
+# AN4312 3.5.6: keep ground and other copper >= 2 mm (4-5 mm recommended) from the electrode
+# on its own layer. Top: 4 mm, so nothing but the electrode's own trace within 9 mm of its
+# centre. Bottom: only the GND hatch below, out to 1 mm beyond the electrode.
+ELECTRODE_GAP_TOP = 5.0 + 4.0
+ELECTRODE_UNDER = 6.0
 # AN4312 3.5.6: a 10 % copper mesh on the side opposite the electrode. Square hatch of lines t
 # wide at pitch p covers 1 - ((p - t) / p)^2 of the area: 0.2 mm lines, 3.7 mm gaps -> 10 %.
 ELECTRODE_HATCH = (0.2, 3.7)  # line width, gap
 TONGUE = ((93.5, 69.5), (106.5, 82.0))  # USB-A plug tongue: contacts only on top, nothing below
-POUR = ((90.0, 82.0), (110.0, 116.0))   # GND pour outline; the board edge clips it
+POUR = ((90.0, 82.0), (110.0, 118.0))   # GND pour outline; the board edge clips it
 EDGE_CLEARANCE = 0.5        # board setup; Freerouting does not read it, so keep-outs carry it
-END_ARC = ((100.0, 106.5), 9.0)         # the rounded end: centre, radius (layout.py)
+END_ARC = ((100.0, 108.0), 9.0)         # the rounded end: centre, radius (layout.py)
 
 # Hand-routed connections, fixed before autorouting: (net, layer, width, points).
 TRACKS = [
@@ -74,10 +80,12 @@ TRACKS = [
     ("+3V3", "F", 0.2, [(105.0, 91.11), (105.78, 90.7)]),
     ("+3V3", "B", 0.2, [(105.78, 90.7), (107.1, 89.7)]),
     ("+3V3", "F", 0.2, [(107.1, 89.7), (107.9, 89.22)]),
+    # SE_RST leaves pin 11 straight, between pins 10 and 12, before Freerouting takes over.
+    ("/SE_RST", "F", 0.2, [(102.44, 94.25), (103.4, 94.25)]),
     # BOOT0 pull-down, straight across.
     ("/BOOT0", "F", 0.2, [(96.31, 94.75), (97.56, 94.75)]),
     # Touch electrode: down the left side, away from the other signals, into the pad's edge.
-    ("/TOUCH_ELECTRODE", "F", 0.2, [(95.29, 93.3), (94.5, 93.3), (94.5, 99.5), (97.3, 102.5)]),
+    ("/TOUCH_ELECTRODE", "F", 0.2, [(95.29, 93.3), (94.5, 93.3), (94.5, 101.0), (97.6, 104.1)]),
 ]
 VIAS = [
     ("/USB_DP", (100.95, 87.5)),
@@ -104,6 +112,7 @@ GND_TRACKS = [
 ]
 GND_VIAS = [
     (100.0, 82.5),
+    (92.3, 86.7),   # the top pour around the LDO, between C1 and C3
     (96.6, 95.75),
     # U1's exposed pad (VSS) to the bottom pour.
     (99.3, 92.8), (100.7, 92.8), (99.3, 94.2), (100.7, 94.2),
@@ -206,7 +215,7 @@ def gnd_pour(board, side, hole=None):
 def gnd_hatch_under_electrode(board):
     """A hatched GND zone filling the bottom pour's hole under the electrode. It overlaps the
     solid pour by 0.3 mm, at a higher priority, so the two join."""
-    z = gnd_zone(board, "B", "GND B hatch (electrode)", circle(ELECTRODE, ELECTRODE_KEEPOUT + 0.3))
+    z = gnd_zone(board, "B", "GND B hatch (electrode)", circle(ELECTRODE, ELECTRODE_UNDER + 0.3))
     z.SetAssignedPriority(1)  # wins where it overlaps the solid pour
     z.SetFillMode(pcbnew.ZONE_FILL_MODE_HATCH_PATTERN)
     z.SetHatchThickness(pcbnew.FromMM(ELECTRODE_HATCH[0]))
@@ -233,52 +242,8 @@ def edge_bands():
     ]
 
 
-def strip_routing(text):
-    """Remove every top-level track, via, arc and zone from a .kicad_pcb file's text.
-
-    Done on the text because removing items through the pcbnew bindings corrupts them.
-    """
-    heads = ("(segment", "(via", "(arc", "(zone")
-    out, i, depth = [], 0, 0
-    while i < len(text):
-        if depth == 1 and text.startswith(heads, i):
-            j, d, in_str = i, 0, False
-            while True:
-                c = text[j]
-                if in_str:
-                    if c == "\\":
-                        j += 1
-                    elif c == '"':
-                        in_str = False
-                elif c == '"':
-                    in_str = True
-                elif c == "(":
-                    d += 1
-                elif c == ")":
-                    d -= 1
-                    if d == 0:
-                        break
-                j += 1
-            i = j + 1
-            while i < len(text) and text[i] in " \t\n":
-                i += 1
-            out.append("\t")
-            continue
-        c = text[i]
-        out.append(c)
-        if c == '"':
-            j = i + 1
-            while text[j] != '"':
-                j += 2 if text[j] == "\\" else 1
-            out.append(text[i + 1:j + 1])
-            i = j + 1
-            continue
-        if c == "(":
-            depth += 1
-        elif c == ")":
-            depth -= 1
-        i += 1
-    return "".join(out)
+def is_routing(block):
+    return block.startswith(("(segment", "(via", "(arc", "(zone"))
 
 
 def obstacle(board):
@@ -302,9 +267,11 @@ def obstacle(board):
 def keepouts(board):
     keepout(board, "tongue: no vias or pours", ("F", "B"), rect(*TONGUE), vias=True, pours=True)
     keepout(board, "tongue: nothing on the bottom", ("B",), rect(*TONGUE), tracks=True)
-    ring = circle(ELECTRODE, ELECTRODE_KEEPOUT)
-    keepout(board, "electrode: no vias or pours", ("F",), ring, vias=True, pours=True)
-    keepout(board, "electrode: only the GND hatch underneath", ("B",), ring, tracks=True, vias=True)
+    # circle() is a 64-gon; widen it so its flat sides, not just its corners, keep the gap.
+    keepout(board, "electrode: 4 mm gap, no vias or pours", ("F",),
+            circle(ELECTRODE, ELECTRODE_GAP_TOP / math.cos(math.pi / 64)), vias=True, pours=True)
+    keepout(board, "electrode: only the GND hatch underneath", ("B",),
+            circle(ELECTRODE, ELECTRODE_UNDER), tracks=True, vias=True)
     for band in edge_bands():
         keepout(board, "board edge clearance", ("F", "B"), band, tracks=True, vias=True)
 
@@ -357,7 +324,7 @@ def main():
     # the bindings, so the routing-only keep-outs never enter the saved board.)
     with tempfile.TemporaryDirectory() as tmp:
         bare = pathlib.Path(tmp, BOARD.name)
-        bare.write_text(strip_routing(BOARD.read_text()))
+        bare.write_text(strip_blocks(BOARD.read_text(), is_routing))
         shutil.copy(BOARD.with_suffix(".kicad_pro"), tmp)  # the design rules live here
         source = pcbnew.LoadBoard(str(bare))
         board = pcbnew.LoadBoard(str(bare))
@@ -384,7 +351,7 @@ def main():
     for at in GND_VIAS:
         add_via(board, "GND", at)
     gnd_pour(board, "F")
-    gnd_pour(board, "B", hole=circle(ELECTRODE, ELECTRODE_KEEPOUT))
+    gnd_pour(board, "B", hole=circle(ELECTRODE, ELECTRODE_UNDER))
     gnd_hatch_under_electrode(board)
     pcbnew.ZONE_FILLER(board).Fill(board.Zones())
 

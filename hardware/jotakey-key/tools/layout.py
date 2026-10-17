@@ -1,28 +1,34 @@
-"""First layout pass for the jotakey-key board, applied live to the board open in KiCad 10.
+"""Board outline and footprint placement for the jotakey-key board.
 
-Draws the board outline (USB-A tongue + body with a rounded end) and places
-every footprint. Runs through KiCad's IPC API (kicad-python), so KiCad must be running with
-jotakey-key.kicad_pcb open; KiCad records each step for undo.
+Draws the board outline (USB-A tongue + body with a rounded end) and places every footprint,
+in the saved jotakey-key.kicad_pcb, through KiCad's pcbnew bindings. Run it with KiCad's own
+Python; then run route.py and silk.py, which build on the placement:
 
-    pip install kicad-python   # in a virtualenv
-    python layout.py
+    <kicad>/AppRun python3.11 tools/layout.py
+
+If the board is open in KiCad, save it first and revert it afterwards (File > Revert).
 
 Coordinates are board millimetres (KiCad's y grows downwards). The tongue's leading edge is at
 y = 70; the board extends towards +y.
 """
-from kipy import KiCad
-from kipy.board_types import BoardArc, BoardLayer, BoardSegment
-from kipy.geometry import Angle, Vector2
-from kipy.util.units import from_mm
+import pathlib
 
+import pcbnew
+
+from boardtext import strip_blocks
+
+BOARD = pathlib.Path(__file__).resolve().parent.parent / "jotakey-key.kicad_pcb"
 EDGE_WIDTH = 0.05
 
-# Outline: tongue x 94..106, y 70..82; body x 91..109 down to y 106.5, closed by a half circle
-# of radius 9 around (100, 106.5). The touch electrode is concentric with that half circle.
+# Outline: tongue x 94..106, y 70..82; body x 91..109 down to y BODY_END, closed by a half
+# circle of radius 9 around (100, BODY_END). The touch electrode is concentric with it. The
+# body is long enough to keep 4 mm of bare board between the electrode and the copper above
+# it (AN4312 3.5.6).
+BODY_END = 108.0
 OUTLINE = [((94, 70), (106, 70)), ((106, 70), (106, 82)), ((106, 82), (109, 82)),
-           ((109, 82), (109, 106.5)), ((91, 106.5), (91, 82)), ((91, 82), (94, 82)),
+           ((109, 82), (109, BODY_END)), ((91, BODY_END), (91, 82)), ((91, 82), (94, 82)),
            ((94, 82), (94, 70))]
-END_ARC = ((109, 106.5), (100, 115.5), (91, 106.5))
+END_ARC = ((109, BODY_END), (100, BODY_END + 9), (91, BODY_END))
 
 # reference: (x, y, rotation in degrees, side)
 PLACEMENT = {
@@ -53,7 +59,7 @@ PLACEMENT = {
     "C9": (107.9, 89.7, 270, "F"),   # OPTIGA VCC (pin 10)
     "C5": (103.7, 90.9, 270, "F"),   # MCU VDD pin 17, at the package corner
     # Touch electrode, concentric with the rounded end.
-    "E1": (100, 106.5, 0, "F"),
+    "E1": (100, BODY_END, 0, "F"),
     # Status LED in the corner beside the electrode, visible from the top.
     "R1": (107.6, 96.9, 270, "F"),   # LED end up, towards U1 pin 9; D1 end down
     "D1": (107.6, 100.5, 90, "F"),
@@ -66,51 +72,46 @@ PLACEMENT = {
 }
 
 
-def v(x, y):
-    return Vector2.from_xy_mm(x, y)
+def mm(x, y):
+    return pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(y))
 
 
-def edge(shape):
-    shape.layer = BoardLayer.BL_Edge_Cuts
-    shape.attributes.stroke.width = from_mm(EDGE_WIDTH)
-    return shape
+def edge(board, shape):
+    shape.SetLayer(pcbnew.Edge_Cuts)
+    shape.SetWidth(pcbnew.FromMM(EDGE_WIDTH))
+    board.Add(shape)
+
+
+def is_edge(block):
+    return block.startswith(("(gr_line", "(gr_arc", "(gr_circle", "(gr_rect", "(gr_poly")) and \
+        '(layer "Edge.Cuts")' in block
 
 
 def main():
-    board = KiCad().get_board()
+    BOARD.write_text(strip_blocks(BOARD.read_text(), is_edge))  # the old outline
+    board = pcbnew.LoadBoard(str(BOARD))
 
+    for a, b in OUTLINE:
+        seg = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_SEGMENT)
+        seg.SetStart(mm(*a))
+        seg.SetEnd(mm(*b))
+        edge(board, seg)
+    arc = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_ARC)
+    arc.SetArcGeometry(*(mm(*p) for p in END_ARC))
+    edge(board, arc)
 
-    old_edges = [s for s in board.get_shapes() if s.layer == BoardLayer.BL_Edge_Cuts]
-    if old_edges:
-        board.remove_items(old_edges)
+    flipped = 0
+    for fp in board.GetFootprints():
+        x, y, rot, side = PLACEMENT[fp.GetReference()]
+        if (side == "B") != fp.IsFlipped():
+            fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_TOP_BOTTOM)
+            flipped += 1
+        fp.SetPosition(mm(x, y))
+        fp.SetOrientationDegrees(rot)
 
-    shapes = []
-    for (a, b) in OUTLINE:
-        seg = BoardSegment()
-        seg.start, seg.end = v(*a), v(*b)
-        shapes.append(edge(seg))
-    arc = BoardArc()
-    arc.start, arc.mid, arc.end = (v(*p) for p in END_ARC)
-    shapes.append(edge(arc))
-    board.create_items(shapes)
-
-    footprints = {f.reference_field.text.value: f for f in board.get_footprints()}
-    to_flip = [footprints[r] for r, (*_, side) in PLACEMENT.items()
-               if side == "B" and footprints[r].layer != BoardLayer.BL_B_Cu]
-    if to_flip:
-        board.flip_items(to_flip)
-        footprints = {f.reference_field.text.value: f for f in board.get_footprints()}
-
-    moved = []
-    for ref, (x, y, rot, _side) in PLACEMENT.items():
-        fp = footprints[ref]
-        fp.position = v(x, y)
-        fp.orientation = Angle.from_degrees(rot)
-        moved.append(fp)
-    board.update_items(moved)
-
-
-    print(f"outline: {len(shapes)} shapes; placed {len(moved)} footprints, flipped {len(to_flip)}")
+    pcbnew.SaveBoard(str(BOARD), board)
+    print(f"outline: {len(OUTLINE) + 1} shapes; placed {len(PLACEMENT)} footprints, "
+          f"flipped {flipped}")
 
 
 main()
