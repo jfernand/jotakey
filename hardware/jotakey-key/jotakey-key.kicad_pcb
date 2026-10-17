@@ -907,7 +907,7 @@
 	(footprint "Package_TO_SOT_SMD:SOT-23-6"
 		(layer "F.Cu")
 		(uuid "324c1bfe-3620-45fd-ac23-99ac8fc81a81")
-		(at 99.5 85 -90)
+		(at 100 85 -90)
 		(descr "SOT, 6 Pin (JEDEC MO-178 Var AB https://www.jedec.org/document_search?search_api_views_fulltext=MO-178)")
 		(tags "SOT TO_SOT_SMD")
 		(property "Reference" "U4"
@@ -1218,7 +1218,7 @@
 			(size 1.325 0.6)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
-			(net "/USB_CONN_DM")
+			(net "/USB_CONN_DP")
 			(pinfunction "I/O1_1")
 			(pintype "passive")
 			(uuid "4ed060b2-857b-4590-92bf-46ef6c95307a")
@@ -1238,7 +1238,7 @@
 			(size 1.325 0.6)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
-			(net "/USB_CONN_DP")
+			(net "/USB_CONN_DM")
 			(pinfunction "I/O2_3")
 			(pintype "passive")
 			(uuid "e35b11ec-9220-42fe-aea5-349a7385d347")
@@ -1248,7 +1248,7 @@
 			(size 1.325 0.6)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
-			(net "/USB_DP")
+			(net "/USB_DM")
 			(pinfunction "I/O2_4")
 			(pintype "passive")
 			(uuid "ddfb0442-1212-44c4-9e30-8dcd2acd0f20")
@@ -1268,7 +1268,7 @@
 			(size 1.325 0.6)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
-			(net "/USB_DM")
+			(net "/USB_DP")
 			(pinfunction "I/O1_6")
 			(pintype "passive")
 			(uuid "311d3167-3346-4619-a0e0-1d1f8702cac5")
@@ -1919,7 +1919,7 @@
 			(uuid "1f3ea641-2c6c-4469-8118-34febf5544c4")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 360)
+			(at 0 0 0)
 			(layer "F.Fab")
 			(uuid "58fabb29-c444-4eed-b293-a2af9bad96f6")
 			(effects
@@ -1934,7 +1934,7 @@
 			(size 0.54 0.64)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
-			(net "Net-(E1-~)")
+			(net "/TOUCH_ELECTRODE")
 			(pinfunction "~_1")
 			(pintype "passive")
 			(uuid "4b666094-194b-492b-91cb-b6a8d5fc433e")
@@ -2296,7 +2296,7 @@
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C6"
-			(at 0 -1.16 -90)
+			(at 0 -1.16 270)
 			(layer "F.SilkS")
 			(uuid "c54aaa40-f7ba-42dc-8265-a2196f08ca4d")
 			(effects
@@ -2307,7 +2307,7 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 -90)
+			(at 0 1.16 270)
 			(layer "F.Fab")
 			(uuid "8ee15d34-d976-4737-9a30-167edf5a2d0c")
 			(effects
@@ -2318,7 +2318,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "eb154099-c112-402c-b49d-dbae762d87dd")
@@ -2329,7 +2329,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "4fee3eed-d857-4ca5-81a2-fc8e27ef04c0")
@@ -2340,7 +2340,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "1548be07-63f4-4acb-af0a-de089d005a12")
@@ -2352,7 +2352,7 @@
 			)
 		)
 		(property "LCSC" "C1525"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -2365,7 +2365,7 @@
 			)
 		)
 		(property "MPN" "CL05B104KO5NNNC"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -2465,7 +2465,7 @@
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C7"
-			(at 0 -1.16 -90)
+			(at 0 -1.16 270)
 			(layer "F.SilkS")
 			(uuid "e3885e5d-438e-4e14-8f35-0e303e25977d")
 			(effects
@@ -2476,7 +2476,7 @@
 			)
 		)
 		(property "Value" "1uF"
-			(at 0 1.16 -90)
+			(at 0 1.16 270)
 			(layer "F.Fab")
 			(uuid "9c6040fa-1406-4601-af89-f2860dbf758a")
 			(effects
@@ -2487,7 +2487,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "e756f4c3-07d9-4e70-b922-4c12de8cd889")
@@ -2498,7 +2498,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "e3a27ad1-2f3f-4db3-b411-cab096a2f3ac")
@@ -2509,7 +2509,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "84b871e5-0ee8-4e33-8a4f-aac8469da127")
@@ -2521,7 +2521,7 @@
 			)
 		)
 		(property "LCSC" "C52923"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -2534,7 +2534,7 @@
 			)
 		)
 		(property "MPN" "CL05A105KA5NQNC"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -3835,7 +3835,7 @@
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C8"
-			(at 0 -1.16 -90)
+			(at 0 -1.16 270)
 			(layer "F.SilkS")
 			(uuid "27a11f87-b7f7-4a44-840e-0c1043fb0fc9")
 			(effects
@@ -3846,7 +3846,7 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 -90)
+			(at 0 1.16 270)
 			(layer "F.Fab")
 			(uuid "a6d22d6e-15f6-499b-9b5a-6aa0bfabde6b")
 			(effects
@@ -3857,7 +3857,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "42f59d92-3800-4a42-bf9d-0faa3bdd2b4a")
@@ -3868,7 +3868,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "c1aab49f-3a67-4636-bde2-137ffef394f8")
@@ -3879,7 +3879,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "26cd98ae-40ec-419f-9608-fb8bfd91a60a")
@@ -3891,7 +3891,7 @@
 			)
 		)
 		(property "LCSC" "C1525"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -3904,7 +3904,7 @@
 			)
 		)
 		(property "MPN" "CL05B104KO5NNNC"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -4884,7 +4884,7 @@
 			(at -4.2 0)
 			(size 0.4 0.4)
 			(layers "F.Cu")
-			(net "Net-(E1-~)")
+			(net "/TOUCH_ELECTRODE")
 			(pinfunction "~_1")
 			(pintype "passive")
 			(options
@@ -4956,7 +4956,7 @@
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C4"
-			(at 0 -1.16 -90)
+			(at 0 -1.16 270)
 			(layer "F.SilkS")
 			(uuid "e5e86098-20ba-4228-ad2b-acf572e7952a")
 			(effects
@@ -4967,7 +4967,7 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 -90)
+			(at 0 1.16 270)
 			(layer "F.Fab")
 			(uuid "9a0269aa-a81e-4074-8578-d36c31b53a4d")
 			(effects
@@ -4978,7 +4978,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "36313e8e-020e-48cb-974b-8f713be99822")
@@ -4989,7 +4989,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "e1554903-899f-42f3-bfe9-e51613374149")
@@ -5000,7 +5000,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "d163fd21-c5e0-4232-a438-6c97990e6388")
@@ -5012,7 +5012,7 @@
 			)
 		)
 		(property "LCSC" "C1525"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -5025,7 +5025,7 @@
 			)
 		)
 		(property "MPN" "CL05B104KO5NNNC"
-			(at 0 0 -90)
+			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
 			(hide yes)
@@ -5666,7 +5666,7 @@
 			(type default)
 		)
 		(layer "Edge.Cuts")
-		(uuid "1fcf9025-faf3-4de5-a10c-af52f341a8cd")
+		(uuid "c8deabd1-2ea3-4177-9a78-f928d718ce59")
 	)
 	(gr_line
 		(start 91 106.5)
@@ -5676,7 +5676,7 @@
 			(type default)
 		)
 		(layer "Edge.Cuts")
-		(uuid "cbe78187-1dbf-4682-a8dc-e65ea2f5cdcd")
+		(uuid "4f87ca39-49f3-4b97-aec5-3d9bc490a1eb")
 	)
 	(gr_line
 		(start 94 70)
@@ -5686,7 +5686,7 @@
 			(type default)
 		)
 		(layer "Edge.Cuts")
-		(uuid "8e4210cf-c152-444a-b5be-232c4dc02b47")
+		(uuid "d7af105a-cdc6-433d-bf95-929c23fcb6d9")
 	)
 	(gr_line
 		(start 94 82)
@@ -5696,7 +5696,7 @@
 			(type default)
 		)
 		(layer "Edge.Cuts")
-		(uuid "6e950ba9-fa84-451f-a85a-65d798a8c89c")
+		(uuid "e6447106-1ddc-4d7d-9c54-809ef65c915a")
 	)
 	(gr_line
 		(start 106 70)
@@ -5706,7 +5706,7 @@
 			(type default)
 		)
 		(layer "Edge.Cuts")
-		(uuid "d57fa59e-7740-4500-9497-558b27bac3e0")
+		(uuid "bdab2d30-4890-452a-800a-53f200092203")
 	)
 	(gr_line
 		(start 106 82)
@@ -5716,7 +5716,7 @@
 			(type default)
 		)
 		(layer "Edge.Cuts")
-		(uuid "0f566e15-da1d-43ff-8316-688d9c512dbc")
+		(uuid "5798a8d9-a233-43c4-9046-0814f269915b")
 	)
 	(gr_line
 		(start 109 82)
@@ -5726,7 +5726,7 @@
 			(type default)
 		)
 		(layer "Edge.Cuts")
-		(uuid "459d492b-6b38-4d88-96c5-48ad3f3ce27b")
+		(uuid "beca954f-a1f0-49d1-bdd5-592f1c7c528e")
 	)
 	(gr_arc
 		(start 109 106.5)
@@ -5737,7 +5737,7 @@
 			(type default)
 		)
 		(layer "Edge.Cuts")
-		(uuid "95117057-25a0-47d6-999b-a21a54477a0e")
+		(uuid "234f0e85-4985-4953-b2f0-052383b84f67")
 	)
 	(embedded_fonts no)
 )

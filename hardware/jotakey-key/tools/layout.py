@@ -33,7 +33,7 @@ PLACEMENT = {
     "C1": (92.6, 84.2, 90, "F"),     # LDO input
     "C2": (95.6, 88.4, 180, "F"),    # LDO output, under its 3V3 pin
     "C3": (92.6, 89.5, 90, "F"),     # 3V3 bulk
-    "U4": (99.5, 85.0, 270, "F"),    # USB ESD, connector side up, MCU side down
+    "U4": (100.0, 85.0, 270, "F"),   # USB ESD on the board axis, connector side up, MCU side down
     # MCU in the middle: USB pins up, touch pins left, OPTIGA reset right.
     "U1": (100, 93.5, 90, "F"),
     "C5": (102.6, 89.2, 0, "F"),     # VDD pin 17
