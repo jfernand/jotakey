@@ -5759,6 +5759,18 @@
 		(layer "Edge.Cuts")
 		(uuid "234f0e85-4985-4953-b2f0-052383b84f67")
 	)
+	(gr_text "JLCJLCJLCJLC"
+		(at 107.6 97 90)
+		(layer "B.SilkS")
+		(uuid "2b14d179-c507-4a36-a673-75a3cc20580b")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+			(justify mirror)
+		)
+	)
 	(gr_text "HW ${HW_VERSION}"
 		(at 100 106.5 0)
 		(layer "B.SilkS")

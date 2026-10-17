@@ -10,6 +10,9 @@
 - A solid 2 x 10 mm block on the bottom silkscreen marks where JLCPCB prints the board's
   serial number. Order with "Mark on PCB: Serial number, specify position"; without that
   option JLCPCB prints nothing there.
+- "JLCJLCJLCJLC" along the opposite edge marks where JLCPCB prints its order number. Order
+  with "Remove order number: specify a location"; otherwise it prints the number wherever it
+  finds room.
 
 Run it with KiCad's own Python, after route.py:
 
@@ -23,6 +26,8 @@ BOARD = pathlib.Path(__file__).resolve().parent.parent / "jotakey-key.kicad_pcb"
 
 # Bottom side, along the left edge: clear of tracks, vias and the SWD pads, over the GND pour.
 SERIAL_BLOCK = ((91.7, 85.0), (93.7, 95.0))
+# Bottom side, along the other long edge, below the last via; JLCPCB's minimum is 0.8 mm.
+ORDER_NUMBER_TEXT = ("JLCJLCJLCJLC", (107.6, 97.0), 0.8)  # text, position, height
 # Bottom side, centred on the copper-free disc behind the touch electrode.
 VERSION_TEXT = ("HW ${HW_VERSION}", (100.0, 106.5), 1.0)  # text, position, height
 
@@ -44,7 +49,7 @@ def main():
         ref.SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
 
     # Update a previous run's items in place: removing items through the bindings corrupts them.
-    block = text = None
+    block = text = order = None
     for d in board.GetDrawings():
         if d.GetLayer() != pcbnew.B_SilkS:
             continue
@@ -52,6 +57,8 @@ def main():
             block = d
         elif d.GetClass() == "PCB_TEXT" and d.GetText().startswith("HW "):
             text = d
+        elif d.GetClass() == "PCB_TEXT" and d.GetText() == ORDER_NUMBER_TEXT[0]:
+            order = d
     if block is None:
         block = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_RECTANGLE)
         board.Add(block)
@@ -71,6 +78,18 @@ def main():
     text.SetTextSize(mm(height, height))
     text.SetTextThickness(pcbnew.FromMM(0.15))
     text.SetMirrored(True)
+
+    if order is None:
+        order = pcbnew.PCB_TEXT(board)
+        board.Add(order)
+    label, at, height = ORDER_NUMBER_TEXT
+    order.SetText(label)
+    order.SetLayer(pcbnew.B_SilkS)
+    order.SetPosition(mm(*at))
+    order.SetTextSize(mm(height, height))
+    order.SetTextThickness(pcbnew.FromMM(0.15))
+    order.SetTextAngleDegrees(90)
+    order.SetMirrored(True)
 
     tb = board.GetTitleBlock()
     tb.SetTitle(TITLE)
