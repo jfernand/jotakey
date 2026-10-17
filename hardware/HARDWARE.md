@@ -48,7 +48,7 @@ OPTIGA Trust M PG-USON-10 pinout (datasheet rev 3.70, Table 6 and Figure 7):
 | 3 | SDA | PA10 (pin 20), I2C1_SDA |
 | 4, 5, 6, 7 | n.c. | leave floating |
 | 8 | SCL | PA9 (pin 19), I2C1_SCL |
-| 9 | RST (active low, weak internal pull-up) | PB0 (pin 14), push-pull GPIO for a hard reset |
+| 9 | RST (active low, weak internal pull-up) | PA5 (pin 11), push-pull GPIO for a hard reset |
 | 10 | VCC | 3V3 rail, 100 nF next to the pin |
 | exposed pad | not connected internally | solder to a PCB copper area (GND) for heat |
 
@@ -76,7 +76,7 @@ There is no separate VCC_IO pin; the I2C level follows VCC (1.62–5.5 V).
   - the electrode is a copper area at the far end of the dongle, laid out as AN4312 describes.
   A touch is required for every signature. This is what stops a remote attacker from silently
   logging into accounts.
-- **Status LED:** a single red LED with a 1 kΩ series resistor on PA8 (pin 18), about 1.3 mA.
+- **Status LED:** a single red LED with a 1 kΩ series resistor on PA3 (pin 9, next to the LED), about 1.3 mA.
   Blink patterns signal "touch requested", OK and fault. Red because white and blue LEDs need
   up to 3.1 V, too close to the 3.3 V rail.
 - **BOOT0** (PH3, pin 31): 10 kΩ pull-down, so the MCU always boots from flash.
