@@ -7,6 +7,7 @@
   Both use the project text variable HW_VERSION (jotakey-key.kicad_pro, File > Project
   Settings > Text Variables), the one place the hardware version is set; KiCad substitutes it
   when it draws or plots the board.
+- The SWD test pads on the bottom are labelled with their signals, just below each pad.
 - A solid 2 x 10 mm block on the bottom silkscreen marks where JLCPCB prints the board's
   serial number. Order with "Mark on PCB: Serial number, specify position"; without that
   option JLCPCB prints nothing there.
@@ -31,6 +32,11 @@ ORDER_NUMBER_TEXT = ("JLCJLCJLCJLC", (107.6, 97.0), 0.8)  # text, position, heig
 # Bottom side, centred on the copper-free disc behind the touch electrode.
 VERSION_TEXT = ("HW ${HW_VERSION}", (100.0, 108.0), 1.0)  # text, position, height
 
+# SWD test pads: reference -> label, printed under the pad. Three letters fit the 2.54 mm pitch.
+PAD_LABELS = {"TP1": "DIO", "TP2": "CLK", "TP3": "RST", "TP4": "3V3", "TP5": "GND"}
+PAD_LABEL_OFFSET = 1.25  # mm from the pad centre, towards the electrode
+PAD_LABEL_HEIGHT = 0.8  # the board's (and JLCPCB's) minimum
+
 TITLE = "Jotakey key: STM32L432 + OPTIGA Trust M USB-A dongle"
 DATE = "2026-10-17"  # of the HW_VERSION release
 COMMENTS = ["Pin plan and parts: hardware/HARDWARE.md",
@@ -50,6 +56,7 @@ def main():
 
     # Update a previous run's items in place: removing items through the bindings corrupts them.
     block = text = order = None
+    labels = {}
     for d in board.GetDrawings():
         if d.GetLayer() != pcbnew.B_SilkS:
             continue
@@ -59,6 +66,8 @@ def main():
             text = d
         elif d.GetClass() == "PCB_TEXT" and d.GetText() == ORDER_NUMBER_TEXT[0]:
             order = d
+        elif d.GetClass() == "PCB_TEXT" and d.GetText() in PAD_LABELS.values():
+            labels[d.GetText()] = d
     if block is None:
         block = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_RECTANGLE)
         board.Add(block)
@@ -90,6 +99,19 @@ def main():
     order.SetTextThickness(pcbnew.FromMM(0.15))
     order.SetTextAngleDegrees(90)
     order.SetMirrored(True)
+
+    pads = {fp.GetReference(): fp.GetPosition() for fp in board.GetFootprints()}
+    for ref, label in PAD_LABELS.items():
+        t = labels.get(label)
+        if t is None:
+            t = pcbnew.PCB_TEXT(board)
+            board.Add(t)
+        t.SetText(label)
+        t.SetLayer(pcbnew.B_SilkS)
+        t.SetPosition(pads[ref] + mm(0, PAD_LABEL_OFFSET))
+        t.SetTextSize(mm(PAD_LABEL_HEIGHT, PAD_LABEL_HEIGHT))
+        t.SetTextThickness(pcbnew.FromMM(0.12))
+        t.SetMirrored(True)
 
     tb = board.GetTitleBlock()
     tb.SetTitle(TITLE)

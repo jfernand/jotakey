@@ -39,7 +39,6 @@
 		(stackup
 			(layer "F.SilkS"
 				(type "Top Silk Screen")
-				(color "White")
 			)
 			(layer "F.Paste"
 				(type "Top Solder Paste")
@@ -74,10 +73,10 @@
 			)
 			(layer "B.SilkS"
 				(type "Bottom Silk Screen")
-				(color "White")
 			)
-			(copper_finish "None")
+			(copper_finish "ENIG")
 			(dielectric_constraints no)
+			(edge_connector bevelled)
 		)
 		(pad_to_mask_clearance 0.05)
 		(allow_soldermask_bridges_in_footprints no)
@@ -5119,6 +5118,19 @@
 		(sheetfile "jotakey-key.kicad_sch")
 		(attr smd)
 		(duplicate_pad_numbers_are_jumpers no)
+		(fp_poly
+			(pts
+				(xy 0.3182 -3.5) (xy -2.5455 0.3182) (xy -0.6364 0.3182) (xy -1.9091 3.5) (xy 2.5455 -0.6364) (xy 0.3182 -0.6364)
+				(xy 2.2273 -3.5)
+			)
+			(stroke
+				(width 0)
+				(type solid)
+			)
+			(fill yes)
+			(layer "F.SilkS")
+			(uuid "3d6dfa20-005a-4edd-a08f-60fadf07cba8")
+		)
 		(fp_circle
 			(center 0 0)
 			(end 5.9 0)
@@ -5209,7 +5221,6 @@
 			(uuid "b6d9216c-9e55-49bf-8ba0-cfc8468aab33")
 		)
 		(embedded_fonts no)
-		(fp_poly (pts (xy 0.3182 -3.5000) (xy -2.5455 0.3182) (xy -0.6364 0.3182) (xy -1.9091 3.5000) (xy 2.5455 -0.6364) (xy 0.3182 -0.6364) (xy 2.2273 -3.5000)) (stroke (width 0) (type solid)) (fill yes) (layer "F.SilkS"))
 	)
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
@@ -6034,6 +6045,66 @@
 				(bold yes)
 			)
 			(justify left bottom)
+		)
+	)
+	(gr_text "DIO"
+		(at 94.92 99.65 0)
+		(layer "B.SilkS")
+		(uuid "a91371d9-9618-4f96-9f66-9ee96aa0211a")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+			(justify mirror)
+		)
+	)
+	(gr_text "CLK"
+		(at 97.46 99.65 0)
+		(layer "B.SilkS")
+		(uuid "c0e2c4b7-f58b-4729-8347-28b3a04e44a9")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+			(justify mirror)
+		)
+	)
+	(gr_text "RST"
+		(at 100 99.65 0)
+		(layer "B.SilkS")
+		(uuid "beca70cd-25fe-40da-9aaf-78986205a083")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+			(justify mirror)
+		)
+	)
+	(gr_text "3V3"
+		(at 102.54 99.65 0)
+		(layer "B.SilkS")
+		(uuid "6b645f39-b9e4-4c8e-a27a-bc75742fab69")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+			(justify mirror)
+		)
+	)
+	(gr_text "GND"
+		(at 105.08 99.65 0)
+		(layer "B.SilkS")
+		(uuid "ab107ca9-f4c9-458f-9dec-67d79618ff29")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+			(justify mirror)
 		)
 	)
 	(gr_text "JLCJLCJLCJLC"
