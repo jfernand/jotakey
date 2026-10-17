@@ -113,8 +113,9 @@ J1 (edge contacts), E1 (touch electrode) and TP1–TP5 (SWD pads) are copper on 
 parts. Four Extended parts each add JLCPCB's per-part setup fee.
 - **Missing parts:** if JLCPCB lacks one, it is sourced through JLCPCB global sourcing or
   consigned, and recorded in `MANUFACTURING.md`.
-- **Board:** 2 layers, 2.0 mm thick, ENIG finish, gold fingers with a bevelled edge. All parts
-  on the top side.
+- **Board:** 2 layers, 2.0 mm thick, ENIG finish, gold fingers with a bevelled edge, black
+  solder mask with white silkscreen (recorded in the KiCad board stackup; choose the same
+  options when ordering). All parts on the top side.
 
 ## 6. Form factor
 

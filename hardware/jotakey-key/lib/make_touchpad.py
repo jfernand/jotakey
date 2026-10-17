@@ -4,8 +4,9 @@
 KiCad pads cannot contain holes, so the electrode is a custom pad made of two simple polygons.
 A vertical line through the bolt crosses its outline exactly twice; the disc is split along that
 line, and each half follows the bolt's outline on its side. The union of the two halves is the
-disc minus the bolt. Under the solder mask the bolt then shows as bare laminate. The footprint
-has no silkscreen: ink over the electrode would cover the logo and is touched by the user's finger.
+disc minus the bolt. Under the solder mask the bolt then shows as bare laminate, and the
+footprint fills the same outline with silkscreen, so the logo also shows under a dark mask that
+hides the difference between copper and laminate. That is the only silkscreen on the electrode.
 
 Run from this directory:  python3 make_touchpad.py
 """
@@ -66,6 +67,12 @@ def poly(points):
     return f"      (gr_poly (pts {rel}) (width 0) (fill yes))\n"
 
 
+def silk_bolt():
+    """The bolt itself, filled, on the top silkscreen: exactly over the copper cut-out."""
+    pts = " ".join(f"(xy {x:.4f} {y:.4f})" for x, y in (to_mm(p) for p in BOLT))
+    return f'  (fp_poly (pts {pts}) (stroke (width 0) (type solid)) (fill yes) (layer "F.SilkS"))\n'
+
+
 def circle(layer, r, width, fill="none"):
     return (f'  (fp_circle (center 0 0) (end {r} 0) (stroke (width {width}) (type solid)) '
             f'(fill {fill}) (layer "{layer}"))\n')
@@ -87,7 +94,7 @@ text = f'''(footprint "TouchPad_D10mm"
     (primitives
 {poly(left)}{poly(right)}    )
   )
-{circle("F.Fab", RADIUS, 0.1)}{circle("F.CrtYd", 5.9, 0.05)})
+{silk_bolt()}{circle("F.Fab", RADIUS, 0.1)}{circle("F.CrtYd", 5.9, 0.05)})
 '''
 
 pathlib.Path(__file__).with_name("jotakey.pretty").joinpath("TouchPad_D10mm.kicad_mod").write_text(text)
