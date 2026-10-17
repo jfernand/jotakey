@@ -1,5 +1,5 @@
 """Route the jotakey-key board: keep-outs, hand-routed critical nets, Freerouting for the rest,
-then GND pours on both layers.
+then GND pours on both layers (hatched behind the touch electrode).
 
 Works on the saved jotakey-key.kicad_pcb through KiCad's pcbnew bindings, because Specctra
 DSN export and SES import exist only there. Run it with KiCad's own Python, after layout.py:
@@ -29,7 +29,10 @@ BOARD = HERE.parent / "jotakey-key.kicad_pcb"
 
 VIA = (0.6, 0.3)            # diameter, drill
 ELECTRODE = (100.0, 106.5)  # touch electrode centre (E1), copper radius 5 mm
-ELECTRODE_KEEPOUT = 6.0     # AN4312: no copper underneath, ground >= 1 mm away on the top layer
+ELECTRODE_KEEPOUT = 6.0     # top: ground >= 1 mm from the 5 mm electrode; bottom: the hatch below
+# AN4312 3.5.6: a 10 % copper mesh on the side opposite the electrode. Square hatch of lines t
+# wide at pitch p covers 1 - ((p - t) / p)^2 of the area: 0.2 mm lines, 3.7 mm gaps -> 10 %.
+ELECTRODE_HATCH = (0.2, 3.7)  # line width, gap
 TONGUE = ((93.5, 69.5), (106.5, 82.0))  # USB-A plug tongue: contacts only on top, nothing below
 POUR = ((90.0, 82.0), (110.0, 116.0))   # GND pour outline; the board edge clips it
 EDGE_CLEARANCE = 0.5        # board setup; Freerouting does not read it, so keep-outs carry it
@@ -178,16 +181,39 @@ def keepout(board, name, sides, points, tracks=False, vias=False, pours=False):
     board.Add(z)
 
 
-def gnd_pour(board, side):
+def gnd_zone(board, side, name, points):
     z = pcbnew.ZONE(board)
     z.SetLayer(layer(side))
     z.SetNet(board.FindNet("GND"))
-    z.SetZoneName(f"GND {side}")
+    z.SetZoneName(name)
     z.SetLocalClearance(pcbnew.FromMM(0.2))
     z.SetMinThickness(pcbnew.FromMM(0.2))
     z.SetThermalReliefGap(pcbnew.FromMM(0.25))
-    outline(z, rect(*POUR))
+    outline(z, points)
     board.Add(z)
+    return z
+
+
+def gnd_pour(board, side, hole=None):
+    z = gnd_zone(board, side, f"GND {side}", rect(*POUR))
+    if hole:
+        poly = z.Outline()
+        poly.NewHole()
+        for p in hole:
+            poly.Append(pcbnew.FromMM(p[0]), pcbnew.FromMM(p[1]), 0, 0)
+
+
+def gnd_hatch_under_electrode(board):
+    """A hatched GND zone filling the bottom pour's hole under the electrode. It overlaps the
+    solid pour by 0.3 mm, at a higher priority, so the two join."""
+    z = gnd_zone(board, "B", "GND B hatch (electrode)", circle(ELECTRODE, ELECTRODE_KEEPOUT + 0.3))
+    z.SetAssignedPriority(1)  # wins where it overlaps the solid pour
+    z.SetFillMode(pcbnew.ZONE_FILL_MODE_HATCH_PATTERN)
+    z.SetHatchThickness(pcbnew.FromMM(ELECTRODE_HATCH[0]))
+    z.SetHatchGap(pcbnew.FromMM(ELECTRODE_HATCH[1]))
+    # Square to the board: the touch trace reaches the electrode at 45 degrees, so it crosses
+    # the hatch lines instead of following one (AN4312 figure 31).
+    z.SetHatchOrientation(pcbnew.EDA_ANGLE(0, pcbnew.DEGREES_T))
 
 
 def edge_bands():
@@ -277,8 +303,8 @@ def keepouts(board):
     keepout(board, "tongue: no vias or pours", ("F", "B"), rect(*TONGUE), vias=True, pours=True)
     keepout(board, "tongue: nothing on the bottom", ("B",), rect(*TONGUE), tracks=True)
     ring = circle(ELECTRODE, ELECTRODE_KEEPOUT)
-    keepout(board, "electrode: no vias or pours", ("F", "B"), ring, vias=True, pours=True)
-    keepout(board, "electrode: nothing underneath", ("B",), ring, tracks=True)
+    keepout(board, "electrode: no vias or pours", ("F",), ring, vias=True, pours=True)
+    keepout(board, "electrode: only the GND hatch underneath", ("B",), ring, tracks=True, vias=True)
     for band in edge_bands():
         keepout(board, "board edge clearance", ("F", "B"), band, tracks=True, vias=True)
 
@@ -358,7 +384,8 @@ def main():
     for at in GND_VIAS:
         add_via(board, "GND", at)
     gnd_pour(board, "F")
-    gnd_pour(board, "B")
+    gnd_pour(board, "B", hole=circle(ELECTRODE, ELECTRODE_KEEPOUT))
+    gnd_hatch_under_electrode(board)
     pcbnew.ZONE_FILLER(board).Fill(board.Zones())
 
     pcbnew.SaveBoard(str(BOARD), board)
