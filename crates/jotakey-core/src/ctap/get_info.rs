@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! authenticatorGetInfo (CTAP 2.0 §5.4).
 
 use super::{MAX_CREDENTIAL_COUNT_IN_LIST, Response, write_success};

@@ -2,6 +2,7 @@
 name = "jotakey-testfw"
 description = "On-device tests for Jotakey (ESP32-C6), run with probe-rs over the USB-JTAG port"
 version = "0.1.0"
+authors = ["Javier Fernandez @ JotaSoft"]
 edition = "2024"
 publish = false
 

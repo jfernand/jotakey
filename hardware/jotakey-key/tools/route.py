@@ -1,3 +1,4 @@
+# (c) Javier Fernandez @ JotaSoft 2026
 """Route the jotakey-key board: keep-outs, hand-routed critical nets, Freerouting for the rest,
 then GND pours on both layers (hatched behind the touch electrode).
 

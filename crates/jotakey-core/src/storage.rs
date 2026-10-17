@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Power-loss-safe persistent records (signature counter, reset epoch).
 //!
 //! Each [`RecordLog`] owns two flash sectors and appends fixed-size records:

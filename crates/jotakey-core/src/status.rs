@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! CTAP status codes (CTAP 2.0 §6.3) used by this authenticator.
 
 /// A CTAP status code. `Success` is the only non-error value.

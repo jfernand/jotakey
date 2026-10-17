@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# (c) Javier Fernandez @ JotaSoft 2026
 """Independent end-to-end check of a Jotakey with Yubico's python-fido2.
 
 python-fido2 is an implementation we did not write, so this catches misreadings of the

@@ -1,3 +1,4 @@
+# (c) Javier Fernandez @ JotaSoft 2026
 """Render the jotakey-key board, front and back, for the document (docs/figures/).
 
     KICAD_CLI="~/Applications/kicad-10.0.7-x86_64.AppImage kicad-cli" python3 tools/render.py

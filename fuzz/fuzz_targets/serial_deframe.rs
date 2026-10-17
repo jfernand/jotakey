@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Serial deframer: arbitrary byte streams never panic, and every report it emits is one
 //! that re-encodes to a frame with a valid CRC (no corrupted report is ever accepted).
 

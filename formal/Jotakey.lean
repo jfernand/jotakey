@@ -1,3 +1,4 @@
+-- (c) Javier Fernandez @ JotaSoft 2026
 -- The root of the `Jotakey` library: importing this file builds every model and every proof.
 --
 -- Suggested reading order (each file introduces the Lean syntax it uses the first time it

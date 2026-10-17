@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Strict, zero-copy CBOR codec for the subset CTAP2 uses.
 //!
 //! The decoder accepts only **CTAP2 canonical CBOR** (CTAP 2.0 §6):

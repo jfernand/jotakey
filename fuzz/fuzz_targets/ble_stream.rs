@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! BLE framing with the authenticator behind it.
 //!
 //! Input: `[fragment_size_byte, (len, bytes[len])*]` — each record is one GATT write.

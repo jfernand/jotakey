@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Credential IDs: arbitrary bytes never panic, and anything accepted is exactly the ID
 //! `wrap` would mint for the recovered nonce at the same RP (no alternate encodings).
 

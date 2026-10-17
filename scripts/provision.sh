@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# (c) Javier Fernandez @ JotaSoft 2026
 # Jotakey device provisioning — IRREVERSIBLE eFuse operations.
 #
 # This script is for a HUMAN to run, step by step, on a board dedicated to being a Jotakey.

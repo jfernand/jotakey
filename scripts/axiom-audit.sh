@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# (c) Javier Fernandez @ JotaSoft 2026
 # Axiom audit for the Lean proofs (AGENTS.md §4). Fails if:
 #  - formal/AxiomAudit.lean does not elaborate cleanly,
 #  - any `#print axioms` line produced no report (so nothing can pass silently),

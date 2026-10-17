@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 // ============================================================
 // INDUSTRIAL STRENGTH SOFTWARE SERVICES — Typst print template
 // Ported from colors_and_type.css (ISSSDesignSystem_f35b98)
@@ -197,6 +198,7 @@
   date: "",
   docid: "",
   running: "",
+  copyright: "",
   abstract: none,
   meta: (),
   body,
@@ -224,7 +226,7 @@
         #v(3pt, weak: true)
         #grid(
           columns: (1fr, auto),
-          label-sm[#author — #date],
+          label-sm[#if copyright != "" [#copyright — #date] else [#author — #date]],
           // Zero-pad to two digits. `display("01")` would render page 10
           // as "010", since the pattern repeats rather than widening.
           text(font: font-mono, weight: 600, size: 8pt, fill: fg-primary)[
@@ -332,6 +334,10 @@
       [#label-sm(fill: c-steel-500)[Issued] \ #v(2pt)
        #text(font: font-mono, size: 8pt, fill: cover-ink)[#date]],
     )
+    #if copyright != "" {
+      v(14pt)
+      label-sm(fill: c-steel-500)[#copyright]
+    }
   ])
 
   if abstract != none {

@@ -12,6 +12,7 @@ exclude = ["crates/jotakey-fw", "crates/jotakey-testfw", "fuzz"]
 [workspace.package]
 edition = "2024"
 version = "0.1.0"
+authors = ["Javier Fernandez @ JotaSoft"]
 publish = false
 
 [profile.dev]

@@ -1,3 +1,4 @@
+# (c) Javier Fernandez @ JotaSoft 2026
 """Silkscreen for the jotakey-key board, applied to the saved jotakey-key.kicad_pcb.
 
 - Reference designators move to the fab layers. On an 18 mm board with 0402 parts they
@@ -32,6 +33,8 @@ SERIAL_BLOCK = ((91.7, 85.0), (93.7, 95.0))
 ORDER_NUMBER_TEXT = ("JLCJLCJLCJLC", (107.6, 97.0), 0.8)  # text, position, height
 # Bottom side, centred on the copper-free disc behind the touch electrode.
 VERSION_TEXT = ("HW ${HW_VERSION}", (100.0, 108.0), 1.0)  # text, position, height
+# Bottom side, under the version; two lines because one would be wider than the board.
+COPYRIGHT_TEXT = ("(c) Javier Fernandez\n@ JotaSoft 2026", (100.0, 110.6), 0.8)
 
 # SWD test pads: reference -> label, printed under the pad. Three letters fit the 2.54 mm pitch.
 PAD_LABELS = {"TP1": "DIO", "TP2": "CLK", "TP3": "RST", "TP4": "3V3", "TP5": "GND"}
@@ -50,7 +53,8 @@ CHIP_LABEL_HEIGHT = 0.8
 TITLE = "Jotakey key: STM32L432 + OPTIGA Trust M USB-A dongle"
 DATE = "2026-10-17"  # of the HW_VERSION release
 COMMENTS = ["Pin plan and parts: hardware/HARDWARE.md",
-            "Fabrication and assembly: JLCPCB, 2 layers, 2.0 mm, ENIG"]
+            "Fabrication and assembly: JLCPCB, 2 layers, 2.0 mm, ENIG",
+            "(c) Javier Fernandez @ JotaSoft 2026"]
 
 
 def mm(x, y):
@@ -65,7 +69,7 @@ def main():
         ref.SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
 
     # Update a previous run's items in place: removing items through the bindings corrupts them.
-    block = text = order = None
+    block = text = order = notice = None
     labels = {}
     chip_labels = {}
     for d in board.GetDrawings():
@@ -77,6 +81,8 @@ def main():
             text = d
         elif d.GetClass() == "PCB_TEXT" and d.GetText() == ORDER_NUMBER_TEXT[0]:
             order = d
+        elif d.GetClass() == "PCB_TEXT" and d.GetText().startswith("(c) "):
+            notice = d
         elif d.GetClass() == "PCB_TEXT" and d.GetText() in PAD_LABELS.values():
             labels[d.GetText()] = d
     for d in board.GetDrawings():
@@ -102,6 +108,17 @@ def main():
     text.SetTextSize(mm(height, height))
     text.SetTextThickness(pcbnew.FromMM(0.15))
     text.SetMirrored(True)
+
+    if notice is None:
+        notice = pcbnew.PCB_TEXT(board)
+        board.Add(notice)
+    label, at, height = COPYRIGHT_TEXT
+    notice.SetText(label)
+    notice.SetLayer(pcbnew.B_SilkS)
+    notice.SetPosition(mm(*at))
+    notice.SetTextSize(mm(height, height))
+    notice.SetTextThickness(pcbnew.FromMM(0.15))
+    notice.SetMirrored(True)
 
     if order is None:
         order = pcbnew.PCB_TEXT(board)

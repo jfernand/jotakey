@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Deterministic [`Platform`] for tests, fuzzing and differential testing.
 //!
 //! **Never use in firmware.** Its "random" bytes are a hash chain and its root key is in RAM.

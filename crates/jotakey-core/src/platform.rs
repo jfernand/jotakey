@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! The boundary between the core and the hardware.
 //!
 //! The firmware implements [`Platform`] on top of the ESP32-C6 peripherals; tests implement

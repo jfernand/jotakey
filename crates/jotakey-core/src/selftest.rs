@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Power-on known-answer tests and continuous RNG health tests (invariant 7).
 //!
 //! The firmware runs [`run_kats`] and [`startup_rng_test`] at boot before the authenticator

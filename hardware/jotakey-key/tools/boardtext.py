@@ -1,3 +1,4 @@
+# (c) Javier Fernandez @ JotaSoft 2026
 """Edit a .kicad_pcb file as text, for what the KiCad 10 pcbnew bindings cannot do safely:
 removing items through them corrupts the remaining objects or crashes Python."""
 

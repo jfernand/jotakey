@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! CTAPHID over the USB-Serial/JTAG port.
 //!
 //! Bytes from the host pass through the core's serial [`Deframer`] (COBS + CRC-32) and

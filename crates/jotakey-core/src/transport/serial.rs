@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Serial framing for tunnelling 64-byte CTAPHID reports over the USB-Serial/JTAG port.
 //!
 //! The ESP32-C6 cannot be a USB HID device. Reports therefore travel as frames on a byte

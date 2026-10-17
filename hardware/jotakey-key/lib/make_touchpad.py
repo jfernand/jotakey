@@ -1,3 +1,4 @@
+# (c) Javier Fernandez @ JotaSoft 2026
 """Generate jotakey.pretty/TouchPad_D10mm.kicad_mod: a 10 mm touch electrode with the ISSS logo
 (the lightning bolt of the ISSS design system's favicon) cut out of its copper.
 

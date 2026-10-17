@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Support for the on-device tests: app descriptor, RTT logger, and a test platform that
 //! uses the real TRNG with a software key (so CTAP flows run on silicon without touching
 //! the eFuse key or the production flash region).

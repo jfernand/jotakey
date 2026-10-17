@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! FIDO over BLE (CTAP 2.0 §8.3) with trouBLE.
 //!
 //! Security posture:

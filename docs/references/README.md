@@ -1,6 +1,8 @@
 # References
 
-Local copies of the references cited in `docs/jotakey.typ` (chapter "References" in
+The documents themselves are not in the repository: they belong to their authors and publishers. Download each from the source listed below into this folder; git ignores everything here except this file.
+
+The references cited in `docs/jotakey.typ` (chapter "References" in
 `chapters/appendix.typ`). Downloaded 2026-10-16. The table follows the order of the reference list.
 
 | Reference in the document | File | Version | Source |

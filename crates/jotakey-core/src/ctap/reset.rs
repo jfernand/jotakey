@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! authenticatorReset (CTAP 2.0 §5.6).
 //!
 //! Invariant 6: reset is accepted only within [`RESET_WINDOW_MS`] of power-up and only after

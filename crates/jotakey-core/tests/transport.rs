@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! CTAPHID and BLE framing: unit scenarios plus property tests over arbitrary input.
 
 use jotakey_core::MAX_MSG_SIZE;

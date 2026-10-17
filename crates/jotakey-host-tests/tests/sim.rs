@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! End-to-end WebAuthn flows against the in-process simulated device. Same code path as
 //! firmware + bridge, minus the hardware.
 
