@@ -47,5 +47,9 @@ host-tests:
 doc:
     typst compile docs/jotakey.typ docs/jotakey.pdf
 
+# Print version: plain white pages, no black cover band.
+doc-print:
+    typst compile --input print=true docs/jotakey.typ docs/jotakey-print.pdf
+
 deny:
     cargo deny check

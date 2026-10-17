@@ -119,3 +119,19 @@
     it.text.replace("_", "_\u{200B}").replace(".", ".\u{200B}"))
   body
 }
+
+// Images side by side, each with its own label, and one caption under the row.
+// Paths are relative to this file (docs/).
+#let board-views(caption: none, height: 9cm, ..views) = {
+  block(width: 100%, above: 12pt, below: 12pt, breakable: false)[
+    #grid(columns: views.pos().len(), column-gutter: 14pt, align: center + bottom,
+      ..views.pos().map(v => {
+        let (path, label) = v
+        stack(spacing: 5pt, image(path, height: height), label-sm[#label])
+      }))
+    #if caption != none {
+      v(4pt)
+      label-sm[#caption]
+    }
+  ]
+}
