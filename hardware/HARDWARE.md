@@ -73,7 +73,9 @@ There is no separate VCC_IO pin; the I2C level follows VCC (1.62–5.5 V).
     will;
   - PB5 (pin 28), TSC_G2_IO2: the touch electrode, through a series resistor near the MCU
     (≈1 kΩ);
-  - the electrode is a copper area at the far end of the dongle, laid out as AN4312 describes.
+  - the electrode is a 10 mm copper disc at the far end of the dongle, laid out as AN4312
+    (§3.5.6) describes: 4 mm of bare board around it on the top layer (AN4312 asks for at
+    least 2 mm, 4–5 mm recommended), and a 10 % hatched ground plane behind it.
   A touch is required for every signature. This is what stops a remote attacker from silently
   logging into accounts.
 - **Status LED:** a single red LED with a 1 kΩ series resistor on PA3 (pin 9, next to the LED), about 1.3 mA.
@@ -119,7 +121,7 @@ parts. Four Extended parts each add JLCPCB's per-part setup fee.
 A USB dongle whose PCB edge is the USB-A plug:
 - four contacts on the top side, per the USB 2.0 Series "A" plug drawing (`datasheets/`, USB
   2.0 specification chapter 6), VBUS and GND longer so they mate first;
-- the board is 12.0 mm wide at the plug;
+- the board is 12.0 mm wide at the plug, 18 mm wide and 47 mm long overall;
 - 2.0 mm thickness, so the tongue sits firmly in a USB-A receptacle;
 - before ordering assembled boards, order bare boards and check the fit in several ports.
 
