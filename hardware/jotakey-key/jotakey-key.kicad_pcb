@@ -7,6 +7,14 @@
 		(legacy_teardrops no)
 	)
 	(paper "A4")
+	(title_block
+		(title "Jotakey key: STM32L432 + OPTIGA Trust M USB-A dongle")
+		(date "2026-10-17")
+		(rev "${HW_VERSION}")
+		(company "Jotakey")
+		(comment 1 "Pin plan and parts: hardware/HARDWARE.md")
+		(comment 2 "Fabrication and assembly: JLCPCB, 2 layers, 2.0 mm, ENIG")
+	)
 	(layers
 		(0 "F.Cu" signal)
 		(2 "B.Cu" signal)
@@ -81,6 +89,7 @@
 			(outputdirectory "")
 		)
 	)
+	(property "HW_VERSION" "0.1.0")
 	(footprint "Resistor_SMD:R_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "094e6669-ba05-417a-8c96-a37f03e7235f")
@@ -5749,6 +5758,18 @@
 		)
 		(layer "Edge.Cuts")
 		(uuid "234f0e85-4985-4953-b2f0-052383b84f67")
+	)
+	(gr_text "HW ${HW_VERSION}"
+		(at 100 106.5 0)
+		(layer "B.SilkS")
+		(uuid "d28fe83c-cff9-46bd-a8ac-2b4074dffdd5")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+			(justify mirror)
+		)
 	)
 	(segment
 		(start 106.46 95.25)

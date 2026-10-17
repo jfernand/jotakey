@@ -134,3 +134,15 @@ A USB dongle whose PCB edge is the USB-A plug:
 - **Secure element:** keys generated in the OPTIGA never leave it. The firmware port that uses
   it (and the changes it implies for `AGENTS.md`, the document and the Lean models) is a
   separate piece of work.
+
+## 8. Versions
+
+The board and the firmware are versioned separately, each with semantic versioning.
+
+- **Hardware version:** set in one place, the KiCad project text variable `HW_VERSION`
+  (`jotakey-key/jotakey-key.kicad_pro`; File > Project Settings > Text Variables). The
+  schematic and PCB title blocks and the "HW x.y.z" text on the bottom silkscreen all show
+  `${HW_VERSION}`. Releases are tagged `hw-vX.Y.Z`. Bump the major version for changes that
+  need different firmware (a pin moves), the minor version for compatible changes (a part
+  value, routing), the patch version for silkscreen or documentation fixes.
+- **Firmware version:** the Cargo workspace version, tagged `fw-vX.Y.Z`.
