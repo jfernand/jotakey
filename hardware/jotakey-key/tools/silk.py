@@ -7,6 +7,7 @@
   Both use the project text variable HW_VERSION (jotakey-key.kicad_pro, File > Project
   Settings > Text Variables), the one place the hardware version is set; KiCad substitutes it
   when it draws or plots the board.
+- The chips on the top are labelled with their function, in the nearest free space.
 - The SWD test pads on the bottom are labelled with their signals, just below each pad.
 - A solid 2 x 10 mm block on the bottom silkscreen marks where JLCPCB prints the board's
   serial number. Order with "Mark on PCB: Serial number, specify position"; without that
@@ -37,6 +38,15 @@ PAD_LABELS = {"TP1": "DIO", "TP2": "CLK", "TP3": "RST", "TP4": "3V3", "TP5": "GN
 PAD_LABEL_OFFSET = 1.25  # mm from the pad centre, towards the electrode
 PAD_LABEL_HEIGHT = 0.8  # the board's (and JLCPCB's) minimum
 
+# Chips: reference -> (label, offset from the footprint origin in mm). Placed clear of pads.
+CHIP_LABELS = {
+    "U1": ("MCU", (0.0, 6.0)),      # below the capacitor row, in the electrode's bare ring
+    "U2": ("OPTIGA", (0.3, -3.4)),  # above it, clear of its pin-1 mark, below the shoulder
+    "U3": ("LDO", (0.0, -2.55)),    # above it, below the tongue
+    "U4": ("ESD", (0.0, 2.6)),      # below it, among the USB tracks
+}
+CHIP_LABEL_HEIGHT = 0.8
+
 TITLE = "Jotakey key: STM32L432 + OPTIGA Trust M USB-A dongle"
 DATE = "2026-10-17"  # of the HW_VERSION release
 COMMENTS = ["Pin plan and parts: hardware/HARDWARE.md",
@@ -57,6 +67,7 @@ def main():
     # Update a previous run's items in place: removing items through the bindings corrupts them.
     block = text = order = None
     labels = {}
+    chip_labels = {}
     for d in board.GetDrawings():
         if d.GetLayer() != pcbnew.B_SilkS:
             continue
@@ -68,6 +79,10 @@ def main():
             order = d
         elif d.GetClass() == "PCB_TEXT" and d.GetText() in PAD_LABELS.values():
             labels[d.GetText()] = d
+    for d in board.GetDrawings():
+        if d.GetLayer() == pcbnew.F_SilkS and d.GetClass() == "PCB_TEXT" and \
+                d.GetText() in [label for label, _ in CHIP_LABELS.values()]:
+            chip_labels[d.GetText()] = d
     if block is None:
         block = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_RECTANGLE)
         board.Add(block)
@@ -112,6 +127,17 @@ def main():
         t.SetTextSize(mm(PAD_LABEL_HEIGHT, PAD_LABEL_HEIGHT))
         t.SetTextThickness(pcbnew.FromMM(0.12))
         t.SetMirrored(True)
+
+    for ref, (label, (dx, dy)) in CHIP_LABELS.items():
+        t = chip_labels.get(label)
+        if t is None:
+            t = pcbnew.PCB_TEXT(board)
+            board.Add(t)
+        t.SetText(label)
+        t.SetLayer(pcbnew.F_SilkS)
+        t.SetPosition(pads[ref] + mm(dx, dy))
+        t.SetTextSize(mm(CHIP_LABEL_HEIGHT, CHIP_LABEL_HEIGHT))
+        t.SetTextThickness(pcbnew.FromMM(0.15))
 
     tb = board.GetTitleBlock()
     tb.SetTitle(TITLE)

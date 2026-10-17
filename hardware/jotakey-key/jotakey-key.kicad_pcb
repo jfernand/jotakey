@@ -6047,6 +6047,50 @@
 			(justify left bottom)
 		)
 	)
+	(gr_text "LDO"
+		(at 95.5 82.95 0)
+		(layer "F.SilkS")
+		(uuid "9bb486f4-2946-4218-82c1-e7d6e2ffdf56")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "ESD"
+		(at 100 87.6 0)
+		(layer "F.SilkS")
+		(uuid "aa59e911-42de-4c9c-95c1-41976876eb1e")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "MCU"
+		(at 100 99.5 0)
+		(layer "F.SilkS")
+		(uuid "9ada390f-4779-4256-bc64-8ad36cc46d70")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "OPTIGA"
+		(at 106.2 83 0)
+		(layer "F.SilkS")
+		(uuid "98ffc5e4-5f1c-4402-b0ac-431e683491b3")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
 	(gr_text "DIO"
 		(at 94.92 99.65 0)
 		(layer "B.SilkS")
