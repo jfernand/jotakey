@@ -133,9 +133,9 @@ A USB dongle whose PCB edge is the USB-A plug:
 - **SWD:** the SWD pads are for prototypes only.
 - **Shielded Connection:** the I2C bus to the OPTIGA is exposed on the board, so the firmware
   must use the OPTIGA Shielded Connection (encrypted I2C, Solution Reference Manual).
-- **Secure element:** keys generated in the OPTIGA never leave it. The firmware port that uses
-  it (and the changes it implies for `AGENTS.md`, the document and the Lean models) is a
-  separate piece of work.
+- **Secure element:** the root secret and the signature counter live in the OPTIGA, which
+  derives each credential's values on request; the key hierarchy, provisioning and what a
+  physical attacker gets are in `AGENTS.md` §3 and chapter 7.5 of `docs/jotakey.typ`.
 
 ## 8. Versions
 

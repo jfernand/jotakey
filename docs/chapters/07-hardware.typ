@@ -4,7 +4,8 @@
 = Hardware security
 
 Software can be proved correct. Silicon can be attacked. This chapter describes what the
-ESP32-C6 offers, how Jotakey uses it, and where it falls short.
+ESP32-C6 offers, how Jotakey uses it, and where it falls short (§7.1–7.4). It then describes
+the jotakey key, which adds the secure element the C6 lacks (§7.5).
 
 == What the chip provides
 
@@ -77,6 +78,66 @@ signatures internally, so even full control of the microcontroller does not reve
   ([Infineon OPTIGA Trust M], [EAL6+, P-256, shielded I²C, monotonic counters.], [Smaller key store than SE050.]),
 )
 
-In the planned design, the secure element replaces the eFuse HMAC key as the root of the
-hierarchy and performs every credential signature. The core's `Platform` trait already
-isolates exactly the operations that would move into it.
+The jotakey key puts the third of these on its own board, next to an STM32L432
+microcontroller (§7.5).
+
+== The jotakey key: a secure element
+
+The jotakey key (`hardware/HARDWARE.md`) pairs two chips with different jobs. The
+*STM32L432KC*, an Arm Cortex-M4 at 80 MHz, runs the firmware: USB, CTAP, the touch sensor,
+the LED and the ECDSA signatures. The *Infineon OPTIGA Trust M V1*, built on Common Criteria
+EAL6+ certified hardware, keeps the secrets: the root, and the signature counter. The two
+talk over I²C.
+
+#dtable(
+  columns: (1.1fr, 2.4fr),
+  ("Feature", "Role in Jotakey"),
+  ([OPTIGA data object `0xF1D0`], [Holds `K_root`, 64 bytes, as a pre-shared secret. After provisioning its access conditions say: never readable, never changeable, usable only over the shielded connection.]),
+  ([OPTIGA `DeriveKey`], [Runs the TLS 1.2 PRF (HMAC-SHA256 inside) over `K_root` and returns the result: one credential's tag or seed (§6.3). About 50 ms each.]),
+  ([OPTIGA monotonic counter `0xE120`], [The signature counter (invariant 2). The chip only lets it go up, survives power loss by construction, and freezes it at a threshold set to its rated 600 000 updates.]),
+  ([OPTIGA shielded connection], [Encrypts and authenticates the I²C traffic with a 64-byte platform binding secret shared between the two chips. A probe on the bus sees ciphertext; a swapped chip on either side cannot talk to the other.]),
+  ([OPTIGA and STM32 random generators], [Both feed every random value, mixed with SHA-512, so one weak generator is not enough to weaken the key. The STM32's generator reports its own health errors (invariant 7).]),
+  ([STM32 readout protection], [Level 2 on production units: the debug port, booting from RAM and the factory bootloader are disabled for good, and the flash cannot be read out. The setting is irreversible.]),
+)
+
+=== Provisioning
+
+Provisioning happens on the device itself, from a provisioning build of the firmware that
+a human starts. The secrets are generated on the device and never leave it:
+
++ *Pair.* Generate a 64-byte platform binding secret, write it into the OPTIGA (`0xE140`)
+  and into the STM32's flash, and lock the OPTIGA's copy.
++ *Root.* Generate `K_root` from both random generators, write it into `0xF1D0`, and lock it.
++ *Counter and epoch.* Set the counter's threshold; write a random epoch to flash.
++ *Lock.* A human sets readout protection level 2 with STM32CubeProgrammer, over the SWD
+  test pads. From then on the firmware is frozen: Jotakey keys, like YubiKeys, are not
+  updated in the field. A security fix means a new key. (Signed updates are a roadmap
+  exploration, §11.)
+
+Development boards stop before the last step and stay open to the debugger. `AGENTS.md`
+forbids automation from taking any of the irreversible steps: locking OPTIGA objects or
+setting readout protection.
+
+=== What a physical attacker gets
+
+The STM32L432 is an ordinary microcontroller. Fault-injection attacks against STM32 readout
+protection have been published for several families. So we assume a well-equipped thief
+can, in the end, run their own code on it, with the binding secret and the epoch in hand.
+What they get then:
+
+#dtable(
+  columns: (1.3fr, 2fr),
+  ("They can", "They cannot"),
+  ([Use the key while they hold it, for any credential whose ID they present: the hardware computes its tag and seed on request.], [Read `K_root`: the OPTIGA never releases it, and attacks on the OPTIGA itself are what its certification is about.]),
+  ([Copy a credential, if they also obtain its ID from the website (the ID is not secret).], [Copy the key as a whole: no secret on the STM32 covers more than one credential, so nothing they take away lets them compute the others or mint new ones.]),
+  ([Make the key unusable (for example, by resetting it).], [Roll the signature counter back: it lives in the OPTIGA and only goes up, so relying parties that check it can notice a copied credential.]),
+)
+
+This is the honest boundary of a two-chip design. A key whose secure element also performed
+the signatures would close the first row. The Trust M V1 cannot import a derived private key
+to sign with it, and storing one key per credential would cap the number of credentials.
+The threat model (§1.3) records the result as *partially defeated*.
+
+The OPTIGA Trust M V3 adds HMAC, HKDF and AES. It was out of stock when the board's parts
+were chosen, so the key uses the V1, whose TLS PRF does the same job here. The two share a
+package and pinout, so a later board can switch; `F` would then become HMAC, as on the C6.

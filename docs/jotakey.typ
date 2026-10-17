@@ -3,19 +3,20 @@
 
 #show: isss-doc.with(
   title: "Jotakey",
-  subtitle: "A formally specified FIDO2 security key on the ESP32-C6",
+  subtitle: "A formally specified FIDO2 security key",
   author: "Javier",
   contact: "jfernand@me.com",
   date: "2026-10-14",
   docid: "JK-TR-001 · rev 0.1",
   running: "Jotakey — FIDO2, passkeys and formal verification",
   abstract: [
-    Jotakey is a hardware security key, in the family of the YubiKey, built on an Espressif
-    ESP32-C6 DevKit and written entirely in Rust. This report has three aims. First, it
+    Jotakey is a hardware security key, in the family of the YubiKey, written entirely in
+    Rust. It runs on its own board, the jotakey key (an STM32L432 microcontroller with an
+    OPTIGA Trust M secure element), and on an Espressif ESP32-C6 DevKit. This report has three aims. First, it
     explains from first principles how FIDO2, WebAuthn and *passkeys* work, and why they
     defeat phishing where passwords and one-time codes fail. Second, it documents the design
-    of Jotakey: its threat model, key hierarchy, transports, and the honest limits of a
-    microcontroller without a secure element. Third, it describes how the device is
+    of Jotakey: its threat model, key hierarchy, transports, and the honest limits of each
+    platform against an attacker who holds the device. Third, it describes how the device is
     *assured*. Unit and property tests, coverage-guided fuzzing, mutation testing, and a test
     firmware that runs on the chip itself are all covered. So is formal verification in the
     Lean 4 theorem prover. The report assumes no prior knowledge of formal methods, and its
@@ -23,8 +24,8 @@
     actually ship with the device.
   ],
   meta: (
-    ("Status", [MVP: CTAP 2.0, non-resident credentials, USB (via bridge) and BLE]),
-    ("Hardware", [Espressif ESP32-C6-DevKitC-1 / M-1 (two USB-C ports)]),
+    ("Status", [MVP firmware on the ESP32-C6: CTAP 2.0, non-resident credentials, USB (via bridge) and BLE. Jotakey key: hardware 0.1.0; firmware port next]),
+    ("Hardware", [Jotakey key, hardware 0.1.0 (STM32L432KC + OPTIGA Trust M V1, USB-A); Espressif ESP32-C6-DevKitC-1 / M-1]),
     ("Repository", [`crates/` (Rust), `formal/` (Lean 4), `docs/` (this report)]),
     ("Normative rules", [`AGENTS.md` — security invariants 1–9]),
   ),
