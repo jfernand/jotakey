@@ -10,18 +10,24 @@ holder's identity to websites, without ever letting those keys out. You plug it 
 bring it close, or pair it over Bluetooth), the browser asks it to sign a challenge, a
 light blinks, you touch it, and you are logged in. The YubiKey is the best-known example.
 
-Jotakey does the same job on an inexpensive, open development board: the Espressif
-*ESP32-C6 DevKit*, a 160 MHz RISC-V microcontroller with Wi-Fi 6, Bluetooth LE and
-802.15.4 radios, 512 KiB of SRAM and 4–8 MiB of flash. The board has two USB-C ports and
-two buttons, *BOOT* and *RESET*, plus one addressable RGB LED. Jotakey uses the BOOT button as
-its "touch" sensor and the LED as its only display.
+Jotakey does the same job on two platforms. The *jotakey key* is its own hardware: a
+USB-A dongle with an STM32L432 microcontroller, which talks to the computer directly as a
+USB security key, and an Infineon *OPTIGA Trust M* secure element, which holds the root
+secret. A capacitive touch pad is its "touch" sensor and a red LED its only display
+(`hardware/HARDWARE.md`). The *ESP32-C6 DevKit* is an inexpensive, open development board: a
+160 MHz RISC-V microcontroller with Wi-Fi 6, Bluetooth LE and 802.15.4 radios, 512 KiB of
+SRAM and 4–8 MiB of flash. It has two USB-C ports and two buttons, *BOOT* and *RESET*, plus
+one addressable RGB LED; Jotakey uses the BOOT button as its touch sensor. The DevKit has no
+secure element and needs a host bridge for USB (§6.1), so it serves as the development
+platform, and the jotakey key is the device to carry.
 
 #spec(
   ("Protocol", [FIDO2: CTAP 2.0 authenticator, WebAuthn-compatible]),
   ("Algorithms", [ES256 (ECDSA P-256 with SHA-256), HMAC-SHA256, HKDF-SHA256]),
-  ("Transports", [CTAPHID over USB (through a host bridge), FIDO over BLE]),
+  ("Transports", [CTAPHID over USB (native on the key; through a host bridge on the C6), FIDO over BLE (C6)]),
   ("Credentials", [Non-resident ("server-side") credentials, unlimited in number]),
-  ("User presence", [BOOT button, debounced, fresh press required for every signature]),
+  ("User presence", [Touch pad (key) or BOOT button (C6), debounced, fresh press required for every signature]),
+  ("Root of trust", [OPTIGA Trust M secure element (key); eFuse HMAC key (C6)]),
   ("Language", [Rust, `no_std`, no heap in the protocol core, no `unsafe` in the core]),
   ("Verification", [Lean 4 models and proofs of the security-critical state machines]),
 )
@@ -70,17 +76,22 @@ We assume a strong attacker and list exactly what the device does and does not r
      a security key. Accounts that also require a password stay safe. (Adding a PIN is in the
      roadmap, §11.)]),
   ([Thief, laboratory], [Decapsulation, voltage/EM fault injection, power analysis.],
-    [*Not defeated.* Published attacks bypass secure boot and flash encryption on this chip
-     family (§7.4). A secure element is the documented mitigation.]),
+    [*Jotakey key: partially defeated.* The root secret and the counter stay in the OPTIGA
+     secure element (EAL6+ hardware). A thief who breaks the STM32 can *use* the key while holding
+     it, and copy a credential only if they also obtain its ID from the website; they
+     cannot copy the key as a whole (§7.5). *ESP32-C6: not defeated.* Published attacks
+     bypass secure boot and flash encryption on this chip family (§7.4).]),
   ([Supply chain], [Tampered board or toolchain before provisioning.],
     [*Out of scope* for the MVP; partially mitigated by reproducible builds and secure boot.]),
 )
 
 #callout(kind: "trap", "The honest summary")[
   Jotakey is a strong defence against *remote* attackers: phishing, malware and network
-  attackers, which are by far the most common. It is *not* a defence against a
-  well-equipped attacker with physical possession of the device. Commercial keys use
-  certified secure elements for that. We say so plainly in the threat model, in `AGENTS.md`,
+  attackers, which are by far the most common. Against a well-equipped attacker with
+  physical possession, the two platforms differ. The jotakey key keeps its root secret in a
+  certified secure element, so a stolen key cannot be cloned as a whole, although an
+  attacker who breaks its microcontroller can use it while they hold it. The ESP32-C6 has no secure
+  element and gives its secrets up. We say so plainly in the threat model, in `AGENTS.md`,
   and in the roadmap.
 ]
 
@@ -101,6 +112,6 @@ tests and theorems.
   ([5], [CTAPHID channels are isolated from each other.], [⊢]),
   ([6], [Reset only within 10 s of power-up, and only with a touch.], [⊢]),
   ([7], [Fail closed: failed self tests disable the authenticator permanently.], [⊢]),
-  ([8], [The root key never leaves the HMAC peripheral; secrets are zeroized, never logged.], []),
+  ([8], [The root secret never leaves its hardware key store (OPTIGA or eFuse HMAC); secrets are zeroized, never logged.], []),
   ([9], [No secret-dependent branches or memory accesses in our code.], []),
 )

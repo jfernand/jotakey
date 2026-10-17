@@ -44,15 +44,25 @@ presence would let anyone holding the key list your accounts. The steps:
 
 == Hardware
 
-- *Secure element* (§7.4): move `K_dev` and all signing into an ATECC608B, SE050 or OPTIGA
-  Trust M. This is the single most important step for resistance against physical attacks.
-- *Standalone USB*: a small USB-capable co-processor (RP2040, CH32V203, or an ESP32-S3)
-  that presents the HID interface and relays reports to the C6 over UART. That removes the
-  Linux bridge and works on any OS. The co-processor stays outside the security boundary,
-  exactly as the bridge does today.
-- *On-device key generation* for `K_dev`, so the root key never exists outside the chip.
-- *Persistent BLE bonds* in the encrypted partition, so phones and laptops do not have to
-  re-pair after a power cycle.
+The jotakey key (§7.5) delivered the two largest hardware steps of the original plan: a
+secure element holding the root, generated on the device, and native USB without a bridge.
+What follows:
+
+- *Firmware for the jotakey key.* First, move the core to per-credential derivation (§6.3):
+  `Platform::derive_secret` becomes a tag call and a seed call, on both platforms. Then the
+  STM32 adapters: USB HID, the touch sensor, the LED, the OPTIGA driver with its shielded
+  connection, and the provisioning build.
+- *Signed firmware updates (exploration).* Production keys are locked and never updated
+  (§7.5). An alternative worth studying is a small, immutable bootloader that installs only
+  firmware signed with an offline key. It would let fixes reach deployed keys, at the price
+  of a bootloader that is itself security-critical code to design, test and prove.
+- *OPTIGA Trust M V3*, once it is in stock: the same package and pinout, with HMAC, HKDF and
+  AES. `F` would become HMAC-SHA256 on both platforms.
+- *Signing inside the secure element*, which would stop a thief who breaks the
+  microcontroller from using the key at all. It needs a secure element that can sign with
+  derived keys, or a fixed-size store of per-credential keys.
+- *Persistent BLE bonds* on the C6, in the encrypted partition, so phones and laptops do not
+  have to re-pair after a power cycle.
 
 == Assurance
 

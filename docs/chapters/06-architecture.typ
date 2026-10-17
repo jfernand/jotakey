@@ -3,7 +3,11 @@
 
 = Jotakey's architecture
 
-== The board, and the USB problem
+== The ESP32-C6 board, and the USB problem
+
+This section concerns the ESP32-C6 DevKit only. The jotakey key's STM32L432 has a
+general-purpose USB device controller, so the key enumerates as an ordinary FIDO HID device
+and needs no bridge, on any operating system.
 
 The ESP32-C6 DevKit has two USB-C ports. The one labelled *UART* goes through a USB-to-serial
 bridge chip to the C6's UART0. The one labelled *USB* is wired to the C6's own USB
@@ -90,16 +94,46 @@ under `Confirmed`. That structural fact is what the Lean model formalises (§9.6
 == The key hierarchy
 
 #layers(
-  caption: "From the eFuse root key to a credential's private key",
-  ("K_dev (eFuse BLOCK_KEY0)", [256-bit root key, purpose HMAC_UP, read-protected by hardware. Software can only ask the HMAC peripheral to *use* it.], "amber"),
-  ("epoch (encrypted flash)", [32 random bytes, replaced by authenticatorReset. Makes reset possible even though eFuses are write-once.], "dark"),
-  ("K_mac, K_seed", [HMAC(K_dev, "jotakey/mac/v1" ‖ epoch), HMAC(K_dev, "jotakey/seed/v1" ‖ epoch). Derived per operation, zeroized after use.], "dark"),
-  ("credential key d", [HKDF-SHA256(K_seed, salt = rpIdHash, info = "jotakey/cred/v1" ‖ nonce ‖ ctr) → valid P-256 scalar.], "light"),
+  caption: "From the hardware root secret to a credential's private key",
+  ("root (hardware key store)", [The device's one long-term secret. Software can only ask the hardware to *use* it, never read it: the OPTIGA secure element on the key, the eFuse HMAC peripheral on the C6.], "amber"),
+  ("epoch (flash)", [32 random bytes, replaced by authenticatorReset. Makes reset possible while the root stays fixed for the device's life.], "dark"),
+  ("tag, seed (per credential)", [F(root, "jotakey/tag/v1" ‖ epoch ‖ 0x01 ‖ rpIdHash ‖ nonce), F(root, "jotakey/seed/v1" ‖ epoch ‖ rpIdHash ‖ nonce), computed by the hardware for one credential at a time. Zeroized after use.], "dark"),
+  ("credential key d", [HKDF-SHA256(seed, salt = rpIdHash, info = "jotakey/cred/v1" ‖ nonce ‖ ctr) → valid P-256 scalar.], "light"),
 )
 
-Nothing secret is ever *stored* in flash except the epoch. With flash encryption enabled,
-the epoch is unreadable off-chip, and it is useless without `K_dev` anyway. There is no
-credential database to steal, fill up or corrupt. The number of credentials is unlimited.
+The hardware computes each credential's values from the root directly. The microcontroller
+therefore never holds a secret that covers more than one credential. That matters on the
+day an attacker manages to run their own code on it (§7.5). They can then ask the hardware
+for the values of any credential whose ID they hold, and so use or copy that credential. But
+there is no key to take away that would let them compute every credential, or mint new ones,
+on their own computer afterwards.
+
+The two platforms differ only in where the root lives and in the function `F`:
+
+#dtable(
+  columns: (0.9fr, 1.6fr, 1.6fr),
+  ("", "Jotakey key", "ESP32-C6"),
+  ([Root], [`K_root`: 64 bytes in OPTIGA data object `0xF1D0`, type pre-shared secret. Created on the device at provisioning from both chips' random generators, then locked: never readable, never changeable, usable only over the encrypted link (§7.5).], [`K_dev`: 256 bits in eFuse BLOCK_KEY0, purpose HMAC_UP, read-protected by hardware.]),
+  ([`F`], [TLS 1.2 PRF with SHA-256, run by the OPTIGA's `DeriveKey` command. The Trust M V1 has no HMAC command; its PRF is built from HMAC-SHA256.], [HMAC-SHA256 in the HMAC peripheral.]),
+  ([Epoch], [STM32 flash, behind readout protection.], [Encrypted flash.]),
+  ([Counter], [OPTIGA hardware up-counter.], [Flash record log (§6.5).]),
+)
+
+The credential format and its proofs (§9.6) are the same on both platforms: the proofs treat
+the tag function as a parameter, and say nothing about where it is computed.
+
+#callout(kind: "info", "Where the code is today")[
+  The core still implements an earlier form of this hierarchy. There, the root yields two
+  epoch-wide keys, `K_mac` and `K_seed`, through `Platform::derive_secret`, and the
+  microcontroller computes every tag and every HKDF from them. That form gives an attacker who
+  runs code on the microcontroller exactly the "key to take away" described above. Moving the
+  core to per-credential derivation, with a tag call and a seed call in place of
+  `derive_secret`, is the first step of the jotakey key's firmware port.
+]
+
+Nothing secret is ever *stored* in the microcontroller's flash except the epoch (and, on the
+key, the secret that encrypts the link to the OPTIGA). The epoch is useless without the
+root, which the flash never holds.
 
 == Credential IDs: keys by derivation
 
@@ -111,7 +145,7 @@ authenticates it so that it cannot be forged:
   caption: "Jotakey credential ID: 49 bytes",
   ("ver", "0x01", 1),
   ("nonce", "32 random bytes", 8),
-  ("tag", "HMAC-SHA256(K_mac, ver ‖ rpIdHash ‖ nonce)[..16]", 6),
+  ("tag", "F(root, \"jotakey/tag/v1\" ‖ epoch ‖ ver ‖ rpIdHash ‖ nonce)[..16]", 6),
 )
 
 At `getAssertion`, Jotakey recomputes the tag for the *requesting* RP and compares it in
@@ -123,13 +157,19 @@ The nonce is not secret, and the private key is never in the ID, not even encryp
   `unwrap_accepts_only_wrapped_ids`: anything `unwrap` accepts is *exactly* `wrap(rp, nonce)` for the recovered
   nonce. `credential_bound_to_relying_party`: an ID minted for one RP never unwraps at another, *assuming* the MAC
   does not collide across RPs. That assumption is the cryptographic part. It holds for
-  HMAC-SHA256/128 except with probability ≈ 2#super[−128], and it is stated explicitly as a
-  hypothesis of the theorem rather than hidden.
+  HMAC-SHA256 and for the TLS PRF built on it, truncated to 128 bits, except with
+  probability ≈ 2#super[−128], and it is stated explicitly as a hypothesis of the theorem
+  rather than hidden.
 ]
 
 == Persistent state
 
-Only two values persist: the signature counter and the epoch. Each lives in its own
+On the jotakey key, the signature counter lives in the OPTIGA instead (§7.5): a hardware
+up-counter that can only increase, survives power loss by construction, and cannot be
+rolled back even by firmware an attacker controls. The record log described here holds the
+counter and the epoch on the C6, and the epoch on the key.
+
+On the C6, only two values persist: the signature counter and the epoch. Each lives in its own
 power-loss-safe *record log* of two flash sectors. A new value is appended as a record
 `MAGIC ‖ seq ‖ payload ‖ CRC-32` after the last one. When a sector fills, the *other* sector
 is erased and the record goes there. The sector holding the current value is never erased.
