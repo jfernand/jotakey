@@ -5759,6 +5759,19 @@
 		(layer "Edge.Cuts")
 		(uuid "52b75b5e-ecc5-4598-b5e2-c926d2f9bd40")
 	)
+	(gr_text "jotakey"
+		(at 97.5 115 0)
+		(layer "F.SilkS")
+		(uuid "f192c962-e358-4382-b950-2439e90508e3")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+	)
 	(gr_text "JLCJLCJLCJLC"
 		(at 107.6 97 90)
 		(layer "B.SilkS")
