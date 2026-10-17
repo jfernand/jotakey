@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! A small, independent CBOR value type for the relying-party side of the tests.
 //!
 //! Deliberately not shared with the device code: if the device's codec were wrong in a way

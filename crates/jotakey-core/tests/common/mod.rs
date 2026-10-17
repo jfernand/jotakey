@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Test-side helpers: an owned CBOR value with a canonical encoder, request builders and a
 //! response decoder. Independent of the crate's own encoder on purpose, so a bug there
 //! cannot hide itself.

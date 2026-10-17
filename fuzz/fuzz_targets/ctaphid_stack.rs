@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Full USB path: 64-byte CTAPHID packets → reassembly → authenticator → fragmentation.
 //!
 //! Input: a sequence of 65-byte records `[flags, packet(64)]`. `flags` low bits pick the

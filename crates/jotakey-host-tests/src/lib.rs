@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! End-to-end test support for Jotakey.
 //!
 //! * [`Client`]: a host-side CTAPHID client, written independently of the device code: it

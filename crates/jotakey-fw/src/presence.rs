@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! User presence: the BOOT button (GPIO9, active low).
 //!
 //! A touch counts only if the button is seen *released* after the request arrived and then

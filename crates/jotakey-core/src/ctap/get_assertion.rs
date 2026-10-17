@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! authenticatorGetAssertion (CTAP 2.0 §5.2), non-resident credentials only.
 //!
 //! **Deliberate deviation:** `up: false` (silent assertion) is refused with

@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Differential test: the Rust CBOR decoder against the executable Lean specification.
 //!
 //! The Lean definitions `decodeHead` and `validate` are the ones the theorems in

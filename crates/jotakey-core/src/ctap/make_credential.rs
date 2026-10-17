@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! authenticatorMakeCredential (CTAP 2.0 §5.1).
 
 use super::parse::{self, EntityId, PARAM_DEPTH};

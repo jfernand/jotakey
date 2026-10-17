@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Minimal Linux `/dev/uhid` client (see `linux/uhid.h`), safe Rust, no bindgen.
 //!
 //! Only the events the bridge needs: `CREATE2`, `INPUT2`, `DESTROY` (written) and

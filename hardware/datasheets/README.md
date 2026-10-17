@@ -1,5 +1,7 @@
 # Datasheets for the jotakey-key board
 
+The documents themselves are not in the repository: they belong to their authors and publishers. Download each from the source listed below into this folder; git ignores everything here except this file.
+
 Reference documents for the STM32L432 + OPTIGA Trust M USB dongle (`hardware/HARDWARE.md`).
 Downloaded 2026-10-16. When a part changes or a newer revision is used, replace the file and
 update this table.

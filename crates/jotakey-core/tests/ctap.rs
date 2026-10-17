@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! End-to-end CTAP2 behaviour of the core against the mock platform.
 
 mod common;

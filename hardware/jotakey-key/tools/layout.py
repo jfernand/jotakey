@@ -1,3 +1,4 @@
+# (c) Javier Fernandez @ JotaSoft 2026
 """Board outline and footprint placement for the jotakey-key board.
 
 Draws the board outline (USB-A tongue + body with a rounded end) and places every footprint,

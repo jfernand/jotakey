@@ -3,6 +3,7 @@ name = "jotakey-bridge"
 description = "Linux bridge: Jotakey serial CTAPHID tunnel <-> virtual FIDO HID device (uhid)"
 edition.workspace = true
 version.workspace = true
+authors.workspace = true
 publish.workspace = true
 
 [dependencies]

@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Status LED: the DevKit's WS2812 on GPIO8, driven by the RMT peripheral.
 
 use embassy_time::{Duration, Timer};

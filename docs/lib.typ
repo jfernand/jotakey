@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 // Diagram helpers for the Jotakey document, in ISSS style.
 #import "isss-template.typ": *
 

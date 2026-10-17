@@ -11,6 +11,7 @@
 		(company "Jotakey")
 		(comment 1 "Pin plan and parts: hardware/HARDWARE.md")
 		(comment 2 "Fabrication and assembly: JLCPCB, 2 layers, 2.0 mm, ENIG")
+		(comment 3 "(c) Javier Fernandez @ JotaSoft 2026")
 	)
 	(lib_symbols
 		(symbol "jotakey:USB_A_PCB_Edge"

@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 #import "isss-template.typ": *
 #import "lib.typ": *
 
@@ -9,6 +10,7 @@
   date: "2026-10-14",
   docid: "JK-TR-001 · rev 0.1",
   running: "Jotakey — FIDO2, passkeys and formal verification",
+  copyright: "(c) Javier Fernandez @ JotaSoft 2026",
   abstract: [
     Jotakey is a hardware security key, in the family of the YubiKey, written entirely in
     Rust. It runs on its own board, the jotakey key (an STM32L432 microcontroller with an

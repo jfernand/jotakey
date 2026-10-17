@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! CTAPHID framing (CTAP 2.0 §8.1) as a pure state machine.
 //!
 //! ```text

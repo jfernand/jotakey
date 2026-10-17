@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! On-device tests (run on the ESP32-C6 itself).
 //!
 //! ```sh

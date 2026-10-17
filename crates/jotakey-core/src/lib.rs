@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Jotakey authenticator core.
 //!
 //! Everything that interprets bytes from the host lives here: CBOR, the CTAP2 command

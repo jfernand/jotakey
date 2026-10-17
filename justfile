@@ -45,11 +45,11 @@ host-tests:
     cargo test -p jotakey-host-tests -- --ignored --test-threads=1
 
 doc:
-    typst compile docs/jotakey.typ docs/jotakey.pdf
+    typst compile --font-path docs/fonts --ignore-system-fonts docs/jotakey.typ docs/jotakey.pdf
 
 # Print version: plain white pages, no black cover band.
 doc-print:
-    typst compile --input print=true docs/jotakey.typ docs/jotakey-print.pdf
+    typst compile --font-path docs/fonts --ignore-system-fonts --input print=true docs/jotakey.typ docs/jotakey-print.pdf
 
 deny:
     cargo deny check

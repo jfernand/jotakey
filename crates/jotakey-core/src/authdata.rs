@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! `authenticatorData` (WebAuthn §6.1).
 //!
 //! ```text

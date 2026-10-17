@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Stateless credential IDs ("key wrapping by derivation").
 //!
 //! A credential ID is `version ‖ nonce ‖ tag`:

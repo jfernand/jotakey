@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! CTAP2 command layer (CTAP 2.0 §5) as a resumable state machine.
 //!
 //! [`Authenticator::process`] parses and validates a request. Commands that need the user's

@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Transports that carry CTAP2 messages between host and core.
 //!
 //! Both are pure state machines over byte buffers. The firmware moves bytes between

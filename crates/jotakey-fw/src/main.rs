@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Jotakey firmware for the ESP32-C6 DevKit.
 //!
 //! Boot sequence (fail closed at every step, invariant 7):

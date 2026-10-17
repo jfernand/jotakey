@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Parsing helpers shared by the CTAP2 commands.
 //!
 //! Every helper validates the *type* of every member it sees, including members it does not

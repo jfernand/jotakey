@@ -1,3 +1,4 @@
+-- (c) Javier Fernandez @ JotaSoft 2026
 import Jotakey
 
 /-! Axiom audit: `just lean` fails if any theorem depends on `sorryAx`, on

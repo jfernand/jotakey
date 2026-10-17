@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! CTAP2 command layer with invariant oracles.
 //!
 //! Input layout: `[mode, up, ...rest]`.

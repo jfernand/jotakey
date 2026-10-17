@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! [`Platform`] implementation on the ESP32-C6: TRNG with continuous health tests, the
 //! eFuse-keyed HMAC peripheral, and the power-safe record logs in the `jotakey` flash
 //! partition.

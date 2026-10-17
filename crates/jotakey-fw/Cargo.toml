@@ -2,6 +2,7 @@
 name = "jotakey-fw"
 description = "Jotakey firmware for the ESP32-C6 DevKit"
 version = "0.1.0"
+authors = ["Javier Fernandez @ JotaSoft"]
 edition = "2024"
 publish = false
 

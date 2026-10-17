@@ -1,3 +1,4 @@
+-- (c) Javier Fernandez @ JotaSoft 2026
 /-!
 # CBOR heads
 

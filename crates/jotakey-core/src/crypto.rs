@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Cryptographic primitives, all from audited RustCrypto crates.
 //!
 //! Nothing here branches on secret data. Secret scalars are held in [`p256::SecretKey`],

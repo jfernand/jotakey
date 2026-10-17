@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! End-to-end tests against a **real** Jotakey through `jotakey-bridge`.
 //!
 //! Ignored by default. With the board on the USB-Serial/JTAG port and the bridge running:

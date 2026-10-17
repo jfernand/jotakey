@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Relying-party checks, as a WebAuthn server would perform them (WebAuthn §7.1, §7.2).
 
 use ecdsa::signature::Verifier;

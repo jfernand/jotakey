@@ -1,3 +1,4 @@
+# (c) Javier Fernandez @ JotaSoft 2026
 """Copy KiCad standard-library symbols into the project library (lib/jotakey.kicad_sym).
 
 The project keeps its own copy of every symbol it uses, so it opens identically on any machine

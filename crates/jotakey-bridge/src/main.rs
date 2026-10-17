@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! `jotakey-bridge`: makes a Jotakey on a serial port look like a USB FIDO security key.
 //!
 //! The ESP32-C6 cannot enumerate as a USB HID device. Its firmware therefore tunnels

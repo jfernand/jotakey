@@ -1,6 +1,7 @@
 [package]
 name = "jotakey-fuzz"
 version = "0.0.0"
+authors = ["Javier Fernandez @ JotaSoft"]
 publish = false
 edition = "2024"
 

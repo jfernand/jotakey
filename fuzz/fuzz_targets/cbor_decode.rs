@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! CBOR decoder: never panics, and anything it accepts is canonical. Re-encoding the
 //! decoded items reproduces the input exactly, so no message has two encodings.
 

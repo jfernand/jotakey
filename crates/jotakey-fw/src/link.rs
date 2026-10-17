@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! Channels between the transport tasks (USB, BLE) and the authenticator task.
 //!
 //! Exactly one CTAP request is processed at a time. A transport that receives a request

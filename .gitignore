@@ -8,3 +8,9 @@ fp-info-cache
 _autosave-*
 __pycache__/
 hardware/jotakey-key/fab/
+# Third-party documents: kept locally, not redistributed (see the README in each folder).
+docs/references/*
+!docs/references/README.md
+hardware/datasheets/*
+!hardware/datasheets/README.md
+Initial prompt.txt

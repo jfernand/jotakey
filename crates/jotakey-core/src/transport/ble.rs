@@ -1,3 +1,4 @@
+// (c) Javier Fernandez @ JotaSoft 2026
 //! FIDO BLE framing (CTAP 2.0 §8.3) as a pure state machine.
 //!
 //! ```text
