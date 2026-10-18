@@ -13,7 +13,7 @@ Every invariant of `AGENTS.md` §2, with where it is enforced, tested and proved
 #dtable(
   columns: (0.25fr, 1.3fr, 1.3fr, 1.15fr),
   ("#", "Enforced in", "Tested / fuzzed", "Proved (formal/Jotakey/…)"),
-  ([1], [`ctap/mod.rs` `complete` (only signing path); `presence.rs` fresh debounced press; `up:false` refused], [`no_signature_without_presence`, `processing_parks_and_complete_consumes`; `ctap_dispatch` oracle], [`Authenticator.signature_requires_confirmed_touch`, `one_touch_signs_at_most_once`]),
+  ([1], [`ctap/mod.rs` `complete` (only UP=1 signing path); silent `up:false` assertions signed with UP clear; `presence.rs` fresh debounced press], [`no_signature_without_presence`, `processing_parks_and_complete_consumes`, `silent_assertion_signs_at_once_without_the_up_flag`; `ctap_dispatch` oracle], [`Authenticator.signature_requires_confirmed_touch`, `request_signs_only_silently`, `one_touch_signs_at_most_once`]),
   ([2], [`increment_counter` before signing; `storage.rs` append + read-back (C6); OPTIGA up-counter (key)], [`register_then_authenticate…`, `monotonic_across_power_cuts`, on-device torn write], [`Authenticator.trace_signature_counters_increase`]),
   ([3], [`credential.rs` tag over rpIdHash, `ct_eq`], [`bound_to_rp`, `any_bit_flip_is_rejected`, `credential_is_bound_to_rp`; `credential_unwrap`], [`Credential.unwrap_accepts_only_wrapped_ids`, `credential_bound_to_relying_party`]),
   ([4], [`cbor.rs` strict decoder; `MAX_MSG_SIZE` everywhere; no-panic lints], [`decoder_never_panics`, size boundaries; all fuzz targets; differential test], [`Cbor.decodeHead_accepts_only_canonical`, `decodeHead_consumes_input`; `CtapHid.receivePackets_preserves_well_formed`]),

@@ -7,17 +7,20 @@ Formal model of `crates/jotakey-core/src/ctap/mod.rs` (`Authenticator::process`,
 
 Parsing and cryptography are abstracted away. A request arrives already classified as a
 `Command` (`Command.rejected` stands for every request the parser refuses). A signature is the
-output `Output.signature relyingParty counter`. This is the level at which the user-presence
+output `Output.signature relyingParty counter userPresent`, where `userPresent` is the UP flag
+in the signed authenticator data. This is the level at which the user-presence
 and counter invariants live. Relying parties and credentials are identified by plain numbers:
 the model only needs to tell them apart.
 
 Results (invariants 1, 2, 6, 7 of `AGENTS.md`):
-* `processRequest_never_signs`: processing a request never produces a signature.
-* `signature_requires_confirmed_touch`: a signature is produced only by a *confirmed* presence
-  event completing a parked makeCredential/getAssertion.
+* `processRequest_never_signs_with_presence`: processing a request never produces a signature
+  carrying the UP flag. The only request that signs at all is a silent assertion
+  (`up: false`), and it signs with the flag clear (`request_signs_only_silently`).
+* `signature_requires_confirmed_touch`: a signature carrying the UP flag is produced only by a
+  *confirmed* presence event completing a parked makeCredential/getAssertion.
 * `one_touch_signs_at_most_once`: one touch completes at most one command.
-* `trace_signature_counters_increase`: along *any* sequence of events, signature counters are
-  strictly increasing and all above the starting counter.
+* `trace_signature_counters_increase`: along *any* sequence of events, the counters of all
+  signatures, silent ones included, are strictly increasing and above the starting counter.
 * `epoch_change_requires_confirmed_touch` + `epoch_change_requires_reset_in_window`: the epoch
   changes only after a reset request inside the 10 s window, completed by a confirmed touch.
 * `faulted_stays_faulted_and_never_signs`: once faulted, never a signature again.
@@ -48,6 +51,8 @@ inductive Command where
   | makeCredential (relyingParty : Nat)
   /-- getAssertion whose allow list contained an authentic `credential` for `relyingParty`. -/
   | getAssertion (relyingParty credential : Nat)
+  /-- The same with `up: false`: a client's silent probe, answered at once without a touch. -/
+  | silentAssertion (relyingParty credential : Nat)
   /-- makeCredential that hit the exclude list. -/
   | excluded
   /-- Zero-length pinAuth probe. -/
@@ -82,7 +87,8 @@ inductive Output where
   | info
   | needsPresence
   | error
-  | signature (relyingParty counter : Nat)
+  /-- A signature; `userPresent` is the UP flag in the signed authenticator data. -/
+  | signature (relyingParty counter : Nat) (userPresent : Bool)
   | resetDone
   deriving DecidableEq, Repr
 
@@ -105,6 +111,9 @@ def processRequest (state : State) (command : Command) (uptimeMs : Nat) : State 
       ({ state with pending := .makeCredential relyingParty }, .needsPresence)
     | .getAssertion relyingParty credential =>
       ({ state with pending := .getAssertion relyingParty credential }, .needsPresence)
+    | .silentAssertion relyingParty _ =>
+      ({ state with pending := .idle, signCounter := state.signCounter + 1 },
+        .signature relyingParty (state.signCounter + 1) false)
     | .excluded => ({ state with pending := .excluded }, .needsPresence)
     | .pinProbe => ({ state with pending := .pinProbe }, .needsPresence)
     | .reset =>
@@ -118,10 +127,10 @@ def completePresence (state : State) (result : PresenceResult) : State × Output
     match state.pending, result with
     | .makeCredential relyingParty, .confirmed =>
       ({ state with pending := .idle, signCounter := state.signCounter + 1 },
-        .signature relyingParty (state.signCounter + 1))
+        .signature relyingParty (state.signCounter + 1) true)
     | .getAssertion relyingParty _, .confirmed =>
       ({ state with pending := .idle, signCounter := state.signCounter + 1 },
-        .signature relyingParty (state.signCounter + 1))
+        .signature relyingParty (state.signCounter + 1) true)
     | .reset, .confirmed =>
       ({ state with pending := .idle, resetEpoch := state.resetEpoch + 1 }, .resetDone)
     | _, _ => ({ state with pending := .idle }, .error)
@@ -143,27 +152,57 @@ def runTrace : State → List Event → State × List Output
 /-- Counters of the signatures in an output list. -/
 def signatureCounters : List Output → List Nat
   | [] => []
-  | .signature _ counter :: outputs => counter :: signatureCounters outputs
+  | .signature _ counter _ :: outputs => counter :: signatureCounters outputs
   | _ :: outputs => signatureCounters outputs
 
 /-! ## Single-step facts -/
 
-/-- **Proves:** `processRequest` (a request arriving) never outputs a signature, whatever the
-state, command or uptime. Signing is unreachable from the request path, as `AGENTS.md`
-requires.
+/-- **Proves:** `processRequest` (a request arriving) never outputs a signature carrying the
+UP flag, whatever the state, command or uptime. A signature that claims a touch is
+unreachable from the request path.
 
 **How:** try every case: faulted or not (`cases hFaulted : state.faulted`) × every command
-(`cases command`). In each, `simp` computes the output (`.error`, `.info` or
-`.needsPresence`) and sees that it is a different constructor from `.signature`. The `reset`
-case has one more `if` (the uptime window), which `try split` splits before the last
-`simp`. -/
-theorem processRequest_never_signs (state : State) (command : Command)
+(`cases command`). In each, `simp` computes the output (`.error`, `.info`, `.needsPresence`,
+or, for a silent assertion, a signature with the flag `false`) and sees that it differs from
+`.signature … true`. The `reset` case has one more `if` (the uptime window), which
+`try split` splits before the last `simp`. -/
+theorem processRequest_never_signs_with_presence (state : State) (command : Command)
     (uptimeMs relyingParty counter : Nat) :
-    (processRequest state command uptimeMs).2 ≠ .signature relyingParty counter := by
+    (processRequest state command uptimeMs).2 ≠ .signature relyingParty counter true := by
   -- Syntax: for a pair `p`, `p.1` is its first component and `p.2` its second (here the
   -- output). `try t` runs `t` and carries on even if `t` fails.
   unfold processRequest
   cases hFaulted : state.faulted <;> cases command <;> simp <;> (try split) <;> simp
+
+/-- **Proves:** the only request that signs is a silent assertion on a healthy
+authenticator, for its own relying party, and it signs with the UP flag clear.
+
+**How:** the same case split as `processRequest_never_signs_with_presence`; `simp_all` reads
+off, in the one signing case, that the flag is `false` and the command is
+`.silentAssertion relyingParty _`, and finds `hSigned` contradictory in all the others. -/
+theorem request_signs_only_silently (state : State) (command : Command)
+    (uptimeMs relyingParty counter : Nat) (userPresent : Bool)
+    (hSigned : (processRequest state command uptimeMs).2 = .signature relyingParty counter userPresent) :
+    userPresent = false ∧ state.faulted = false ∧
+      ∃ credential, command = .silentAssertion relyingParty credential := by
+  unfold processRequest at hSigned
+  cases hFaulted : state.faulted <;>
+    simp only [hFaulted, Bool.false_eq_true, ↓reduceIte] at hSigned
+  · cases command <;> by_cases hWindow : uptimeMs ≤ resetWindowMs <;> simp_all
+  · simp at hSigned
+
+/-- **Proves:** every signature `completePresence` outputs carries the UP flag.
+
+**How:** every case, as in `signature_requires_confirmed_touch` below. -/
+theorem completePresence_signs_with_presence (state : State) (result : PresenceResult)
+    (relyingParty counter : Nat) (userPresent : Bool)
+    (hSigned : (completePresence state result).2 = .signature relyingParty counter userPresent) :
+    userPresent = true := by
+  unfold completePresence at hSigned
+  cases hFaulted : state.faulted <;>
+    simp only [hFaulted, Bool.false_eq_true, ↓reduceIte] at hSigned
+  · cases hPending : state.pending <;> cases result <;> simp_all
+  · simp at hSigned
 
 /-- **Proves:** after `completePresence`, nothing is parked (`pending = .idle`), whatever the
 outcome.
@@ -176,15 +215,16 @@ theorem completePresence_clears_pending (state : State) (result : PresenceResult
   cases hFaulted : state.faulted <;> simp
   split <;> rfl
 
-/-- **Invariant 1.** A signature comes only from a confirmed presence event that completes a
-parked makeCredential or getAssertion, on a healthy authenticator.
+/-- **Invariant 1.** A signature carrying the UP flag comes only from a confirmed presence
+event that completes a parked makeCredential or getAssertion, on a healthy authenticator.
 
-**Proves:** if an event outputs `.signature relyingParty counter`, then the event was a
+**Proves:** if an event outputs `.signature relyingParty counter true`, then the event was a
 *confirmed* touch, the authenticator was not faulted, and the parked command was a
 makeCredential or getAssertion **for that same `relyingParty`**. A touch can't be
 redirected to sign for a different site.
 
-**How:** a request can't sign (`processRequest_never_signs`), which contradicts `hSigned`.
+**How:** a request can't sign with the flag (`processRequest_never_signs_with_presence`),
+which contradicts `hSigned`.
 For a presence event: if faulted, the output is `.error`, again a contradiction. Otherwise
 try every parked command × every presence result (`cases hPending : … <;> cases result`);
 `simp_all` computes `completePresence` in each of the 18 cases. Only makeCredential/confirmed
@@ -192,14 +232,15 @@ and getAssertion/confirmed produce a signature, and there the signature's relyin
 the parked one; in all others `hSigned` is contradictory. -/
 theorem signature_requires_confirmed_touch (state : State) (event : Event)
     (relyingParty counter : Nat)
-    (hSigned : (handleEvent state event).2 = .signature relyingParty counter) :
+    (hSigned : (handleEvent state event).2 = .signature relyingParty counter true) :
     event = .presence .confirmed ∧ state.faulted = false ∧
       ((state.pending = .makeCredential relyingParty) ∨
         (∃ credential, state.pending = .getAssertion relyingParty credential)) := by
   -- Syntax: `∨` is "or"; `∃ x, P x` is "there is some `x` with `P x`".
   cases event with
   | request command uptimeMs =>
-    exact absurd hSigned (processRequest_never_signs state command uptimeMs relyingParty counter)
+    exact absurd hSigned
+      (processRequest_never_signs_with_presence state command uptimeMs relyingParty counter)
     -- Syntax: `absurd h nh` proves anything from `h : P` and `nh : ¬P`.
   | presence result =>
     simp only [handleEvent, completePresence] at hSigned
@@ -214,19 +255,22 @@ theorem signature_requires_confirmed_touch (state : State) (event : Event)
 touch cannot produce another signature.
 
 **Proves:** completing twice in a row (two presence events, no new request between them)
-never yields a signature on the second completion.
+never yields a signature on the second completion, with or without the UP flag.
 
-**How:** by contradiction. Assume the second completion signs (`intro hSigned`). Then
+**How:** by contradiction. Assume the second completion signs (`intro hSigned`). Any
+signature from a completion carries the flag (`completePresence_signs_with_presence`). Then
 `signature_requires_confirmed_touch` says a makeCredential or getAssertion was parked before
 it. But `completePresence_clears_pending` says nothing was parked after the first completion.
 `rcases` takes the two possibilities apart, and in each `cases` sees that `.idle` can't equal
 a different constructor. -/
 theorem one_touch_signs_at_most_once (state : State) (first second : PresenceResult)
-    (relyingParty counter : Nat) :
+    (relyingParty counter : Nat) (userPresent : Bool) :
     (completePresence (completePresence state first).1 second).2 ≠
-      .signature relyingParty counter := by
+      .signature relyingParty counter userPresent := by
   intro hSigned
   have hIdle := completePresence_clears_pending state first
+  have hFlag := completePresence_signs_with_presence _ second relyingParty counter userPresent hSigned
+  rw [hFlag] at hSigned
   have := signature_requires_confirmed_touch (completePresence state first).1
     (.presence second) relyingParty counter hSigned
   rcases this.2.2 with hParked | ⟨_, hParked⟩ <;> rw [hIdle] at hParked <;> cases hParked
@@ -236,7 +280,7 @@ theorem one_touch_signs_at_most_once (state : State) (first second : PresenceRes
 
 /-- **Proves:** a single event never decreases the persisted signature counter.
 
-**How:** every case, as in `processRequest_never_signs`: each branch of `processRequest` /
+**How:** every case, as in `processRequest_never_signs_with_presence`: each branch of `processRequest` /
 `completePresence` either keeps `signCounter` or sets it to `signCounter + 1`. -/
 theorem handleEvent_never_lowers_counter (state : State) (event : Event) :
     state.signCounter ≤ (handleEvent state event).1.signCounter := by
@@ -252,20 +296,26 @@ theorem handleEvent_never_lowers_counter (state : State) (event : Event) :
 /-- **Invariant 2 (single step).** A signature carries `old counter + 1`, which is also the
 new persisted counter.
 
-**Proves:** if an event outputs `.signature relyingParty counter` then
-`counter = state.signCounter + 1` and the new state's `signCounter` is `counter`. In the Rust
+**Proves:** if an event outputs `.signature relyingParty counter userPresent` (silent or not)
+then `counter = state.signCounter + 1` and the new state's `signCounter` is `counter`. In the Rust
 code this is the write-ahead rule: `N + 1` is persisted before the signature carrying `N + 1`
 is released.
 
-**How:** the same case analysis as `signature_requires_confirmed_touch`; in the two signing
-cases the output and the new state are read off the definition of `completePresence`. -/
+**How:** case analysis on the event. For a request, every command: only a silent assertion
+signs, and it sets the counter to `old + 1`. For a presence event, the same case analysis as
+`signature_requires_confirmed_touch`; in the two signing cases the output and the new state
+are read off the definition of `completePresence`. -/
 theorem signature_carries_next_counter (state : State) (event : Event)
-    (relyingParty counter : Nat)
-    (hSigned : (handleEvent state event).2 = .signature relyingParty counter) :
+    (relyingParty counter : Nat) (userPresent : Bool)
+    (hSigned : (handleEvent state event).2 = .signature relyingParty counter userPresent) :
     counter = state.signCounter + 1 ∧ (handleEvent state event).1.signCounter = counter := by
   cases event with
   | request command uptimeMs =>
-    exact absurd hSigned (processRequest_never_signs state command uptimeMs relyingParty counter)
+    simp only [handleEvent, processRequest] at hSigned ⊢
+    cases hFaulted : state.faulted <;>
+      simp only [hFaulted, Bool.false_eq_true, ↓reduceIte] at hSigned ⊢
+    · cases command <;> by_cases hWindow : uptimeMs ≤ resetWindowMs <;> simp_all
+    · simp at hSigned
   | presence result =>
     simp only [handleEvent, completePresence] at hSigned ⊢
     -- Syntax: `at h ⊢` simplifies both `h` and the goal (`⊢` stands for the goal).
@@ -319,10 +369,10 @@ theorem trace_signature_counters_bounded (state : State) (events : List Event) :
     have hRestMono := runTrace_never_lowers_counter (handleEvent state event).1 events
     have hEventMono := handleEvent_never_lowers_counter state event
     cases hOutput : (handleEvent state event).2 with
-    | signature relyingParty first =>
+    | signature relyingParty first userPresent =>
       rw [hOutput] at hMember
       simp only [signatureCounters, List.mem_cons] at hMember
-      have hNext := signature_carries_next_counter state event relyingParty first hOutput
+      have hNext := signature_carries_next_counter state event relyingParty first userPresent hOutput
       rcases hMember with rfl | hLater
       · exact ⟨by omega, by omega⟩
       · have := ih (handleEvent state event).1 counter hLater; omega
@@ -355,11 +405,11 @@ theorem trace_signature_counters_increase (state : State) (events : List Event) 
     simp only [runTrace]
     have hRest := ih (handleEvent state event).1
     cases hOutput : (handleEvent state event).2 with
-    | signature relyingParty first =>
+    | signature relyingParty first userPresent =>
       simp only [signatureCounters, List.pairwise_cons]
       refine ⟨fun counter hLater => ?_, hRest⟩
       -- The `?_` is a hole: the new goal is `first < counter` for any later `counter`.
-      have hNext := signature_carries_next_counter state event relyingParty first hOutput
+      have hNext := signature_carries_next_counter state event relyingParty first userPresent hOutput
       have := trace_signature_counters_bounded (handleEvent state event).1 events counter hLater
       omega
     | _ => simpa [signatureCounters] using hRest
@@ -473,8 +523,8 @@ branch, which keeps `faulted` and outputs `.error`; `simp` computes this directl
 theorem faulted_stays_faulted_and_never_signs (state : State) (event : Event)
     (hFaulted : state.faulted = true) :
     (handleEvent state event).1.faulted = true ∧
-      ∀ relyingParty counter,
-        (handleEvent state event).2 ≠ .signature relyingParty counter := by
+      ∀ relyingParty counter userPresent,
+        (handleEvent state event).2 ≠ .signature relyingParty counter userPresent := by
   cases event with
   | request command uptimeMs => simp [handleEvent, processRequest, hFaulted]
   | presence result => simp [handleEvent, completePresence, hFaulted]

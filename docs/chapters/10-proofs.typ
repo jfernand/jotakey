@@ -102,12 +102,13 @@ fragmented_message_is_reassembled
 └─ trimming_keeps_host_payload, continuationPackets_of_empty
 
 one_touch_signs_at_most_once
-├─ signature_requires_confirmed_touch ─ processRequest_never_signs
+├─ signature_requires_confirmed_touch ─ processRequest_never_signs_with_presence
+├─ completePresence_signs_with_presence
 └─ completePresence_clears_pending
 trace_signature_counters_increase
 ├─ trace_signature_counters_bounded
 │  └─ runTrace_never_lowers_counter ─ handleEvent_never_lowers_counter
-└─ signature_carries_next_counter ─ processRequest_never_signs
+└─ signature_carries_next_counter
 epoch_change_requires_reset_in_window
 └─ epoch_change_requires_confirmed_touch, parked_reset_was_requested_in_window,
    completePresence_clears_pending
@@ -537,21 +538,28 @@ automatically, and the proof fails if the new command breaks the property.
 
 === User presence (invariant 1)
 
-- *`processRequest_never_signs`*: whatever the state, command and uptime, the output of
-  `processRequest` is not a signature. The signing path is unreachable from a request.
-  The proof tries faulted or not × every command, plus the uptime `if` for reset; every
-  output is an error, `info` or `needsPresence`.
+- *`processRequest_never_signs_with_presence`*: whatever the state, command and uptime,
+  `processRequest` never outputs a signature carrying the UP flag. The proof tries faulted
+  or not × every command, plus the uptime `if` for reset; every output is an error,
+  `info`, `needsPresence`, or (for a silent assertion) a signature with the flag `false`.
+- *`request_signs_only_silently`*: the only request that signs at all is a silent
+  assertion on a healthy device, for its own relying party, and its signature has the UP
+  flag clear. This is the model of the client pre-flight (§5.2).
+- *`completePresence_signs_with_presence`*: every signature a completed touch produces
+  carries the UP flag.
 - *`completePresence_clears_pending`*: after `completePresence`, nothing is parked,
   whatever the outcome. Every branch sets `pending := .idle`.
-- *`signature_requires_confirmed_touch`*: if an event outputs a signature for
-  `relyingParty`, then the event was `presence .confirmed`, the device was not faulted,
-  and the parked command was a makeCredential or getAssertion *for that same relying
-  party*. A request cannot sign (`processRequest_never_signs`). For a presence event, the
+- *`signature_requires_confirmed_touch`*: if an event outputs a signature carrying the UP
+  flag for `relyingParty`, then the event was `presence .confirmed`, the device was not
+  faulted, and the parked command was a makeCredential or getAssertion *for that same
+  relying party*. A request cannot sign with the flag
+  (`processRequest_never_signs_with_presence`). For a presence event, the
   proof tries every parked command × every result (18 cases, `simp_all` computes each).
   Only the two confirmed signing cases produce a signature, and there the relying party is
   the parked one.
 - *`one_touch_signs_at_most_once`* (key theorem): `completePresence` applied twice never
-  signs the second time. Suppose it did. `signature_requires_confirmed_touch` says a
+  signs the second time, with or without the flag. Suppose it did; the signature would
+  carry the flag (`completePresence_signs_with_presence`). `signature_requires_confirmed_touch` says a
   signing command was parked before the second completion, but
   `completePresence_clears_pending` says nothing was. `rcases` takes the two possibilities
   apart (makeCredential, or getAssertion with some credential), and in each `cases` sees
@@ -727,6 +735,8 @@ and `AGENTS.md` requires both to change together with any rename.
   ([`Authenticator::process`, `complete`], [`processRequest`, `completePresence`], [Rust parses CBOR; Lean receives a classified `Command`.]),
   ([`PresenceResult`], [`PresenceResult`], [Same name.]),
   ([`Pending`], [`PendingCommand`], [Same variants.]),
+  ([`PendingOrSilent::Silent`], [`Command.silentAssertion`], [getAssertion with `up: false`: signed in `process`, never parked.]),
+  ([`sign(…, user_present, …)`], [`Output.signature … userPresent`], [The UP flag; `true` only from `complete` under `Confirmed`.]),
   ([`Outcome` + response bytes], [`Output`], []),
   ([`Platform::increment_counter`, `rotate_epoch`, `uptime_ms`], [`State.signCounter`, `State.resetEpoch`, `uptimeMs`], [Rust keeps them behind the platform trait.]),
   ([`RESET_WINDOW_MS`], [`resetWindowMs`], []),

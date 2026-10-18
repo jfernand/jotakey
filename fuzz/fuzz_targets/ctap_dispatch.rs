@@ -8,14 +8,17 @@
 //!
 //! Oracles:
 //! - no panic; response length is 1..=MAX_MSG_SIZE;
-//! - the counter moves only on a successful makeCredential/getAssertion completed with
-//!   `PresenceResult::Confirmed` (invariants 1 and 2), and then by exactly one;
+//! - the counter moves only on a successful makeCredential/getAssertion, and then by exactly
+//!   one (invariant 2);
+//! - a signature that was parked needed `PresenceResult::Confirmed`; one produced without
+//!   parking is a getAssertion whose signed data has the UP flag clear (invariant 1);
 //! - every successful response body is canonical CBOR (strict decoder accepts it);
 //! - nothing stays parked once a response has been produced.
 
 #![no_main]
 
-use jotakey_core::cbor::{Decoder, Encoder};
+use jotakey_core::authdata::FLAG_UP;
+use jotakey_core::cbor::{Decoder, Encoder, Key};
 use jotakey_core::ctap::{Authenticator, Outcome, command};
 use jotakey_core::mock::MockPlatform;
 use jotakey_core::platform::PresenceResult;
@@ -29,7 +32,7 @@ fn template(get_assertion: bool, cred_id: &[u8]) -> Vec<u8> {
     let r: Result<(), _> = (|| {
         if get_assertion {
             e.raw(&[command::GET_ASSERTION])?;
-            e.map(3)?;
+            e.map(4)?;
             e.unsigned(1)?;
             e.text("example.com")?;
             e.unsigned(2)?;
@@ -40,7 +43,12 @@ fn template(get_assertion: bool, cred_id: &[u8]) -> Vec<u8> {
             e.text("id")?;
             e.bytes(cred_id)?;
             e.text("type")?;
-            e.text("public-key")
+            e.text("public-key")?;
+            // options {"up": true}: one byte (0xf5 -> 0xf4) away from a silent assertion.
+            e.unsigned(5)?;
+            e.map(1)?;
+            e.text("up")?;
+            e.boolean(true)
         } else {
             e.raw(&[command::MAKE_CREDENTIAL])?;
             e.map(5)?;
@@ -93,6 +101,19 @@ fn setup() -> (MockPlatform, Vec<u8>) {
     (platform, ad[55..55 + 49].to_vec())
 }
 
+/// The flags byte of the authenticator data in a getAssertion response (key 2).
+fn assertion_flags(body: &[u8]) -> u8 {
+    let mut d = Decoder::new(body);
+    let mut m = d.map().expect("response map");
+    while let Some(k) = d.next_key(&mut m).expect("response key") {
+        if k == Key::Int(2) {
+            return d.bytes().expect("authData")[32];
+        }
+        d.skip(1).expect("response value");
+    }
+    panic!("getAssertion response without authData")
+}
+
 fuzz_target!(|data: &[u8]| {
     let [mode, up, rest @ ..] = data else { return };
     let up = match up % 3 {
@@ -121,16 +142,25 @@ fuzz_target!(|data: &[u8]| {
     };
 
     let before = platform.counter;
+    let mut parked = false;
     let n = match auth.process(&mut platform, &request, &mut out) {
         Outcome::Response(n) => n,
-        Outcome::NeedsUserPresence => auth.complete(&mut platform, up, &mut out),
+        Outcome::NeedsUserPresence => {
+            parked = true;
+            auth.complete(&mut platform, up, &mut out)
+        }
     };
     assert!((1..=MAX_MSG_SIZE).contains(&n));
     let status = out[0];
     let cmd = request.first().copied();
     let signing_cmd = matches!(cmd, Some(command::MAKE_CREDENTIAL | command::GET_ASSERTION));
     if status == 0 && signing_cmd {
-        assert_eq!(up, PresenceResult::Confirmed, "signature without user presence");
+        if parked {
+            assert_eq!(up, PresenceResult::Confirmed, "signature without user presence");
+        } else {
+            assert_eq!(cmd, Some(command::GET_ASSERTION), "only getAssertion signs silently");
+            assert_eq!(assertion_flags(&out[1..n]) & FLAG_UP, 0, "silent signature with UP set");
+        }
         assert_eq!(platform.counter, before + 1, "counter must move by exactly one");
     } else {
         assert_eq!(platform.counter, before, "counter moved without a signature");

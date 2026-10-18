@@ -87,6 +87,16 @@ pub enum Pending {
     Reset,
 }
 
+/// What validating a request leads to: a command parked for a touch, or a silent
+/// getAssertion (`up: false`) to sign at once without the UP flag.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PendingOrSilent {
+    /// Park and ask for user presence.
+    Pending(Pending),
+    /// Sign now, UP flag clear. Always a [`Pending::GetAssertion`].
+    Silent(Pending),
+}
+
 /// The authenticator state.
 #[derive(Debug)]
 pub struct Authenticator {
@@ -144,7 +154,17 @@ impl Authenticator {
                 });
             }
             command::MAKE_CREDENTIAL => make_credential::process(platform, params),
-            command::GET_ASSERTION => get_assertion::process(platform, params),
+            command::GET_ASSERTION => match get_assertion::process(platform, params) {
+                Ok(PendingOrSilent::Pending(p)) => Ok(p),
+                Ok(PendingOrSilent::Silent(Pending::GetAssertion { rp_id_hash, client_data_hash, cred_id, nonce })) => {
+                    // A silent assertion: signed now, with the UP flag clear (invariant 1).
+                    let result =
+                        get_assertion::sign(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, false, out);
+                    return Outcome::Response(result.unwrap_or_else(|s| write_status(out, s)));
+                }
+                Ok(PendingOrSilent::Silent(_)) => Err(Status::Other),
+                Err(s) => Err(s),
+            },
             command::RESET => reset::process(platform, params),
             _ => Err(Status::InvalidCommand),
         };
@@ -178,7 +198,7 @@ impl Authenticator {
                 make_credential::complete(platform, &self.aaguid, &rp_id_hash, &client_data_hash, out)
             }
             Pending::GetAssertion { rp_id_hash, client_data_hash, cred_id, nonce } => {
-                get_assertion::complete(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, out)
+                get_assertion::sign(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, true, out)
             }
         };
         match result {
