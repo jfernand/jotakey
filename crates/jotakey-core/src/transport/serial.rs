@@ -5,11 +5,15 @@
 //! stream, and `jotakey-bridge` turns them into a virtual HID device on the host:
 //!
 //! ```text
-//! frame = COBS( report[64] ‖ CRC-32/ISO-HDLC(report) as little-endian u32 ) ‖ 0x00
+//! frame = 0x00 ‖ COBS( report[64] ‖ CRC-32/ISO-HDLC(report) as little-endian u32 ) ‖ 0x00
 //! ```
 //!
 //! COBS removes every zero byte from the body, so `0x00` always marks a frame boundary and
-//! the receiver resynchronises after any corruption. The CRC catches corruption on the
+//! the receiver resynchronises after any corruption. The *leading* delimiter matters in
+//! practice: when the host opens the port, the ESP32-C6 resets and its ROM and bootloader
+//! print text (no zero bytes) on the same USB port. Without the leading `0x00` that text and
+//! the first real frame would decode as one bad frame and the reply would be lost; with it,
+//! the text is dropped on its own and the frame decodes. The CRC catches corruption on the
 //! wire. It is an integrity check, **not** a security mechanism: the host side is untrusted
 //! anyway, and every CTAP message is validated by the core. Corrupt frames are dropped
 //! silently and the host's CTAPHID timeouts take care of retries.
@@ -19,8 +23,10 @@ use super::ctaphid::{PACKET_SIZE, Packet};
 /// Report plus CRC.
 pub const RAW_LEN: usize = PACKET_SIZE + 4;
 /// Maximum COBS-encoded length of [`RAW_LEN`] bytes (one overhead byte per 254), plus the
-/// delimiter.
+/// trailing delimiter: what the deframer buffers.
 pub const FRAME_MAX: usize = RAW_LEN + 1 + 1;
+/// Maximum bytes on the wire per frame: the leading delimiter plus [`FRAME_MAX`].
+pub const WIRE_MAX: usize = FRAME_MAX + 1;
 
 /// CRC-32/ISO-HDLC (the zlib/Ethernet CRC), bitwise. Small and fast enough for 64 bytes.
 #[must_use]
@@ -36,19 +42,20 @@ pub fn crc32(data: &[u8]) -> u32 {
     !crc
 }
 
-/// Encode one report as a complete frame (including the trailing `0x00`).
+/// Encode one report as a complete frame, with the leading and the trailing `0x00`.
 /// Returns the buffer and the number of valid bytes.
 #[must_use]
-pub fn encode(report: &Packet) -> ([u8; FRAME_MAX], usize) {
+pub fn encode(report: &Packet) -> ([u8; WIRE_MAX], usize) {
     let mut raw = [0u8; RAW_LEN];
     let (r, c) = raw.split_at_mut(PACKET_SIZE);
     r.copy_from_slice(report);
     c.copy_from_slice(&crc32(report).to_le_bytes());
 
-    let mut out = [0u8; FRAME_MAX];
-    let mut code_idx = 0usize;
+    // out[0] stays 0x00: the leading delimiter.
+    let mut out = [0u8; WIRE_MAX];
+    let mut code_idx = 1usize;
     let mut code = 1u8;
-    let mut w = 1usize;
+    let mut w = 2usize;
     for &b in &raw {
         if b == 0 {
             if let Some(slot) = out.get_mut(code_idx) {
@@ -77,7 +84,7 @@ pub fn encode(report: &Packet) -> ([u8; FRAME_MAX], usize) {
         *slot = code;
     }
     // `w` is now the length without the delimiter; the delimiter is the zero already there.
-    (out, w.saturating_add(1).min(FRAME_MAX))
+    (out, w.saturating_add(1).min(WIRE_MAX))
 }
 
 /// Decode a COBS body (without the delimiter) into `out`; returns the decoded length.
@@ -180,8 +187,9 @@ mod tests {
 
     fn roundtrip(report: &Packet) -> Option<Packet> {
         let (frame, n) = encode(report);
-        assert!(frame[..n - 1].iter().all(|&b| b != 0), "COBS body must be zero-free");
-        assert_eq!(frame[n - 1], 0);
+        assert_eq!(frame[0], 0, "leading delimiter");
+        assert!(frame[1..n - 1].iter().all(|&b| b != 0), "COBS body must be zero-free");
+        assert_eq!(frame[n - 1], 0, "trailing delimiter");
         let mut d = Deframer::new();
         let mut got = None;
         for &b in &frame[..n] {
@@ -215,6 +223,20 @@ mod tests {
         let out: Vec<Packet> = stream.iter().filter_map(|&x| d.push(x)).collect();
         assert_eq!(out, std::vec![b]);
         assert_eq!(d.dropped, 2);
+    }
+
+    #[test]
+    fn boot_text_before_the_first_frame_does_not_swallow_it() {
+        // Opening the port resets the ESP32-C6, whose ROM prints text (no zero bytes) on the
+        // same USB port. The leading delimiter cuts that text off as one bad frame.
+        let report = [0x86u8; 64];
+        let (frame, n) = encode(&report);
+        let mut stream: Vec<u8> = b"ESP-ROM:esp32c6-20220919\r\nrst:0x15 (USB_UART_HPSYS)\r\n".to_vec();
+        stream.extend_from_slice(&frame[..n]);
+        let mut d = Deframer::new();
+        let out: Vec<Packet> = stream.iter().filter_map(|&x| d.push(x)).collect();
+        assert_eq!(out, std::vec![report]);
+        assert_eq!(d.dropped, 1);
     }
 
     proptest! {
