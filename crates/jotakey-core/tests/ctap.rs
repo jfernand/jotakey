@@ -87,6 +87,40 @@ fn register_then_authenticate_with_monotonic_counter() {
 }
 
 #[test]
+fn silent_assertion_signs_at_once_without_the_up_flag() {
+    // Clients probe with up: false before asking for a touch. The answer is an assertion
+    // with the UP flag clear, produced without parking (invariant 1 covers UP=1 only).
+    let mut h = Harness::new();
+    let (id, pk, c0) = register(&mut h, RP);
+    let silent = |allow: &[&[u8]]| {
+        let mut p = get_assertion_params(RP, allow);
+        p.push((V::U(5), V::M(vec![(V::t("up"), V::Bool(false))])));
+        request(GET_ASSERTION, p)
+    };
+    let req = silent(&[&id]);
+    let n = match h.auth.process(&mut h.platform, &req, &mut h.out) {
+        Outcome::Response(n) => n,
+        Outcome::NeedsUserPresence => panic!("a silent assertion must not ask for a touch"),
+    };
+    assert_eq!(h.out[0], 0);
+    assert_eq!(*h.auth.pending(), Pending::Idle);
+    let (resp, _) = V::decode(&h.out[1..n]);
+    let ad = resp.get(&V::U(2)).unwrap().bytes();
+    assert_eq!(ad[32] & FLAG_UP, 0, "a silent assertion carries no UP flag");
+    assert!(verify(&pk, &[ad, &CDH], resp.get(&V::U(3)).unwrap().bytes()));
+    // Like every signature, it moves the counter by one (invariant 2).
+    let c1 = u32::from_be_bytes(ad[33..37].try_into().unwrap());
+    assert_eq!((c1, h.platform.counter), (c0 + 1, c0 + 1));
+    // A foreign ID gets NO_CREDENTIALS, which is what a client's pre-flight expects.
+    assert_eq!(h.status(&silent(&[&[9u8; 49]])), Status::NoCredentials.code());
+    assert_eq!(h.platform.counter, c1);
+    // A faulted authenticator signs nothing, silently or not.
+    h.auth.fault();
+    assert_eq!(h.status(&req), Status::Other.code());
+    assert_eq!(h.platform.counter, c1);
+}
+
+#[test]
 fn credentials_are_derived_one_at_a_time_as_specified() {
     // AGENTS.md §3, recomputed outside the core with the mock's root and epoch:
     // tag  = F(root, "jotakey/tag/v1"  ‖ epoch ‖ 0x01 ‖ rpIdHash ‖ nonce)[..16]
@@ -190,7 +224,8 @@ fn options_policy() {
     assert_eq!(h.status(&mc(vec![(V::t("uv"), V::Bool(true))])), Status::UnsupportedOption.code());
     assert_eq!(h.status(&mc(vec![(V::t("up"), V::Bool(true))])), Status::InvalidOption.code());
     assert_eq!(h.status(&mc(vec![(V::t("rk"), V::Bool(false)), (V::t("uv"), V::Bool(false))])), 0);
-    assert_eq!(h.status(&ga(vec![(V::t("up"), V::Bool(false))])), Status::UnsupportedOption.code());
+    // up: false is a silent assertion, answered at once (see silent_assertion_…).
+    assert_eq!(h.status(&ga(vec![(V::t("up"), V::Bool(false))])), 0);
     assert_eq!(h.status(&ga(vec![(V::t("uv"), V::Bool(true))])), Status::UnsupportedOption.code());
     assert_eq!(h.status(&ga(vec![(V::t("rk"), V::Bool(false))])), Status::InvalidOption.code());
     assert_eq!(h.status(&ga(vec![(V::t("up"), V::Bool(true))])), 0);

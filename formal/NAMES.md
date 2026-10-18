@@ -66,6 +66,8 @@ The BLE framer (`src/transport/ble.rs`) uses the same private names (`ReceiveSta
 | `Pending` | `PendingCommand` | Variants match: `Idle`, `MakeCredential`, `GetAssertion`, `Excluded`, `PinProbe`, `Reset`. |
 | `Pending::MakeCredential { rp_id_hash, client_data_hash }` | `.makeCredential relyingParty` | The model only needs to tell relying parties apart. |
 | `Outcome` + response bytes | `Output` (`info`, `needsPresence`, `error`, `signature`, `resetDone`) | |
+| `PendingOrSilent::Silent` (getAssertion with `up: false`) | `Command.silentAssertion` | Signed in `process`, never parked. |
+| `get_assertion::sign(…, user_present, …)`, the UP flag in authData | `Output.signature … userPresent` | `true` only from `complete` under `Confirmed`. |
 | `Authenticator.faulted` / `fault()` | `State.faulted` | |
 | `Platform::increment_counter` | `State.signCounter` | In Rust the counter lives behind the platform trait (flash). |
 | `Platform::rotate_epoch` | `State.resetEpoch` | Same. |

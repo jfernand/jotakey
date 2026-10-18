@@ -14,6 +14,8 @@ open Jotakey
 #print axioms CtapHid.receivePacket_preserves_well_formed
 #print axioms CtapHid.receivePackets_preserves_well_formed
 #print axioms CtapHid.fragmented_message_is_reassembled
+#print axioms Authenticator.processRequest_never_signs_with_presence
+#print axioms Authenticator.request_signs_only_silently
 #print axioms Authenticator.signature_requires_confirmed_touch
 #print axioms Authenticator.one_touch_signs_at_most_once
 #print axioms Authenticator.trace_signature_counters_increase

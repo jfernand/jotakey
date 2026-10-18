@@ -1,13 +1,16 @@
 // (c) Javier Fernandez @ JotaSoft 2026
 //! authenticatorGetAssertion (CTAP 2.0 §5.2), non-resident credentials only.
 //!
-//! **Deliberate deviation:** `up: false` (silent assertion) is refused with
-//! `CTAP2_ERR_UNSUPPORTED_OPTION`. Every signature this device produces carries a fresh
-//! touch (invariant 1), even if a relying party forgets to check the UP flag.
+//! `up: false` (a silent assertion) is answered at once, without a touch, with the UP flag
+//! clear in the signed authenticator data. Clients use it as a pre-flight probe to find which
+//! credential in their list the key recognises, and WebAuthn requires relying parties to reject
+//! an assertion without UP. Every signature carrying UP still needs a fresh touch in the same
+//! command (invariant 1).
 
 use super::parse::{self, PARAM_DEPTH};
 use super::{Pending, PlatformTagger, Response, credential_seed, write_success};
 use crate::authdata::{self, FLAG_UP};
+use crate::ctap::PendingOrSilent;
 use crate::cbor::{Decoder, Key};
 use crate::credential::{self, CRED_ID_LEN, NONCE_LEN};
 use crate::crypto;
@@ -51,17 +54,18 @@ fn parse(params: &[u8]) -> Result<Request<'_>, Status> {
     Ok(Request { rp_id_hash, client_data_hash, allow_list, options, pin_auth })
 }
 
-/// Validate the request, find our credential in the allow list, and park it.
-pub fn process<P: Platform>(platform: &mut P, params: &[u8]) -> Result<Pending, Status> {
+/// Validate the request and find our credential in the allow list. With `up: false` it is
+/// signed at once without the UP flag; otherwise it is parked for a touch.
+pub fn process<P: Platform>(platform: &mut P, params: &[u8]) -> Result<PendingOrSilent, Status> {
     let req = parse(params)?;
 
     if let Some(pa) = req.pin_auth {
-        return if pa.is_empty() { Ok(Pending::PinProbe) } else { Err(Status::PinAuthInvalid) };
+        return if pa.is_empty() { Ok(PendingOrSilent::Pending(Pending::PinProbe)) } else { Err(Status::PinAuthInvalid) };
     }
     if req.options.rk.is_some() {
         return Err(Status::InvalidOption);
     }
-    if req.options.uv == Some(true) || req.options.up == Some(false) {
+    if req.options.uv == Some(true) {
         return Err(Status::UnsupportedOption);
     }
 
@@ -88,16 +92,19 @@ pub fn process<P: Platform>(platform: &mut P, params: &[u8]) -> Result<Pending, 
     let Some((cred_id, nonce)) = found.transpose()? else {
         return Err(Status::NoCredentials);
     };
-    Ok(Pending::GetAssertion { rp_id_hash: req.rp_id_hash, client_data_hash: req.client_data_hash, cred_id, nonce })
+    let assertion = Pending::GetAssertion { rp_id_hash: req.rp_id_hash, client_data_hash: req.client_data_hash, cred_id, nonce };
+    Ok(if req.options.up == Some(false) { PendingOrSilent::Silent(assertion) } else { PendingOrSilent::Pending(assertion) })
 }
 
-/// Sign the assertion after the user touched the device.
-pub fn complete<P: Platform>(
+/// Sign the assertion: after a confirmed touch (`user_present`, UP flag set) or for a silent
+/// assertion (UP flag clear). Only `Authenticator::complete` under `Confirmed` passes `true`.
+pub fn sign<P: Platform>(
     platform: &mut P,
     rp_id_hash: &[u8; 32],
     client_data_hash: &[u8; 32],
     cred_id: &[u8; CRED_ID_LEN],
     nonce: &[u8; NONCE_LEN],
+    user_present: bool,
     out: &mut Response,
 ) -> Result<usize, Status> {
     let seed = credential_seed(platform, rp_id_hash, nonce)?;
@@ -105,7 +112,7 @@ pub fn complete<P: Platform>(
 
     // Invariant 2: persist the counter before the signature exists.
     let count = platform.increment_counter().map_err(|_| Status::Other)?;
-    let ad = authdata::assertion(rp_id_hash, FLAG_UP, count);
+    let ad = authdata::assertion(rp_id_hash, if user_present { FLAG_UP } else { 0 }, count);
 
     let mut entropy = zeroize::Zeroizing::new([0u8; 32]);
     platform.random_bytes(entropy.as_mut()).map_err(|_| Status::Other)?;

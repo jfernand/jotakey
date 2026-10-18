@@ -106,7 +106,7 @@ tests and theorems.
 #dtable(
   columns: (0.3fr, 2.6fr, 0.35fr),
   ("#", "Invariant", "Lean"),
-  ([1], [No signature without a user-presence event consumed within the same command.], [⊢]),
+  ([1], [No signature carrying the UP flag without a user-presence event consumed within the same command.], [⊢]),
   ([2], [The signature counter strictly increases, across power loss.], [⊢]),
   ([3], [A credential ID unwraps only for the relying party it was minted for.], [⊢]),
   ([4], [Parsers are total and bounded: every input yields a result, never a crash.], [⊢]),

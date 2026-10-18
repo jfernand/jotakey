@@ -39,12 +39,14 @@ Stop and ask a human.
 
 Each invariant is enforced in code, tested, and (where marked ⊢) proved in the Lean model in `formal/`.
 
-1. ⊢ **User presence:** no signature is produced without a user-presence event (the touch
-   electrode on the key, the BOOT button on the C6) consumed *within the same command*. A UP
-   timeout yields `CTAP2_ERR_USER_ACTION_TIMEOUT`.
-   Deliberate deviation: getAssertion with `up: false` (silent assertion) is refused with
-   `CTAP2_ERR_UNSUPPORTED_OPTION`. In the core, signing happens only in
-   `Authenticator::complete` under `PresenceResult::Confirmed`.
+1. ⊢ **User presence:** no signature carrying the UP flag is produced without a user-presence
+   event (the touch electrode on the key, the BOOT button on the C6) consumed *within the same
+   command*. A UP timeout yields `CTAP2_ERR_USER_ACTION_TIMEOUT`. getAssertion with
+   `up: false` (a silent assertion, the pre-flight probe clients such as python-fido2 and
+   browsers send) is answered at once with the UP flag clear; WebAuthn requires relying
+   parties to reject such an assertion. In the core, UP=1 signatures happen only in
+   `Authenticator::complete` under `PresenceResult::Confirmed`; the silent path is
+   `get_assertion::sign(…, user_present: false, …)` from `Authenticator::process`.
 2. ⊢ **Monotonic counter:** the signature counter strictly increases across power loss.
    Persist `N+1` *before* releasing a signature that carries `N+1`. On the key the counter is
    an OPTIGA hardware up-counter, which cannot go down even under a compromised MCU; on the
@@ -108,7 +110,8 @@ Both platforms share one hierarchy; only the root and the function that derives 
 ## 3a. Design decisions made during implementation (keep consistent)
 
 - **Core is a resumable state machine:** `process` → `NeedsUserPresence` → `complete(PresenceResult)`.
-  Signing code is reachable only from `complete` with `Confirmed`. Do not add other paths.
+  Signing with the UP flag is reachable only from `complete` with `Confirmed`; the one other
+  signing path is the silent assertion, which signs with the flag clear. Do not add others.
 - **User presence:** the sensor must be seen released after the request, then pressed for
   ≥ 40 ms; 30 s timeout; keepalive `UP_NEEDED` every ≤ 100 ms. The key reads its touch
   electrode with the STM32 touch-sensing controller (TSC); the C6 reads its BOOT button.

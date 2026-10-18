@@ -65,12 +65,14 @@ that the Rust decoder and the Lean model agree on over 100 000 inputs.
 ```
 ]
 
-One deliberate deviation from the specification: CTAP allows `getAssertion` with option
-`up: false`, a *silent* assertion that produces a valid signature without a touch.
-Platforms use it to probe whether a credential exists. A relying party that forgets to
-check the UP flag would accept such a signature as a login. Jotakey refuses `up: false`
-with `CTAP2_ERR_UNSUPPORTED_OPTION`, so *every* signature it ever makes carries a fresh
-touch.
+CTAP allows `getAssertion` with option `up: false`, a *silent* assertion that produces a
+valid signature without a touch. Clients use it as a *pre-flight*: before asking the user to
+touch, they find out which credential in their list the key recognises. python-fido2 and
+browsers rely on it, and an early Jotakey that refused it could register but never sign in.
+Jotakey therefore answers it, signing at once with the UP flag *clear* in the authenticator
+data. WebAuthn requires relying parties to reject an assertion without UP, so a silent
+assertion cannot log anyone in. Every signature that carries UP still needs a fresh touch
+(invariant 1), and every signature, silent or not, moves the counter.
 
 == CTAPHID: CTAP over USB
 
