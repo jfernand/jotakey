@@ -1,8 +1,10 @@
 # ESP-IDF partition table for Jotakey (flash >= 4 MiB; the DevKitC-1-N8 has 8 MiB).
 # The `jotakey` partition holds the signature-counter and epoch logs (4 sectors used).
-# It is flagged `encrypted` so flash encryption covers it on provisioned devices.
+# It is flagged `encrypted` so flash encryption covers it on provisioned devices. The firmware
+# finds it by its fixed offset (platform::REGION_OFFSET), not by subtype; `undefined` is used
+# because espflash 4.5 cannot parse a custom numeric data subtype such as 0x40.
 # Name,    Type, SubType, Offset,   Size,     Flags
 nvs,       data, nvs,     0x9000,   0x6000,
 phy_init,  data, phy,     0xf000,   0x1000,
 factory,   app,  factory, 0x10000,  0x3E0000,
-jotakey,   data, 0x40,    0x3F0000, 0x10000,  encrypted
+jotakey,   data, undefined, 0x3F0000, 0x10000, encrypted
