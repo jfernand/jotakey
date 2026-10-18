@@ -45,14 +45,18 @@ see an ordinary FIDO security key.
 The framing on the serial line is deliberately simple:
 
 #bytefield(
-  caption: "One frame on the serial line: COBS(report ‖ CRC-32) followed by 0x00",
+  caption: "One frame on the serial line: 0x00, COBS(report ‖ CRC-32), 0x00",
+  ("0x00", "delimiter", 1.4),
   ("COBS-encoded body (no zero bytes)", "64-byte report + 4-byte CRC-32/ISO-HDLC, ≤ 70 B", 9),
   ("0x00", "delimiter", 1.4),
 )
 
 COBS (Consistent Overhead Byte Stuffing) removes every zero byte from the body, so a zero
-*always* marks the end of a frame. After line noise or a half-written frame, the receiver
-resynchronises at the next zero. The CRC catches corruption. It is an integrity check, not
+*always* marks a frame boundary. After line noise or a half-written frame, the receiver
+resynchronises at the next zero. Each frame starts with a zero as well as ending with one,
+which matters on this board: opening the port resets the C6, and its ROM prints a boot banner
+on the same USB port. The banner has no zero bytes, so without the leading delimiter it would
+merge with the first real frame and that reply would be lost. The CRC catches corruption. It is an integrity check, not
 a security mechanism. Corrupt frames are silently dropped, and CTAPHID's own timeouts take
 over. Logs never mix with frames: the firmware prints only to the *UART* port. That gives
 the two ports clean roles: "USB" carries the authenticator, "UART" carries diagnostics. §6.7 describes the bridge and the framing in full detail.

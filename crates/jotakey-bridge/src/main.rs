@@ -175,11 +175,12 @@ mod tests {
             .sum()
     }
 
+    /// One complete frame as sent: the leading delimiter, the body, the trailing delimiter.
     fn read_frame(port: &mut TTYPort) -> Vec<u8> {
         let deadline = Instant::now() + Duration::from_secs(2);
         let mut frame = Vec::new();
         let mut b = [0u8; 1];
-        while frame.last() != Some(&0) {
+        while frame.len() < 2 || frame.last() != Some(&0) {
             assert!(Instant::now() < deadline, "no frame from the bridge");
             if port.read(&mut b).is_ok_and(|n| n == 1) {
                 frame.push(b[0]);
