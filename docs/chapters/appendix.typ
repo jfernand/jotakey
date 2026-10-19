@@ -36,7 +36,7 @@ Every invariant of `AGENTS.md` §2, with where it is enforced, tested and proved
   ([`crates/jotakey-testfw`], [On-device tests (`cargo test` with the board attached).]),
   ([`crates/jotakey-bridge`], [Linux serial ⇄ uhid bridge.]),
   ([`crates/jotakey-host-tests`], [Independent client, simulator, RP checks, hardware tests.]),
-  ([`fuzz/`], [Six cargo-fuzz targets.]),
+  ([`fuzz/`], [Six cargo-fuzz targets; `seeds/` written by `make_seeds.py`.]),
   ([`formal/`], [Lean 4: `Cbor`, `CtapHid`, `Authenticator`, `Credential`; `Main.lean` (executable spec); `AxiomAudit.lean`.]),
   ([`scripts/`], [`provision.sh` (irreversible, human-only), udev rules, `fido2_check.py`.]),
   ([`docs/`], [This report (`typst compile docs/jotakey.typ`).]),

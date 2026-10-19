@@ -320,8 +320,9 @@ overflows the buffer, fails COBS decoding, has the wrong length or fails the CRC
 dropped and counted. Nothing is ever retransmitted. CTAPHID already has timeouts and
 retries, and duplicating them in the framing layer would only add states. A unit test
 feeds a log line, a corrupted frame and a good frame in one stream, and checks that
-exactly the good one comes out. The `serial_deframe` fuzz target has pushed millions of
-arbitrary byte streams through the same code.
+exactly the good one comes out. The `serial_deframe` fuzz target (§8.2) mixes garbage,
+intact frames and corrupted frames by the million, and checks that every report it accepts
+is exactly what was sent and that no intact frame is lost.
 
 Two properties of the C6's USB-Serial/JTAG port matter for the host side. The baud rate is
 meaningless, because the data moves at USB full speed whatever the port is told. More

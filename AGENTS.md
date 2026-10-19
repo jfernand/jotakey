@@ -159,7 +159,8 @@ The ESP32-C6:
   or flash encryption, or run `espefuse` (C6); do not set STM32 readout protection level 1 or 2,
   write-protect flash, or change OPTIGA lifecycle states or lock its objects (key).
   `scripts/provision.sh` documents the C6 steps for a human to run.
-- Every change to protocol logic needs: tests, a fuzz target that reaches it, no new surviving
+- Every change to protocol logic needs: tests, a fuzz target that reaches it (verify that it
+  does: an oracle that never fires tests nothing; doc chapter 8), no new surviving
   mutants (`cargo mutants -p jotakey-core` → 0 missed; exclusions in `.cargo/mutants.toml`
   need a written reason), and an update to the Lean model if it touches an invariant.
 - Names: Rust and Lean each follow their own conventions, and `formal/NAMES.md` is the
@@ -181,7 +182,7 @@ The ESP32-C6:
 
 ```sh
 just test          # cargo test -p jotakey-core (+ proptest)
-just fuzz T        # cargo +nightly fuzz run T  (targets in fuzz/fuzz_targets)
+just fuzz T        # cargo +nightly fuzz run T with fuzz/seeds/T (targets in fuzz/fuzz_targets)
 just mutants       # cargo mutants -p jotakey-core
 just lean          # cd formal && lake build && no-sorry check
 just diff          # differential tests Rust vs Lean (needs formal/.lake/build/bin/jotakey-spec)
@@ -205,7 +206,7 @@ crates/jotakey-fw        ESP32-C6 firmware (esp-hal, embassy, BLE via esp-radio 
 crates/jotakey-testfw    on-device test firmware (embedded-test + probe-rs)
 crates/jotakey-bridge    Linux serial↔uhid bridge
 crates/jotakey-host-tests end-to-end tests against a real device through the bridge
-fuzz/                    cargo-fuzz targets
+fuzz/                    cargo-fuzz targets; seeds/ from make_seeds.py
 formal/                  Lean 4 models, proofs, executable spec; NAMES.md maps Rust ↔ Lean names
 docs/                    Typst document (ISSS design)
 hardware/                the jotakey key: HARDWARE.md, KiCad project, layout/route/silk scripts
