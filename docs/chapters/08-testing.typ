@@ -329,9 +329,10 @@ both ends of the protocol. `scripts/fido2_pin_check.py` does the same for the PI
 one, checks that a wrong guess is counted and a right one restores the counter, gets
 tokens and changes the PIN, all without a touch; with `--touch` it also registers and signs
 in with user verification required. The PIN protocol's primitives were pinned byte for
-byte to python-fido2 before any of this ran, and on the C6 the device passed every no-touch
+byte to python-fido2 before any of this ran. On the C6 the device passed every no-touch
 check on the first run (python-fido2 itself refuses to send a PIN shorter than four
-characters, so that rule is tested only in Rust).
+characters, so that rule is tested only in Rust), and with `--touch` python-fido2's server
+accepted a registration and a sign-in with user verification required, UV flag set.
 
 == Static checks
 
