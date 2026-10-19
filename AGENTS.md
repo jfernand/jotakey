@@ -210,6 +210,7 @@ fuzz/                    cargo-fuzz targets; seeds/ from make_seeds.py
 formal/                  Lean 4 models, proofs, executable spec; NAMES.md maps Rust ↔ Lean names
 docs/                    Typst document (ISSS design)
 hardware/                the jotakey key: HARDWARE.md, KiCad project, layout/route/silk scripts
+examples/webauthn-topcoat a demo relying party (Topcoat + webauthn-rs) for trying the key in a browser
 scripts/provision.sh     human-run, irreversible device provisioning (dry-run by default)
 scripts/fido2_check.py   independent check with python-fido2 (client + RP server)
 scripts/99-jotakey.rules udev rules for /dev/uhid and the bridge's hidraw device
