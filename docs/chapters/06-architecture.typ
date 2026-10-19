@@ -419,7 +419,7 @@ browser on the machine see the key. Stop the bridge with Ctrl-C.
   ([Framing], [Round trip of every possible report (property test), all-zero and zero-free reports, corruption and resynchronisation, and the `serial_deframe` fuzz target.]),
   ([Pump loop], [The real `pump` runs between a fake uhid (a datagram socket pair, which keeps event boundaries like `/dev/uhid`) and a pseudo-terminal standing in for the serial port. The test checks one report in each direction, that the idle bridge wakes at most twice in 300 ms (the earlier 5 ms polling loop woke 60 times), and that a hang-up ends the pump so the bridge can reconnect.]),
   ([Whole path], [`jotakey-host-tests` runs a simulated device wired exactly like the usb task (framing → `CtapHid` → authenticator), so every simulated request crosses the real framing code in both directions.]),
-  ([On hardware], [*Not yet run.* No board was attached while it was written, and `/dev/uhid` needs the permissions above. `just host-tests` with a board attached is the first check to run.]),
+  ([On hardware], [Runs with the C6 DevKit: `scripts/fido2_check.py` (python-fido2 as client and relying party), a Chrome registration and sign-in through the demo relying party in `examples/webauthn-topcoat`, and the explorer below all go through it.]),
 )
 
 The bridge sleeps in `poll(2)` on both file descriptors, the uhid device and the serial
@@ -430,3 +430,127 @@ the loop, and the bridge goes back to waiting for the board.
 
 One limitation is known. The bridge is *Linux-only*, because `uhid` is a Linux interface;
 other systems would need their own virtual-HID mechanism.
+
+== Looking at keys: the explorer
+
+Chapter 5 describes what an authenticator says about itself. `jotakey-explorer` lets you
+watch it say it. It is a terminal program that lists every FIDO key attached to the
+computer, of any make, and shows what the selected one reports. It is useful for three
+things: checking that the bridge and the firmware are alive, comparing a Jotakey with
+other keys, and learning the protocol from real answers instead of tables.
+
+#figure(
+  block(width: 100%, fill: c-ink, inset: 8pt, radius: 2pt)[
+    #set text(font: font-mono, size: 6.1pt, fill: c-paper)
+    #set par(leading: 0.42em)
+    #raw(block: true, " jotakey-explorer   FIDO security keys on this computer (read-only)
+╭ Devices (1) ──────────────────╮╭ Jotakey FIDO2 (bridge) ───────────────────────────────────────╮
+│▌ Jotakey FIDO2 (bridge) ●     ││Device                                                         │
+│  hidraw3  1209:0001  USB (virt││  Node         /dev/hidraw3                                    │
+│                               ││  Bus          USB (virtual, uhid)                             │
+│                               ││  VID:PID      1209:0001  Jotakey through jotakey-bridge       │
+│                               ││  Kernel name  Jotakey FIDO2 (bridge)                          │
+│                               ││                                                               │
+│                               ││CTAPHID                                                        │
+│                               ││  Protocol version  2                                          │
+│                               ││  Device version    0.1.0  vendor-defined                      │
+│                               ││  Capabilities      0x0d  WINK, CBOR (CTAP2), NMSG (no U2F)    │
+│                               ││  Channel           0x0000000e  allocated for this session     │
+│                               ││                                                               │
+│                               ││CTAP2 getInfo                                                  │
+│                               ││  versions                  FIDO_2_0  protocol versions spoken │
+│                               ││  aaguid                    6a6f7461-6b65-792d-7630-312d6336000│
+│                               ││    rk                      false  no discoverable credentials │
+│                               ││    up                      true  can test user presence       │
+╰───────────────────────────────╯╰───────────────────────────────────────────────────────────────╯
+↑↓/jk select or scroll · Tab/Enter switch pane · PgUp/PgDn · r rescan · w wink · x raw · q quit")
+  ],
+  caption: [The explorer showing the C6 DevKit through the bridge: rendered from the real device, trimmed to fit the page.],
+)
+
+=== Finding keys
+
+Every HID device describes its reports in a *report descriptor*, a short byte program the
+kernel exposes in sysfs. A FIDO authenticator declares a top-level application collection
+with usage page `0xF1D0` (assigned to the FIDO Alliance) and usage `0x01` (CTAPHID). The
+explorer reads the descriptor of every `/dev/hidrawN` node and keeps those that declare
+it. This finds keys by what they are, not by who made them: USB keys, Bluetooth keys and
+the bridge's virtual device all qualify, and a keyboard or mouse never does. Vendor and
+product IDs, the USB descriptor strings and the physical port come from sysfs too, without
+touching the device. The list is rescanned every two seconds, so keys can be plugged and
+unplugged while it runs.
+
+=== What it asks, and why that is safe
+
+People will point this tool at the keys that guard their real accounts, so it is
+*read-only by construction*. It sends only these requests:
+
+#dtable(
+  columns: (1.25fr, 2.2fr, 0.9fr),
+  ("Request", "What it returns", "Touch or state change"),
+  ([CTAPHID `INIT`], [A channel, the CTAPHID protocol version, the device version, and capability bits: WINK, CBOR (CTAP2), NMSG (no U2F).], [None]),
+  ([`authenticatorGetInfo`], [Everything the key advertises: protocol versions, extensions, AAGUID, options, size limits, algorithms.], [None]),
+  ([`authenticatorClientPIN` getPINRetries / getUVRetries], [How many wrong PINs or failed fingerprints are left. Sent only if getInfo says a PIN or built-in UV is set up.], [None: the counters are read, not spent]),
+  ([U2F `VERSION` (over `CTAPHID_MSG`)], [`U2F_V2` if the key also speaks the older protocol. Sent only without the NMSG bit.], [None]),
+  ([CTAPHID `WINK`, on `w` only], [Nothing; the key blinks so you can tell which one it is.], [None]),
+)
+
+Nothing it sends creates or uses a credential, asks for a touch, or changes anything on the
+key. A test proves this for the Jotakey: it runs the whole query against the simulated
+device with nobody touching, and checks that every request completes and that the
+signature counter and the epoch are unchanged.
+
+The answers are untrusted input. Any device can claim to be a FIDO key, so the explorer
+treats replies as an attacker's bytes, as the firmware treats requests. Its CBOR decoder
+checks every announced length against the bytes actually received before allocating
+anything, and it limits nesting. Every read waits in `poll(2)` with a timeout, and each
+query runs on its own thread, so a silent or misbehaving device cannot freeze the screen.
+
+=== Reading a Jotakey's answers
+
+#dtable(
+  columns: (1.15fr, 0.85fr, 2.3fr),
+  ("Field", "Value", "Meaning"),
+  ([Capabilities], [`0x0d`], [WINK and CBOR set; NMSG set, so no U2F. The MVP is CTAP2-only.]),
+  ([`versions`], [`FIDO_2_0`], [CTAP 2.0, the MVP. CTAP 2.1 keys also list `FIDO_2_1`.]),
+  ([`aaguid`], [`6a6f7461-…0001`], [The model identifier, the ASCII text `jotakey-v01-c6` with a version suffix. Relying parties look AAGUIDs up in the FIDO Metadata Service; the explorer recognises the Jotakey's.]),
+  ([`rk`], [`false`], [No discoverable credentials (passkeys stored on the key). A site must send the credential IDs it holds, as the demo relying party does.]),
+  ([`up`], [`true`], [The key can test user presence: the touch electrode, or the C6's BOOT button.]),
+  ([`plat`], [`false`], [A *removable* (roaming) authenticator: it moves between computers, unlike a platform authenticator such as Windows Hello or Touch ID, which is part of one device.]),
+  ([`maxMsgSize`], [`1200`], [The largest request it accepts (invariant 4).]),
+  ([`maxCredentialCountInList`], [`8`], [Credential IDs per allow or exclude list.]),
+  ([`maxCredentialIdLength`], [`49`], [Exactly a Jotakey credential ID: version byte, 32-byte nonce, 16-byte tag (§6.4).]),
+)
+
+What is missing says as much. There is no `clientPin` or `uv` option, so the key has no
+PIN and no built-in verification; the explorer therefore skips the retry counters. There is
+no `algorithms` list, a CTAP 2.1 member: a client learns what a 2.0 key supports only from
+its answers (the Jotakey accepts ES256 alone). A recent YubiKey shows many more fields:
+`FIDO_2_1`, `credMgmt`, `remainingDiscoverableCredentials`, a U2F version and, once a PIN
+is set, the PIN retry count. Putting the two side by side is a quick tour of the CTAP 2.1
+roadmap in chapter 11.
+
+=== Running it
+
+#codepanel(title: "The explorer")[
+```sh
+just explore              # interactive; q quits
+just explore --dump       # every key's report as plain text, for bug reports
+```
+]
+
+Up and down (or `j`/`k`) select a key, or scroll the details once Tab or Enter has moved
+the focus there. `w` winks the selected key, `x` shows the raw getInfo bytes with their
+CBOR diagnostic notation, and `r` rescans and asks the selected key again. On a desktop
+Linux system the logged-in user can already open FIDO devices (systemd grants access to
+them); elsewhere, `scripts/99-jotakey.rules` shows the udev rule to add.
+
+#dtable(
+  columns: (1.1fr, 2.4fr),
+  ("Part", "Evidence"),
+  ([Decoder and discovery], [Unit tests: getInfo-shaped CBOR, lying lengths and deep nesting rejected without allocating; report descriptors (FIDO, keyboard, composite, 4-byte usages, nested collections, truncation); a fake sysfs tree.]),
+  ([Against a Jotakey], [The full query against the in-process device, with nobody touching: every request completes, the counter and the epoch do not move. A render test draws the screen into ratatui's test backend.]),
+  ([On hardware], [`cargo test -p jotakey-explorer --test device -- --ignored` queries and winks every key attached. It passes against the C6 DevKit through the bridge. Other makes are not yet tested on hardware.]),
+)
+
+Like the bridge, the explorer is Linux-only: it reads hidraw nodes and sysfs.
