@@ -147,7 +147,7 @@ with sorted keys before any credential logic runs. A target that only ever hits 
   needs its own test.
 ]
 
-=== The six targets
+=== The seven targets
 
 Each target runs the real core code against `MockPlatform`, a deterministic stand-in for
 the hardware: its random numbers come from a seeded generator and its key store is
@@ -164,6 +164,7 @@ software HMAC, so every crash reproduces exactly. Its failure switches (`fail_rn
   ([`ble_stream`], [A fragment size, then GATT writes of chosen lengths with clock advances.], [The BLE framer and the authenticator together. No notification exceeds the fragment size.], [4]),
   ([`serial_deframe`], [A script of raw bytes, intact frames and frames with one byte overwritten.], [Every report emitted came from wire bytes that are exactly its encoding (so its CRC was valid and no second encoding is accepted); nothing is emitted before a delimiter; an intact frame always gets through, whatever garbage came before it.], [4]),
   ([`credential_unwrap`], [A tag key, an `rpIdHash` and a candidate credential ID.], [An accepted ID is exactly what `wrap` mints for the recovered nonce at that RP; a minted ID always unwraps to its nonce.], [3]),
+  ([`pin_protocol`], [A key-agreement scalar, the platform's COSE key, then a message.], [An accepted key re-encodes to the same key, and a key without extra labels is byte for byte the canonical encoding. `decrypt` accepts exactly `iv ‖ whole blocks`, and re-encrypting under the same IV gives the message back. `verify` accepts only `authenticate`'s tag. Checked with a planted bug (CBC chaining removed): caught on the first seed.], [4]),
 )
 ]
 
@@ -232,14 +233,15 @@ The limits are as important:
 The latest run, two minutes per target from the seeds with no failures:
 
 #dtable(
-  columns: (1fr, 1fr, 1fr, 1fr, 1fr, 1fr),
-  ("cbor_decode", "ctap_dispatch", "ctaphid_stack", "ble_stream", "serial_deframe", "credential_unwrap"),
-  ([14.9 M], [2.7 M], [0.6 M], [2.6 M], [2.2 M], [35.4 M]),
+  columns: (1fr, 1fr, 1fr, 1fr, 1fr, 1fr, 1fr),
+  ("cbor_decode", "ctap_dispatch", "ctaphid_stack", "ble_stream", "serial_deframe", "credential_unwrap", "pin_protocol"),
+  ([14.9 M], [2.7 M], [0.6 M], [2.6 M], [2.2 M], [35.4 M], [0.07 M]),
 )
 
 Executions per run depend on how much code each input reaches: a CTAPHID input carries
 whole transactions through the authenticator, including ECDSA signatures, while a
-credential ID check is one HMAC. Longer runs before a release are worth their time, and
+credential ID check is one HMAC. A `pin_protocol` input costs a full elliptic-curve
+key agreement, which is why that target manages the fewest runs. Longer runs before a release are worth their time, and
 inputs captured from real browsers through the bridge make good seeds.
 
 == Mutation testing
@@ -256,7 +258,7 @@ no test notices.
   ([First run], [61 / 459], [Revealed untested boundaries (user-ID length 64/65, reset window at exactly 10 000 ms), optional members whose *type* was never checked, CTAPHID resync corners, status codes only compared with themselves, and self tests whose failure branch could never run.]),
   ([After fixes], [0], [New targeted tests; an unreachable branch replaced by a compile-time assertion; dead API removed; fault injection added to the self tests.]),
   ([Storage added], [11], [The new record log passed its functional tests, yet its on-flash *format*, CRC rejection and sector-switch schedule were unpinned: mutants that wasted slots or erased too often survived. Fixed with a golden layout test, an erase-count schedule test and corruption tests.]),
-  ([Current], [*0 / 530*], [452 caught, 72 unviable (do not compile), 6 time out (infinite loops, counted as caught).]),
+  ([Current], [*0 / 532*], [446 caught, 81 unviable (do not compile), 5 time out (infinite loops, counted as caught). Includes the PIN protocol primitives.]),
 )
 
 The policy (`AGENTS.md` §4) is *zero unexplained survivors*. The only excluded class is

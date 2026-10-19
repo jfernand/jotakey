@@ -41,7 +41,7 @@ over that hash together with its own `authenticatorData`. The RP later checks th
 challenge is the one it issued and the origin is its own. A phishing page at `examp1e.com`
 can relay the challenge, but cannot make the browser write a different origin.
 
-== The RP ID and why phishing fails
+== The RP ID
 
 Every credential is created for an *RP ID*, a domain such as `example.com`. The browser
 only lets a page use an RP ID equal to its own host, or a registrable suffix of it:

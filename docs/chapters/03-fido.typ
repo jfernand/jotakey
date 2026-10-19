@@ -4,7 +4,7 @@
 
 = From passwords to passkeys
 
-== What is wrong with passwords
+== The limitations of passwords
 
 A password is a *shared secret*: the user knows it and the website stores something
 derived from it. Every login sends the secret, or something equivalent to it, to whoever
@@ -28,12 +28,11 @@ That alone does not stop phishing: a fake site could relay the challenge too. FI
 missing piece. The *browser*, which reliably knows which site it is talking to, includes
 the site's origin in what is signed. The *authenticator* only uses a credential for the
 site it was created for. A signature obtained on `examp1e.com` names `examp1e.com`, and
-`example.com` rejects it. Phishing stops working, not because users get better at spotting
-fakes, but because the protocol never asks them to.
+`example.com` rejects it. Domain phishing cannot work.
 
-#keypoint[The user is no longer the last line of defence against phishing. The protocol is.]
+#keypoint[The protocol, instead of the user, is the last line of defence against phishing]
 
-== A short history
+== A short history of FIDO
 
 #dtable(
   columns: (0.55fr, 2.2fr),
@@ -46,7 +45,7 @@ fakes, but because the protocol never asks them to.
   ([2023–25], [*CTAP 2.2*: the *hybrid* transport (scan a QR code, phone acts as authenticator over BLE plus a cloud relay); passkeys become the default sign-in option on major sites.]),
 )
 
-== Passkeys, precisely
+== Passkeys
 
 "Passkey" is the user-facing name for a *discoverable FIDO credential*. The word covers two
 deployment models with very different security properties:
@@ -65,7 +64,7 @@ credentials: the website must name the credential (send its ID) at login. This i
 security keys work as a second factor, and how many enterprise deployments use them.
 *Discoverable* credentials, where the device stores the user handle so the website does
 not need to send an ID ("username-less" passkeys), are the first item on the roadmap
-(§11). Their implementation is laid out step by step there.
+(§11).
 
 == The three parties
 

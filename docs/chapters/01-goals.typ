@@ -4,23 +4,25 @@
 
 = Goals and threat model
 
-== What we are building
+== Project scope
 
 A *security key* is a small device that holds private keys and uses them to prove the
 holder's identity to websites, without ever letting those keys out. You plug it in (or
 bring it close, or pair it over Bluetooth), the browser asks it to sign a challenge, a
 light blinks, you touch it, and you are logged in. The YubiKey is the best-known example.
 
-Jotakey does the same job on two platforms. The *jotakey key* is its own hardware: a
+Jotakey does the same job on two platforms. *jotakey* is its own hardware: a
 USB-A dongle with an STM32L432 microcontroller, which talks to the computer directly as a
 USB security key, and an Infineon *OPTIGA Trust M* secure element, which holds the root
 secret. A capacitive touch pad is its "touch" sensor and a red LED its only display
-(`hardware/HARDWARE.md`). The *ESP32-C6 DevKit* is an inexpensive, open development board: a
+(`hardware/HARDWARE.md`).
+
+The *ESP32-C6 DevKit* is an inexpensive, commonly available, open development board: a
 160 MHz RISC-V microcontroller with Wi-Fi 6, Bluetooth LE and 802.15.4 radios, 512 KiB of
 SRAM and 4–8 MiB of flash. It has two USB-C ports and two buttons, *BOOT* and *RESET*, plus
 one addressable RGB LED; Jotakey uses the BOOT button as its touch sensor. The DevKit has no
 secure element and needs a host bridge for USB (§6.1), so it serves as the development
-platform, and the jotakey key is the device to carry.
+platform, and jotakey is the device to carry.
 
 #spec(
   ("Protocol", [FIDO2: CTAP 2.0 authenticator, WebAuthn-compatible]),
@@ -33,17 +35,16 @@ platform, and the jotakey key is the device to carry.
   ("Verification", [Lean 4 models and proofs of the security-critical state machines]),
 )
 
-== Why this needs to be right
+== Correctness
 
-A security key that is subtly wrong is worse than none. Its user believes they are
-protected. Three classes of failure matter:
+A user believes they are protected when using this device. There are three ways in which this trust would be broken:
 
 + *Key compromise.* If an attacker learns a credential's private key, they can log in as
   the user from anywhere, forever, and the user cannot tell.
 + *Silent use.* If the key can be made to sign without the user's knowledge (no touch, or a
   touch meant for something else), an attacker who controls the computer can log in to any
   account registered with the key.
-+ *Denial and confusion.* Crashes, lockups or ambiguous parsing let a malicious host wedge
++ *Denial of service, and confusion.* Crashes, lockups or ambiguous parsing let a malicious host wedge
   the device, or worse, make two components disagree about what was signed.
 
 The rest of this report is about making these failures impossible by construction where we
@@ -51,7 +52,7 @@ can, unlikely where we cannot, and *documented* everywhere.
 
 == Threat model
 
-We assume a strong attacker and list exactly what the device does and does not resist.
+We assume a strong attacker.
 
 #dtable(
   columns: (1.15fr, 2fr, 1.2fr),
@@ -86,21 +87,21 @@ We assume a strong attacker and list exactly what the device does and does not r
     [*Out of scope* for the MVP; partially mitigated by reproducible builds and secure boot.]),
 )
 
-#callout(kind: "trap", "The honest summary")[
+#callout(kind: "trap", "Summary")[
   Jotakey is a strong defence against *remote* attackers: phishing, malware and network
-  attackers, which are by far the most common. Against a well-equipped attacker with
-  physical possession, the two platforms differ. The jotakey key keeps its root secret in a
+  attackers, which are the most common. Against a well-equipped attacker with
+  physical possession, the two platforms differ. *jotakey* keeps its root secret in a
   certified secure element, so a stolen key cannot be cloned as a whole, although an
   attacker who breaks its microcontroller can use it while they hold it. The ESP32-C6 has no secure
-  element and gives its secrets up. We say so plainly in the threat model, in `AGENTS.md`,
+  element and gives its secrets up as stated in the threat model, in `AGENTS.md`,
   and in the roadmap.
 ]
 
 == Security invariants
 
-The design is anchored by nine invariants. They are written in `AGENTS.md` (normative for
+The design is centered around by nine invariants. They are written in `AGENTS.md` (normative for
 anyone changing the code). Each is enforced in code and checked by tests. Where marked
-⊢, it is also proved in Lean. Appendix A traces each invariant to its implementation,
+⊢, they are also proved in Lean. Appendix A traces each invariant to its implementation,
 tests and theorems.
 
 #dtable(

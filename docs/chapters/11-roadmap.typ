@@ -33,6 +33,21 @@ presence would let anyone holding the key list your accounts. The steps:
   checking*: 8 attempts in total, 3 per power cycle, then a forced reset. These lockout rules
   are a natural Lean theorem: no trace allows more than 8 wrong PIN guesses. Add `uv`,
   `clientPin` and `pinUvAuthToken` to getInfo.
+
+  _Status._ Started. The protocol-two primitives are in `pin_protocol.rs`: the key-agreement
+  key, the platform's COSE key parser, HKDF, AES-256-CBC and HMAC tags. They match
+  python-fido2 byte for byte and have a fuzz target (`pin_protocol`) and no surviving mutants.
+  Next, in order:
+  + PIN state behind the `Platform` trait: the PIN hash and the retry counter, in a record
+    log on the C6, in OPTIGA data objects on the key. How much of the lockout the chip
+    itself can enforce against an attacker on the MCU is still to be worked out; that
+    decides whether the PIN protects against a thief or only against a casual finder.
+  + The clientPIN sub-commands: getPINRetries, getKeyAgreement, setPIN, changePIN and
+    getPinUvAuthTokenUsingPinWithPermissions. A wrong-PIN attempt is counted durably
+    *before* the hash is compared. The token is random per power cycle and kept in RAM only.
+  + `pinUvAuthParam` in makeCredential and getAssertion, which sets the UV flag. The `uv`
+    option stays unsupported: Jotakey has no built-in verification.
+  + The Lean lockout model and theorem, then the getInfo members.
 + *credentialManagement (0x0A).* Enumerate RPs and credentials, delete credentials, update
   user info. Requires a `pinUvAuthToken` with the `cm` permission.
 + *Extensions.* `credProtect` (levels 1–3: hide credentials from assertion without UV),
