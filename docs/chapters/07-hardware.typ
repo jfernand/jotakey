@@ -9,7 +9,7 @@ ESP32-C6 offers, how Jotakey uses it, and where it falls short (§7.1–7.4). It
 the jotakey key, which adds the secure element the C6 lacks (§7.5), and how its board is
 designed (§7.6).
 
-== MCU features
+== ESP32C6 features
 
 #dtable(
   columns: (1.1fr, 2.4fr),
@@ -24,7 +24,7 @@ designed (§7.6).
 
 == Provisioning
 
-Provisioning is a one-way trip: eFuses cannot be unburned. `scripts/provision.sh`
+Provisioning can only happen once as eFuses cannot be unburned. `scripts/provision.sh`
 documents every step and *prints* the commands by default. It executes one step at a time,
 only when a human passes `--execute <step>` and types the chip's MAC address to confirm.
 `AGENTS.md` forbids automation from ever running it.
@@ -55,7 +55,7 @@ loudly announced at boot and must never hold real credentials.
   principle, extract an ECDSA key from enough traces. Hedged nonces reduce, but do not
   remove, that risk.
 
-== Fault injection: the limit of this chip
+== Fault injection attack
 
 #callout(kind: "trap", "Published attack: Espressif advisory AR2023-007")[
   In January 2024 Espressif published *AR2023-007*, "Security Advisory Concerning Bypassing
@@ -83,7 +83,7 @@ signatures internally, so even full control of the microcontroller does not reve
 The jotakey key puts the third of these on its own board, next to an STM32L432
 microcontroller (§7.5).
 
-== The jotakey key: a secure element
+== The jotakey key. STM32 + security controller
 
 The jotakey key (`hardware/HARDWARE.md`) pairs two chips with different jobs. The
 *STM32L432KC*, an Arm Cortex-M4 at 80 MHz, runs the firmware: USB, CTAP, the touch sensor,
@@ -128,7 +128,7 @@ datasheet (DS11451) and the reference manual (RM0394) in `hardware/datasheets`.
   ([SWD], [On five bottom-side test pads for a pogo-pin jig. Disabled for good by RDP level 2.]),
 )
 
-*Why this part.* It has everything a security key needs on one chip: crystal-less USB, a
+This part has everything a security key needs on one chip: crystal-less USB, a
 touch controller and a true random number generator, in a package that fits a 12 mm
 board, with 256 KB of flash for a Rust firmware carrying a USB stack and P-256. Its sibling, the STM32L442KC, adds an AES accelerator
 (RM0394, Table 1) and nothing else. Jotakey uses AES only for the PIN protocol, a few
@@ -161,7 +161,7 @@ setting readout protection.
 The STM32L432 is an ordinary microcontroller. Fault-injection attacks against STM32 readout
 protection have been published for several families. So we assume a well-equipped thief
 can, in the end, run their own code on it, with the binding secret and the epoch in hand.
-What they get then:
+What they can do at that point:
 
 #dtable(
   columns: (1.3fr, 2fr),
