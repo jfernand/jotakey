@@ -45,24 +45,202 @@ holes one above another. Chapter 9 adds the last one, proof.
 
 == Fuzzing
 
-`cargo fuzz` (libFuzzer with AddressSanitizer) drives six targets. Each target checks
-security properties, not just "no crash":
+Every byte that reaches the key from the host is chosen by someone who may be an attacker:
+the browser, the operating system, the bridge, any program that can open the HID device or
+reach the BLE link. Invariant 4 demands that the parsers handle *every* byte string,
+not just the ones the specification describes. Unit tests check the inputs their authors
+thought of. A *fuzzer* generates inputs nobody thought of, by the million, and watches what
+happens.
 
-#dtable(
-  columns: (0.95fr, 2.5fr),
-  ("Target", "Oracle"),
-  ([`cbor_decode`], [No panic; anything accepted re-encodes to *exactly* the input bytes (canonical uniqueness, the theorem of §9.5, checked on real code).]),
-  ([`ctap_dispatch`], [Raw and template-mutated requests through the authenticator. The counter moves *only* on a successful makeCredential/getAssertion completed with a confirmed touch, and by exactly one; success bodies are canonical CBOR; nothing stays parked.]),
-  ([`ctaphid_stack`], [Arbitrary 64-byte packet streams on several channels, with clock jumps and absent users, through CTAPHID *and* the authenticator. Buffers stay within bounds, no request is left unanswered, output is bounded.]),
-  ([`ble_stream`], [Arbitrary GATT write sequences and fragment sizes, through the BLE framer and the authenticator.]),
-  ([`serial_deframe`], [Arbitrary byte streams through the COBS/CRC deframer; every report emitted is a valid frame.]),
-  ([`credential_unwrap`], [Accepted IDs are exactly what `wrap` mints; minted IDs always unwrap.]),
+=== How a coverage-guided fuzzer works
+
+Jotakey uses `cargo fuzz`, which drives *libFuzzer*, the fuzzer built into LLVM. A *fuzz
+target* is a function that takes a byte slice and feeds it to the code under test. The
+compiler instruments every branch of the program, so after each run the fuzzer knows which
+edges of the control-flow graph that input reached. The loop is:
+
+#layers(
+  caption: "One iteration of libFuzzer's loop, millions of times per run",
+  ("1. Pick", [An input from the *corpus*, the set of inputs kept so far (initially the seeds).], "light"),
+  ("2. Mutate", [Flip bits, insert, erase or copy bytes, splice two inputs, write "interesting" values (0, 0xFF, lengths), or insert a *dictionary* entry.], "light"),
+  ("3. Run", [Call the target. Sanitizers and assertions watch every operation.], "amber"),
+  ("4. Observe", [A crash, panic, timeout or out-of-memory stops the run and saves the input. Otherwise: did this input reach an edge (or an edge count) never seen before?], "dark"),
+  ("5. Keep", [If it did, add it to the corpus: it is a stepping stone toward deeper code.], "dark"),
 )
 
-Smoke runs during development covered roughly 8 million CBOR, 6 million CTAPHID, 4
-million BLE, 4.7 million serial, 23 million credential and 2 million full CTAP executions,
-with no failures. Corpora grow over time. Inputs captured from real browsers through the
-bridge make good seeds.
+The fifth step is what makes the search *coverage-guided* rather than random. An input
+that gets one byte further into a CBOR map is kept, and its mutations get further still.
+The fuzzer climbs into the program a branch at a time, the way a person learns a format by
+trial and error, only a million times faster.
+
+Comparison tracing helps it over walls. The instrumentation also records the operands of
+every comparison the program makes, so when the deframer compares a computed CRC with the
+one on the wire, the fuzzer learns the value it needed and tries it next. The "recommended
+dictionary" libFuzzer prints at the end of a run is the record of these values: for the
+serial target it is full of 4-byte CRCs.
+
+What counts as a failure:
+
+- *Panics.* The core is built with `overflow-checks = true`, so an arithmetic overflow is a
+  panic, not a silent wrap. An out-of-range index, a failed `expect` in the target, or an
+  assertion is also a panic. libFuzzer treats each as a crash.
+- *Memory errors.* AddressSanitizer is on. The core has no `unsafe`, so this mostly guards
+  the dependencies and the harness.
+- *Hangs and blow-ups.* A run that exceeds the time limit (unbounded loops, invariant 4's
+  "no unbounded recursion") or the memory limit is reported as a failure.
+
+=== Oracles: from "no crash" to "no wrong answer"
+
+A fuzzer only notices what goes wrong loudly. Code that returns a wrong answer quietly,
+such as accepting a malformed message, signing without a touch, or moving the counter twice, passes
+unnoticed. *Oracles* fix this: assertions in the target that turn a violated property into
+a crash. They are what make Jotakey's fuzzing a security test instead of a robustness test.
+
+Take `cbor_decode`. "The decoder does not panic" is the obvious property. The oracle adds a
+stronger one: whatever the strict decoder accepts is re-encoded item by item, and the
+result must equal the input *byte for byte*. If two different byte strings decoded to the
+same value, an attacker could produce a second encoding of a signed message, and
+canonical CBOR exists to rule that out. The oracle is the statement of the Lean theorem
+`decodeHead_accepts_only_canonical` (§9.5), checked on the real Rust code, which the proof
+never sees.
+
+The other oracles follow the same idea: each states a security invariant in executable
+form.
+
+=== Reaching deep code
+
+Random bytes rarely get far. A CTAPHID request must arrive on an allocated channel in
+packets whose sequence numbers count up. A serial frame must carry a CRC-32 that random
+data matches once in four billion tries. A makeCredential must be a well-formed CBOR map
+with sorted keys before any credential logic runs. A target that only ever hits the first
+`return Err` tests very little. Four techniques get the inputs through:
+
+- *Inputs as scripts.* The fuzzer's bytes are read as instructions that *build* a valid
+  outer layer, rather than as the outer layer itself. In `ctaphid_stack` the first byte of
+  each 65-byte record picks the channel (mostly ones already allocated), whether the clock
+  jumps past the packet timeout, and whether the user touches or times out. The
+  `serial_deframe` input says "send these raw bytes", "send an intact frame of this
+  report" or "send this frame with one byte changed".
+- *Templates.* In `ctap_dispatch` an odd first byte means "take a valid makeCredential or
+  getAssertion and overwrite these positions with these values". Every mutation starts
+  one step from a valid request, so the deep validation paths are hit from the first run.
+- *A genuine credential.* `ctap_dispatch` registers one credential once (`OnceLock`) and
+  puts its real ID in the getAssertion template, so mutated assertions can *succeed*, and
+  the oracles about successful signatures get exercised.
+- *Seeds.* `fuzz/make_seeds.py` writes real transactions in each target's input format to
+  `fuzz/seeds/` (tracked in git): a CTAPHID INIT followed by getInfo or makeCredential,
+  the same over BLE, boot text followed by frames. `just fuzz` hands them to libFuzzer next
+  to the working corpus in `fuzz/corpus/` (not tracked: it is regenerated by fuzzing).
+
+#callout(kind: "trap", "An oracle that never fires tests nothing")[
+  Coverage numbers can look healthy while the important path is never taken. Writing this
+  chapter, we counted what each corpus actually reaches. The `serial_deframe` target had
+  run millions of times without ever accepting a frame: no random input had a valid CRC,
+  so its oracle about accepted frames had never once been evaluated (and was weak anyway:
+  it computed a CRC and threw it away). The CTAPHID corpus never got a request through to
+  the authenticator, and the BLE corpus never produced a successful response.
+  The fixes are the script format of `serial_deframe`, a stronger oracle, and seeds. After
+  them the serial corpus accepts about 10 000 frames per pass, and the transport targets
+  start from successful makeCredential and getInfo exchanges. To check that the new oracle
+  has teeth, we disabled the deframer's CRC comparison: the fuzzer reported "accepted
+  bytes are not the frame's encoding" within seconds. A fuzz target is code too, and it
+  needs its own test.
+]
+
+=== The six targets
+
+Each target runs the real core code against `MockPlatform`, a deterministic stand-in for
+the hardware: its random numbers come from a seeded generator and its key store is
+software HMAC, so every crash reproduces exactly. Its failure switches (`fail_rng`,
+`fail_counter`, `fail_derive`) are what the unit tests use for the fail-closed paths.
+
+#breakable-code[
+#dtable(
+  columns: (0.9fr, 1.4fr, 2.2fr, 0.45fr),
+  ("Target", "Input", "Oracle (beyond: no panic, no hang)", "Inv."),
+  ([`cbor_decode`], [Raw bytes to the strict CBOR decoder.], [Anything accepted re-encodes to *exactly* the input bytes: no value has two encodings.], [4]),
+  ([`ctap_dispatch`], [`[mode, presence, …]`: a raw request, or byte overwrites of a valid makeCredential/getAssertion template; the presence byte picks touch, timeout or cancel.], [The counter moves only on a successful makeCredential/getAssertion, by exactly one. A signature produced after parking needed a confirmed touch; one produced without parking is a getAssertion with the UP flag clear. Success bodies are canonical CBOR with no trailing bytes. Nothing stays parked. Responses are 1 to `MAX_MSG_SIZE` bytes.], [1, 2, 4]),
+  ([`ctaphid_stack`], [Records `[flags, packet(64)]`: channel choice, clock jumps, touch or timeout.], [The full USB path: reassembly, the authenticator, fragmentation. Receive state stays within bounds; no request is left unanswered; output is bounded.], [4, 5]),
+  ([`ble_stream`], [A fragment size, then GATT writes of chosen lengths with clock advances.], [The BLE framer and the authenticator together. No notification exceeds the fragment size.], [4]),
+  ([`serial_deframe`], [A script of raw bytes, intact frames and frames with one byte overwritten.], [Every report emitted came from wire bytes that are exactly its encoding (so its CRC was valid and no second encoding is accepted); nothing is emitted before a delimiter; an intact frame always gets through, whatever garbage came before it.], [4]),
+  ([`credential_unwrap`], [A tag key, an `rpIdHash` and a candidate credential ID.], [An accepted ID is exactly what `wrap` mints for the recovered nonce at that RP; a minted ID always unwraps to its nonce.], [3]),
+)
+]
+
+The `serial_deframe` property "an intact frame always gets through" is the regression test
+for the bridge startup hang of chapter 6: before every frame began with a delimiter, boot text
+in front of a frame made it undecodable.
+
+=== Running, reproducing, fixing
+
+```sh
+just fuzz ctap_dispatch          # one target, 5 minutes (just fuzz T SECONDS)
+just fuzz-all 120                # every target, 2 minutes each
+python3 fuzz/make_seeds.py       # regenerate the seeds after a format change
+```
+
+Fuzzing needs a nightly toolchain (for the sanitizers) and `cargo install cargo-fuzz`.
+When a target fails, libFuzzer stops, prints the panic message and saves the input as
+`fuzz/artifacts/<target>/crash-<hash>`. Then:
+
++ *Reproduce:* `cargo +nightly fuzz run <target> fuzz/artifacts/<target>/crash-<hash>`
+  replays exactly that input. `MockPlatform` is deterministic, so it fails the same way
+  every time.
++ *Minimise:* `cargo +nightly fuzz tmin <target> <crash file>` shrinks the input to the
+  smallest one that still fails, usually a handful of bytes that make the bug obvious.
++ *Fix, and keep a unit test.* The minimised input becomes an ordinary test in
+  `jotakey-core`, so the bug stays fixed even when nobody is fuzzing. The serial framing
+  test `boot_text_before_the_first_frame_does_not_swallow_it` is an example.
+
+`cargo +nightly fuzz cmin <target>` prunes a corpus to the inputs that still add coverage,
+and `cargo +nightly fuzz coverage <target>` produces a line-coverage report of what the
+corpus reaches. That report is the first thing to look at when a target seems too quiet.
+
+=== Why it helps, and what it cannot do
+
+- *It finds the inputs nobody imagined.* People who write tests share the blind spots of
+  the people who wrote the code, and are often the same people. The fuzzer has no
+  expectations: it will send a map with 2³² announced entries, a continuation packet on a
+  channel that never started, or a frame split across a reboot, because the coverage told it
+  those paths exist.
+- *It checks properties, not examples.* One oracle covers every input the fuzzer will ever
+  produce. Adding a property costs a few lines; the fuzzer then tests it millions of
+  times an hour, unattended.
+- *It ties the proofs to the code.* The Lean models of chapters 9 and 10 are proved for
+  *all* inputs, but they are models: hand transcriptions of the Rust. The fuzz oracles state
+  the same theorems and check them on the real code (chapter 10 pairs each oracle with its
+  theorem). The two
+  nets have different holes: the proofs cover every input of the model, the fuzzer many
+  inputs of the real implementation.
+- *It complements mutation testing.* Mutation testing asks whether the tests notice a
+  broken program. Fuzzing asks whether the program breaks on inputs the tests do not
+  contain. The section below shows the first; the trap above shows a fuzz target that,
+  like a weak test, could not have noticed anything.
+
+The limits are as important:
+
+- *No guarantee.* A fuzzer that finds nothing has found nothing *yet*. It cannot guess a
+  128-bit tag, and a bug behind such a check is out of its reach; proofs and review cover
+  those.
+- *Host only.* Targets run on x86 against the mock platform. The firmware adapters (esp-hal
+  drivers, flash, the HMAC peripheral, and on the key the OPTIGA driver once it exists) are
+  not fuzzed; the on-device
+  tests and end-to-end tests below cover them.
+- *Functional properties only.* Timing leaks, power side channels and fault injection are
+  invisible to a fuzzer. Invariant 9 relies on `subtle`, RustCrypto and review.
+
+The latest run, two minutes per target from the seeds with no failures:
+
+#dtable(
+  columns: (1fr, 1fr, 1fr, 1fr, 1fr, 1fr),
+  ("cbor_decode", "ctap_dispatch", "ctaphid_stack", "ble_stream", "serial_deframe", "credential_unwrap"),
+  ([14.9 M], [2.7 M], [0.6 M], [2.6 M], [2.2 M], [35.4 M]),
+)
+
+Executions per run depend on how much code each input reaches: a CTAPHID input carries
+whole transactions through the authenticator, including ECDSA signatures, while a
+credential ID check is one HMAC. Longer runs before a release are worth their time, and
+inputs captured from real browsers through the bridge make good seeds.
 
 == Mutation testing
 
