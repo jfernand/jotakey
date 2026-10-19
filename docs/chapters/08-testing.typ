@@ -2,7 +2,7 @@
 #import "../isss-template.typ": *
 #import "../lib.typ": *
 
-= Testing the hardware
+= Testing
 
 No single technique catches everything, so Jotakey tests at multiple levels, on top of formal validation.
 #dtable(
@@ -10,7 +10,7 @@ No single technique catches everything, so Jotakey tests at multiple levels, on 
   ("Kind", "What it catches", "Where"),
   ([Unit & scenario tests], [Known behaviours, spec examples, every error path.], [`crates/*/tests`, `#[cfg(test)]`]),
   ([Property tests], [Laws that must hold for *all* inputs: round trips, bounds, monotonicity.], [`proptest` in the core]),
-  ([Fuzzing], [Crashes, hangs and invariant violations on inputs nobody imagined.], [`fuzz/` (6 targets)]),
+  ([Fuzzing], [Crashes, hangs and invariant violations on inputs nobody imagined.], [`fuzz/` (8 targets)]),
   ([Mutation testing], [Gaps in the *tests themselves*: code whose breakage no test notices.], [`cargo mutants`]),
   ([On-device tests], [What only silicon can show: the TRNG, the HMAC key, real flash, timing.], [`crates/jotakey-testfw`]),
   ([End-to-end], [The whole chain as a relying party sees it.], [`crates/jotakey-host-tests`, `scripts/fido2_check.py`, `scripts/fido2_pin_check.py`]),
@@ -137,7 +137,7 @@ with sorted keys before any credential logic runs. A target that only ever hits 
   so its oracle about accepted frames had never once been evaluated (and was weak anyway:
   it computed a CRC and threw it away). The CTAPHID corpus never got a request through to
   the authenticator, and the BLE corpus never produced a successful response.
-  To prevent this,we deploy three things: the script format of `serial_deframe`, a stronger oracle,
+  To prevent this, we deploy three things: the script format of `serial_deframe`, a stronger oracle,
   and seeds. Because of them the serial corpus accepts about 10 000 frames per pass, and the transport
   targets start from successful makeCredential and getInfo exchanges. To check that the new oracle
   works, we disabled the deframer's CRC comparison: the fuzzer reported "accepted

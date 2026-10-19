@@ -9,7 +9,7 @@ ESP32-C6 offers, how Jotakey uses it, and where it falls short (§7.1–7.4). It
 the jotakey key, which adds the secure element the C6 lacks (§7.5), and how its board is
 designed (§7.6).
 
-== ESP32C6 features
+== ESP32-C6 features
 
 #dtable(
   columns: (1.1fr, 2.4fr),
