@@ -1,13 +1,14 @@
 // (c) Javier Fernandez @ JotaSoft 2026
-//! authenticatorReset (CTAP 2.0 §5.6).
+//! authenticatorReset (CTAP 2.1 §6.6).
 //!
 //! Invariant 6: reset is accepted only within [`RESET_WINDOW_MS`] of power-up and only after
 //! a touch. The epoch secret is part of every credential's tag and seed derivation, so
-//! rotating it makes every credential minted before the reset stop unwrapping. The signature counter is *not* reset; it
+//! rotating it makes every credential minted before the reset stop unwrapping. The PIN is
+//! removed too, and its retry counter restored. The signature counter is *not* reset; it
 //! stays monotonic for the device's lifetime.
 
 use super::{Pending, RESET_WINDOW_MS, Response, write_status};
-use crate::platform::Platform;
+use crate::platform::{PinRecord, Platform};
 use crate::status::Status;
 
 /// Check the time window and park the reset.
@@ -21,8 +22,13 @@ pub fn process<P: Platform>(platform: &mut P, params: &[u8]) -> Result<Pending, 
     Ok(Pending::Reset)
 }
 
-/// Perform the reset after the touch.
+/// Perform the reset after the touch: rotate the epoch, then remove the PIN.
+///
+/// The order matters if the power fails in between. Epoch first leaves a PIN record whose
+/// verifier can never match again (it is bound to the old epoch), so the user resets once
+/// more. PIN first would leave the old credentials usable with the PIN removed.
 pub fn complete<P: Platform>(platform: &mut P, out: &mut Response) -> Result<usize, Status> {
     platform.rotate_epoch().map_err(|_| Status::Other)?;
+    platform.store_pin(&PinRecord::UNSET).map_err(|_| Status::Other)?;
     Ok(write_status(out, Status::Success))
 }

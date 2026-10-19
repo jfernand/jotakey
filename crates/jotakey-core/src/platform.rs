@@ -18,6 +18,10 @@ pub enum SecretLabel {
     CredentialTag,
     /// A credential's private-key seed; context `rpIdHash ‖ nonce`.
     CredentialSeed,
+    /// The stored form of the PIN; context `LEFT(SHA-256(PIN), 16)`. Keyed by the root, so a
+    /// copy of the flash does not allow guessing the PIN offline; bound to the epoch, so a
+    /// reset leaves no PIN that still verifies.
+    PinVerifier,
 }
 
 impl SecretLabel {
@@ -27,6 +31,67 @@ impl SecretLabel {
         match self {
             Self::CredentialTag => b"jotakey/tag/v1",
             Self::CredentialSeed => b"jotakey/seed/v1",
+            Self::PinVerifier => b"jotakey/pin/v1",
+        }
+    }
+}
+
+/// Wrong PIN entries allowed before the PIN blocks (CTAP 2.1 §6.5.2.1, `maxPinRetries`).
+pub const PIN_RETRIES_MAX: u8 = 8;
+
+/// The persistent PIN state (CTAP 2.1 §6.5.2).
+///
+/// Stored as 36 bytes: `set (1) ‖ retries (1) ‖ 0 0 ‖ verifier (32)`; [`PinRecord::to_bytes`]
+/// and [`PinRecord::from_bytes`] are the only encoder and decoder, so every platform stores
+/// the same format.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct PinRecord {
+    /// [`SecretLabel::PinVerifier`] of the PIN, or `None` when no PIN is set.
+    pub verifier: Option<[u8; 32]>,
+    /// Wrong entries left; [`PIN_RETRIES_MAX`] when unset and after every correct entry.
+    pub retries: u8,
+}
+
+impl core::fmt::Debug for PinRecord {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Invariant 8: the verifier is never printed.
+        f.debug_struct("PinRecord").field("set", &self.verifier.is_some()).field("retries", &self.retries).finish()
+    }
+}
+
+/// Length of an encoded [`PinRecord`].
+pub const PIN_RECORD_LEN: usize = 36;
+
+impl PinRecord {
+    /// No PIN: the state of a new device and after a reset.
+    pub const UNSET: Self = Self { verifier: None, retries: PIN_RETRIES_MAX };
+
+    /// The storage encoding.
+    #[must_use]
+    pub fn to_bytes(&self) -> [u8; PIN_RECORD_LEN] {
+        let mut b = [0u8; PIN_RECORD_LEN];
+        let (head, verifier) = b.split_at_mut(4);
+        head.copy_from_slice(&[u8::from(self.verifier.is_some()), self.retries, 0, 0]);
+        if let Some(v) = &self.verifier {
+            verifier.copy_from_slice(v);
+        }
+        b
+    }
+
+    /// Decode the storage encoding. Anything [`PinRecord::to_bytes`] cannot produce is
+    /// rejected, and the caller fails closed.
+    #[must_use]
+    pub fn from_bytes(b: &[u8; PIN_RECORD_LEN]) -> Option<Self> {
+        let (head, verifier) = b.split_first_chunk::<4>()?;
+        let verifier: [u8; 32] = verifier.try_into().ok()?;
+        let [set, retries, 0, 0] = *head else { return None };
+        if retries > PIN_RETRIES_MAX {
+            return None;
+        }
+        match set {
+            0 if verifier == [0; 32] => Some(Self { verifier: None, retries }),
+            1 => Some(Self { verifier: Some(verifier), retries }),
+            _ => None,
         }
     }
 }
@@ -75,6 +140,76 @@ pub trait Platform {
     /// Returns `PlatformError` if the RNG or storage fails.
     fn rotate_epoch(&mut self) -> Result<(), PlatformError>;
 
+    /// Read the persistent PIN state ([`PinRecord::UNSET`] on a new device).
+    ///
+    /// # Errors
+    /// Returns `PlatformError` if storage fails or holds a record that does not decode.
+    fn load_pin(&mut self) -> Result<PinRecord, PlatformError>;
+
+    /// Durably replace the PIN state. Returns `Ok` only once the record is persisted: the
+    /// core counts a PIN attempt with this *before* comparing the PIN, so that cutting the
+    /// power cannot buy an uncounted guess.
+    ///
+    /// # Errors
+    /// Returns `PlatformError` if the write fails.
+    fn store_pin(&mut self, record: &PinRecord) -> Result<(), PlatformError>;
+
     /// Milliseconds since power-up (monotonic).
     fn uptime_ms(&self) -> u64;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pin_record_layout_is_pinned() {
+        assert_eq!(PinRecord::UNSET.to_bytes(), {
+            let mut b = [0u8; PIN_RECORD_LEN];
+            b[1] = 8;
+            b
+        });
+        let set = PinRecord { verifier: Some([0xAB; 32]), retries: 5 };
+        let b = set.to_bytes();
+        assert_eq!(b[..4], [1, 5, 0, 0]);
+        assert_eq!(b[4..], [0xAB; 32]);
+        assert_eq!(PinRecord::from_bytes(&b), Some(set));
+        assert_eq!(PinRecord::from_bytes(&PinRecord::UNSET.to_bytes()), Some(PinRecord::UNSET));
+        let zero_retries = PinRecord { verifier: Some([1; 32]), retries: 0 };
+        assert_eq!(PinRecord::from_bytes(&zero_retries.to_bytes()), Some(zero_retries));
+        // A set PIN may have an all-zero verifier; the flag decides.
+        let zero_verifier = PinRecord { verifier: Some([0; 32]), retries: 8 };
+        assert_eq!(PinRecord::from_bytes(&zero_verifier.to_bytes()), Some(zero_verifier));
+    }
+
+    #[test]
+    fn malformed_pin_records_are_rejected() {
+        let good = PinRecord { verifier: Some([7; 32]), retries: PIN_RETRIES_MAX }.to_bytes();
+        for (i, v) in [(0, 2), (0, 0xFF), (1, PIN_RETRIES_MAX + 1), (1, 0xFF), (2, 1), (3, 1)] {
+            let mut b = good;
+            b[i] = v;
+            assert_eq!(PinRecord::from_bytes(&b), None, "byte {i} = {v}");
+        }
+        // Erased flash (all 0xFF) and an unset record carrying a verifier.
+        assert_eq!(PinRecord::from_bytes(&[0xFF; PIN_RECORD_LEN]), None);
+        let mut b = PinRecord::UNSET.to_bytes();
+        b[35] = 1;
+        assert_eq!(PinRecord::from_bytes(&b), None);
+        let mut b = PinRecord::UNSET.to_bytes();
+        b[1] = PIN_RETRIES_MAX;
+        assert!(PinRecord::from_bytes(&b).is_some());
+    }
+
+    #[test]
+    fn pin_records_do_not_print_the_verifier() {
+        let r = PinRecord { verifier: Some([0xAB; 32]), retries: 3 };
+        assert_eq!(std::format!("{r:?}"), "PinRecord { set: true, retries: 3 }");
+    }
+
+    #[test]
+    fn labels_are_distinct() {
+        assert_eq!(SecretLabel::PinVerifier.as_bytes(), b"jotakey/pin/v1");
+        assert_ne!(SecretLabel::PinVerifier.as_bytes(), SecretLabel::CredentialTag.as_bytes());
+        assert_ne!(SecretLabel::PinVerifier.as_bytes(), SecretLabel::CredentialSeed.as_bytes());
+    }
 }

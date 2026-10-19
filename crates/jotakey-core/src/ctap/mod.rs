@@ -10,6 +10,7 @@
 //! inside `complete`, and only under `PresenceResult::Confirmed`. `formal/Jotakey/Authenticator.lean`
 //! models this state machine and proves the property over all command traces.
 
+pub mod client_pin;
 mod get_assertion;
 mod get_info;
 mod make_credential;
@@ -21,7 +22,8 @@ use zeroize::Zeroizing;
 use crate::MAX_MSG_SIZE;
 use crate::cbor::{CborError, Encoder};
 use crate::credential::{self, CRED_ID_LEN, NONCE_LEN};
-use crate::platform::{Platform, SecretLabel, PresenceResult};
+use crate::platform::{Platform, PinRecord, PresenceResult, SecretLabel};
+pub use client_pin::PinSession;
 use crate::status::Status;
 
 /// CTAP2 command bytes.
@@ -32,7 +34,7 @@ pub mod command {
     pub const GET_ASSERTION: u8 = 0x02;
     /// authenticatorGetInfo
     pub const GET_INFO: u8 = 0x04;
-    /// authenticatorClientPIN (not supported in the MVP)
+    /// authenticatorClientPIN
     pub const CLIENT_PIN: u8 = 0x06;
     /// authenticatorReset
     pub const RESET: u8 = 0x07;
@@ -67,6 +69,8 @@ pub enum Pending {
         rp_id_hash: [u8; 32],
         /// Hash of the WebAuthn client data.
         client_data_hash: [u8; 32],
+        /// A pinUvAuthToken authorized the request: sign with the UV flag.
+        user_verified: bool,
     },
     /// getAssertion for an already-authenticated credential.
     GetAssertion {
@@ -78,10 +82,13 @@ pub enum Pending {
         cred_id: [u8; CRED_ID_LEN],
         /// Nonce recovered from the credential ID.
         nonce: [u8; NONCE_LEN],
+        /// A pinUvAuthToken authorized the request: sign with the UV flag.
+        user_verified: bool,
     },
     /// makeCredential hit the exclude list: after the touch, report `CREDENTIAL_EXCLUDED`.
     Excluded,
-    /// Zero-length pinAuth ("which device?" probe): after the touch, report `PIN_NOT_SET`.
+    /// Zero-length pinAuth ("which device?" probe): after the touch, report `PIN_INVALID` if
+    /// a PIN is set and `PIN_NOT_SET` if not.
     PinProbe,
     /// authenticatorReset within the power-up window.
     Reset,
@@ -103,13 +110,14 @@ pub struct Authenticator {
     pending: Pending,
     faulted: bool,
     aaguid: [u8; 16],
+    pin: PinSession,
 }
 
 impl Authenticator {
     /// A fresh authenticator. Call only after the power-on self tests passed.
     #[must_use]
     pub const fn new(aaguid: [u8; 16]) -> Self {
-        Self { pending: Pending::Idle, faulted: false, aaguid }
+        Self { pending: Pending::Idle, faulted: false, aaguid, pin: PinSession::new() }
     }
 
     /// Enter the permanent fault state (invariant 7): every later command fails.
@@ -130,6 +138,12 @@ impl Authenticator {
         &self.pending
     }
 
+    /// The clientPIN state of this power cycle.
+    #[must_use]
+    pub const fn pin_session(&self) -> &PinSession {
+        &self.pin
+    }
+
     /// Drop any pending command (transport reset, channel resync, timeout).
     pub fn abort(&mut self) {
         self.pending = Pending::Idle;
@@ -147,19 +161,32 @@ impl Authenticator {
         };
         let parked = match cmd {
             command::GET_INFO => {
-                return Outcome::Response(if params.is_empty() {
-                    get_info::run(&self.aaguid, out).unwrap_or_else(|s| write_status(out, s))
-                } else {
-                    write_status(out, Status::InvalidLength)
-                });
+                if !params.is_empty() {
+                    return Outcome::Response(write_status(out, Status::InvalidLength));
+                }
+                let result = platform
+                    .load_pin()
+                    .map_err(|_| Status::Other)
+                    .and_then(|pin| get_info::run(&self.aaguid, pin.verifier.is_some(), out));
+                return Outcome::Response(result.unwrap_or_else(|s| write_status(out, s)));
             }
-            command::MAKE_CREDENTIAL => make_credential::process(platform, params),
-            command::GET_ASSERTION => match get_assertion::process(platform, params) {
+            command::CLIENT_PIN => {
+                let result = client_pin::process(platform, &mut self.pin, params, out);
+                return Outcome::Response(result.unwrap_or_else(|s| write_status(out, s)));
+            }
+            command::MAKE_CREDENTIAL => make_credential::process(platform, &mut self.pin, params),
+            command::GET_ASSERTION => match get_assertion::process(platform, &mut self.pin, params) {
                 Ok(PendingOrSilent::Pending(p)) => Ok(p),
-                Ok(PendingOrSilent::Silent(Pending::GetAssertion { rp_id_hash, client_data_hash, cred_id, nonce })) => {
+                Ok(PendingOrSilent::Silent(Pending::GetAssertion {
+                    rp_id_hash,
+                    client_data_hash,
+                    cred_id,
+                    nonce,
+                    user_verified,
+                })) => {
                     // A silent assertion: signed now, with the UP flag clear (invariant 1).
-                    let result =
-                        get_assertion::sign(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, false, out);
+                    let flags = get_assertion::Flags { user_present: false, user_verified };
+                    let result = get_assertion::sign(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, flags, out);
                     return Outcome::Response(result.unwrap_or_else(|s| write_status(out, s)));
                 }
                 Ok(PendingOrSilent::Silent(_)) => Err(Status::Other),
@@ -192,13 +219,28 @@ impl Authenticator {
         let result = match pending {
             Pending::Idle => Err(Status::Other),
             Pending::Excluded => Err(Status::CredentialExcluded),
-            Pending::PinProbe => Err(Status::PinNotSet),
-            Pending::Reset => reset::complete(platform, out),
-            Pending::MakeCredential { rp_id_hash, client_data_hash } => {
-                make_credential::complete(platform, &self.aaguid, &rp_id_hash, &client_data_hash, out)
+            Pending::PinProbe => match platform.load_pin() {
+                Ok(PinRecord { verifier: Some(_), .. }) => Err(Status::PinInvalid),
+                Ok(PinRecord { verifier: None, .. }) => Err(Status::PinNotSet),
+                Err(_) => Err(Status::Other),
+            },
+            Pending::Reset => {
+                // Every PIN state of this power cycle goes with the PIN itself.
+                self.pin = PinSession::new();
+                reset::complete(platform, out)
             }
-            Pending::GetAssertion { rp_id_hash, client_data_hash, cred_id, nonce } => {
-                get_assertion::sign(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, true, out)
+            Pending::MakeCredential { rp_id_hash, client_data_hash, user_verified } => {
+                if user_verified {
+                    self.pin.spend_token();
+                }
+                make_credential::complete(platform, &self.aaguid, &rp_id_hash, &client_data_hash, user_verified, out)
+            }
+            Pending::GetAssertion { rp_id_hash, client_data_hash, cred_id, nonce, user_verified } => {
+                if user_verified {
+                    self.pin.spend_token();
+                }
+                let flags = get_assertion::Flags { user_present: true, user_verified };
+                get_assertion::sign(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, flags, out)
             }
         };
         match result {

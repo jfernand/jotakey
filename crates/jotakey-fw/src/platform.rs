@@ -8,7 +8,7 @@ use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
 use esp_hal::hmac::{Hmac, HmacPurpose, KeyId};
 use esp_hal::rng::Trng;
 use esp_storage::FlashStorage;
-use jotakey_core::platform::{Platform, PlatformError, SecretLabel};
+use jotakey_core::platform::{PIN_RECORD_LEN, Platform, PinRecord, PlatformError, SecretLabel};
 use jotakey_core::selftest::RngHealth;
 use jotakey_core::storage::{Flash, RecordLog, SECTOR_SIZE};
 use zeroize::Zeroizing;
@@ -17,9 +17,12 @@ use zeroize::Zeroizing;
 pub const REGION_OFFSET: u32 = 0x3F_0000;
 /// eFuse key block holding `K_dev` (purpose `HMAC_UP`). See `scripts/provision.sh`.
 pub const ROOT_KEY: KeyId = KeyId::Key0;
-/// Counter log: sectors 0–1 of the region. Epoch log: sectors 2–3.
+/// Counter log: sectors 0–1 of the region. Epoch log: sectors 2–3. PIN log: sectors 4–5.
+/// The second half of the region (from 0x3F8000) is the on-device tests' scratch area.
 const COUNTER_BASE: u32 = 0;
 const EPOCH_BASE: u32 = 2 * SECTOR_SIZE;
+const PIN_BASE: u32 = 4 * SECTOR_SIZE;
+const REGION_SECTORS: u32 = 6;
 
 /// The `jotakey` partition seen through the core's [`Flash`] trait.
 pub struct Region<'d> {
@@ -33,7 +36,7 @@ impl<'d> Region<'d> {
     }
 
     fn abs(offset: u32) -> Result<u32, PlatformError> {
-        if offset >= 4 * SECTOR_SIZE {
+        if offset >= REGION_SECTORS * SECTOR_SIZE {
             return Err(PlatformError);
         }
         REGION_OFFSET.checked_add(offset).ok_or(PlatformError)
@@ -78,6 +81,7 @@ pub struct EspPlatform<'d> {
     counter: RecordLog<4>,
     epoch_log: RecordLog<32>,
     epoch: Zeroizing<[u8; 32]>,
+    pin_log: RecordLog<PIN_RECORD_LEN>,
 }
 
 impl<'d> EspPlatform<'d> {
@@ -88,6 +92,7 @@ impl<'d> EspPlatform<'d> {
     pub fn new(trng: Trng, root: RootKey<'d>, mut flash: Region<'d>) -> Result<Self, PlatformError> {
         let counter = RecordLog::<4>::mount(&mut flash, COUNTER_BASE)?;
         let epoch_log = RecordLog::<32>::mount(&mut flash, EPOCH_BASE)?;
+        let pin_log = RecordLog::<PIN_RECORD_LEN>::mount(&mut flash, PIN_BASE)?;
         let mut p = Self {
             trng,
             health: RngHealth::new(),
@@ -97,6 +102,7 @@ impl<'d> EspPlatform<'d> {
             counter,
             epoch_log,
             epoch: Zeroizing::new([0; 32]),
+            pin_log,
         };
         match p.epoch_log.latest() {
             Some((_, e)) => p.epoch.copy_from_slice(e),
@@ -181,6 +187,27 @@ impl Platform for EspPlatform<'_> {
         self.epoch_log.append(&mut self.flash, &fresh)?;
         self.epoch.copy_from_slice(fresh.as_ref());
         Ok(())
+    }
+
+    fn load_pin(&mut self) -> Result<PinRecord, PlatformError> {
+        match self.pin_log.latest() {
+            // A device that never had a PIN has an empty log.
+            None => Ok(PinRecord::UNSET),
+            Some((_, bytes)) => PinRecord::from_bytes(bytes).ok_or(PlatformError),
+        }
+    }
+
+    fn store_pin(&mut self, record: &PinRecord) -> Result<(), PlatformError> {
+        // `append` returns only after reading the record back from flash.
+        match self.pin_log.append(&mut self.flash, &record.to_bytes()) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if let Ok(l) = RecordLog::<PIN_RECORD_LEN>::mount(&mut self.flash, PIN_BASE) {
+                    self.pin_log = l;
+                }
+                Err(e)
+            }
+        }
     }
 
     fn uptime_ms(&self) -> u64 {

@@ -25,3 +25,7 @@ open Jotakey
 #print axioms Credential.unwrap_recovers_nonce
 #print axioms Credential.unwrap_accepts_only_wrapped_ids
 #print axioms Credential.credential_bound_to_relying_party
+#print axioms ClientPin.comparison_needs_a_counted_retry
+#print axioms ClientPin.wrong_pins_between_successes_le_eight
+#print axioms ClientPin.wrong_pins_in_a_row_le_three
+#print axioms ClientPin.blocked_until_reset

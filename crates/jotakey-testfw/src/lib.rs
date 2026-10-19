@@ -8,17 +8,17 @@
 use defmt_rtt as _;
 use esp_hal::rng::Trng;
 use jotakey_core::crypto::hmac_sha256;
-use jotakey_core::platform::{Platform, PlatformError, SecretLabel};
+use jotakey_core::platform::{Platform, PinRecord, PlatformError, SecretLabel};
 use jotakey_core::selftest::RngHealth;
 use jotakey_core::storage::{Flash, SECTOR_SIZE};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
 /// Scratch flash area for storage tests: the second half of the `jotakey` partition, which
-/// the firmware never uses (its logs occupy the first four sectors at 0x3F0000).
+/// the firmware never uses (its logs occupy the first six sectors at 0x3F0000).
 pub const SCRATCH_OFFSET: u32 = 0x3F_8000;
 
-/// Real TRNG + software root key + RAM counter.
+/// Real TRNG + software root key + RAM counter and PIN state.
 pub struct TargetPlatform {
     /// Hardware TRNG.
     pub trng: Trng,
@@ -27,12 +27,14 @@ pub struct TargetPlatform {
     epoch: [u8; 32],
     /// RAM counter.
     pub counter: u32,
+    /// RAM PIN state.
+    pub pin: PinRecord,
 }
 
 impl TargetPlatform {
     /// New platform with a fixed test key.
     pub fn new(trng: Trng) -> Self {
-        Self { trng, health: RngHealth::new(), key: [0x5A; 32], epoch: [0; 32], counter: 0 }
+        Self { trng, health: RngHealth::new(), key: [0x5A; 32], epoch: [0; 32], counter: 0, pin: PinRecord::UNSET }
     }
 }
 
@@ -53,6 +55,13 @@ impl Platform for TargetPlatform {
         let mut e = [0u8; 32];
         self.random_bytes(&mut e)?;
         self.epoch = e;
+        Ok(())
+    }
+    fn load_pin(&mut self) -> Result<PinRecord, PlatformError> {
+        Ok(self.pin)
+    }
+    fn store_pin(&mut self, record: &PinRecord) -> Result<(), PlatformError> {
+        self.pin = *record;
         Ok(())
     }
     fn uptime_ms(&self) -> u64 {
