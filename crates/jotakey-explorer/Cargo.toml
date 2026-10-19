@@ -1,0 +1,18 @@
+[package]
+name = "jotakey-explorer"
+description = "Terminal explorer for FIDO security keys: finds them over hidraw and shows what each one reports"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Terminal UI (crossterm backend, re-exported as ratatui::crossterm).
+ratatui = "0.30.2"
+# poll(2) on the hidraw file, for read timeouts without unsafe code.
+rustix = { version = "1.1", features = ["event"] }
+
+[dev-dependencies]
+jotakey-core = { path = "../jotakey-core" }
+# The in-process Jotakey (serial framing, CTAPHID, authenticator) to test the client against.
+jotakey-host-tests = { path = "../jotakey-host-tests" }

@@ -192,6 +192,7 @@ just testfw        # on-device tests via probe-rs (embedded-test); board on the 
 just host-tests    # end-to-end against a real device through the bridge (touch when asked)
 just deny          # cargo deny (licences, advisories); firmware: cd crates/jotakey-fw && cargo deny check
 just bridge        # run the uhid bridge (Linux; needs /dev/uhid access)
+just explore       # terminal browser for attached FIDO keys, any make (read-only; --dump prints)
 just doc           # typst compile docs/jotakey.typ
 just doc-print     # the same, for paper: plain white pages (docs/jotakey-print.pdf)
 ```
@@ -206,6 +207,7 @@ crates/jotakey-fw        ESP32-C6 firmware (esp-hal, embassy, BLE via esp-radio 
 crates/jotakey-testfw    on-device test firmware (embedded-test + probe-rs)
 crates/jotakey-bridge    Linux serial↔uhid bridge
 crates/jotakey-host-tests end-to-end tests against a real device through the bridge
+crates/jotakey-explorer  ratatui browser for FIDO keys over hidraw: INIT, getInfo, PIN retries, U2F VERSION
 fuzz/                    cargo-fuzz targets; seeds/ from make_seeds.py
 formal/                  Lean 4 models, proofs, executable spec; NAMES.md maps Rust ↔ Lean names
 docs/                    Typst document (ISSS design)
