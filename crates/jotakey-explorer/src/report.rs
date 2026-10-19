@@ -5,11 +5,13 @@
 //! `authenticatorGetInfo`, `authenticatorClientPIN` getPINRetries/getUVRetries (when the
 //! key says it has a PIN or built-in UV), and the U2F `VERSION` APDU. None of them needs a
 //! touch, creates or uses a credential, or changes any state on the key; the retry
-//! counters are read, never spent. WINK (the `w` key) only blinks the device.
+//! counters are read, never spent. WINK (the `w` key) only blinks the device. The USB and
+//! HID descriptors come from sysfs, without any I/O to the device.
 
 use crate::cbor::{Value, hex};
 use crate::ctaphid::{Client, Error, InitInfo, Transport, capability};
-use crate::discover::Device;
+use crate::discover::{Device, UsbInfo};
+use crate::hid;
 
 /// `authenticatorGetInfo`.
 pub const GET_INFO: u8 = 0x04;
@@ -84,20 +86,168 @@ pub fn device_section(d: &Device) -> Section {
                 rows.push(row(label, v.clone()));
             }
         }
-        if let Some(s) = &u.speed {
-            rows.push(row("USB speed", format!("{s} Mbit/s")));
-        }
     }
     Section { title: "Device".into(), rows }
 }
 
+/// Everything sysfs says, before any I/O: the device, its USB descriptors and its HID
+/// report descriptor. Shown while a query runs and when the device cannot be opened.
+pub fn local_sections(d: &Device) -> Vec<Section> {
+    vec![device_section(d), usb_section(d), hid_section(d)]
+}
+
+/// The USB device, configuration, interface and endpoint descriptors.
+pub fn usb_section(d: &Device) -> Section {
+    let title = "USB".to_owned();
+    let Some(u) = &d.usb else {
+        let note = if d.virtual_device {
+            if (d.vendor_id, d.product_id) == (0x1209, 0x0001) {
+                "a virtual HID device made through /dev/uhid by jotakey-bridge; the C6 itself enumerates as a USB serial device"
+            } else {
+                "a virtual HID device made through /dev/uhid: there is no USB device behind it"
+            }
+        } else {
+            "not on a USB bus"
+        };
+        return Section { title, rows: vec![row_note("Descriptors", "none", note)] };
+    };
+    let mut rows = Vec::new();
+    if let Some(v) = &u.usb_version {
+        rows.push(row_note("USB version", v.clone(), "bcdUSB: the version the device claims"));
+    }
+    if let Some(s) = &u.speed {
+        let name = match s.as_str() {
+            "1.5" => Some("low speed"),
+            "12" => Some("full speed, as most security keys"),
+            "480" => Some("high speed"),
+            "5000" | "10000" | "20000" => Some("SuperSpeed"),
+            _ => None,
+        };
+        rows.push(Row { label: "Speed".into(), value: format!("{s} Mbit/s"), note: name.map(str::to_owned) });
+    }
+    if let Some((bus, dev)) = &u.address {
+        rows.push(row_note("Address", format!("bus {bus}, device {dev}"), "as lsusb shows it"));
+    }
+    if let Some((class, sub, proto)) = &u.device_class {
+        let note = match class.as_str() {
+            "00" => "defined per interface",
+            "ef" => "miscellaneous: a composite device with interface associations",
+            "ff" => "vendor-specific",
+            _ => "bDeviceClass/SubClass/Protocol",
+        };
+        rows.push(row_note("Device class", format!("{class}/{sub}/{proto}"), note));
+    }
+    if let Some(m) = &u.max_packet_size0 {
+        rows.push(row_note("Control endpoint", format!("{m} bytes"), "bMaxPacketSize0 of endpoint 0"));
+    }
+    if let (Some(active), Some(count)) = (&u.configuration, &u.configurations) {
+        rows.push(row_note("Configuration", format!("{active} of {count}"), "bConfigurationValue of bNumConfigurations"));
+    }
+    if let Some(p) = &u.max_power {
+        let note = u.attributes.map(power_note).unwrap_or_default();
+        rows.push(Row { label: "Max power".into(), value: p.clone(), note: (!note.is_empty()).then_some(note) });
+    }
+    if let Some(n) = &u.interfaces {
+        rows.push(row_note("Interfaces", n.clone(), "a FIDO key with OTP or smart-card functions has several"));
+    }
+    if let Some(r) = &u.removable {
+        rows.push(row("Port", r.clone()));
+    }
+    rows.extend(interface_rows(u));
+    Section { title, rows }
+}
+
+/// bmAttributes of a configuration, in words.
+fn power_note(attributes: u8) -> String {
+    let mut parts = vec![if attributes & 0x40 != 0 { "self-powered" } else { "bus-powered" }];
+    if attributes & 0x20 != 0 {
+        parts.push("remote wakeup");
+    }
+    format!("{} (bmAttributes {attributes:#04x})", parts.join(", "))
+}
+
+fn interface_rows(u: &UsbInfo) -> Vec<Row> {
+    let Some(i) = &u.interface else { return Vec::new() };
+    let mut rows = Vec::new();
+    let number = i.number.clone().unwrap_or_else(|| "?".into());
+    match &i.class {
+        Some((class, sub, proto)) => {
+            let note = match (class.as_str(), sub.as_str(), proto.as_str()) {
+                ("03", "00", _) => "HID, no boot protocol: how FIDO keys present themselves",
+                ("03", "01", "01") => "HID boot keyboard (an OTP function typing codes)",
+                ("03", _, _) => "HID",
+                _ => "bInterfaceClass/SubClass/Protocol",
+            };
+            rows.push(row_note("HID interface", format!("#{number}, class {class}/{sub}/{proto}"), note));
+        }
+        None => rows.push(row("HID interface", format!("#{number}"))),
+    }
+    if let Some(n) = &i.name {
+        rows.push(row("Interface name", n.clone()));
+    }
+    if let Some(drv) = &i.driver {
+        rows.push(row_note("Driver", drv.clone(), "the kernel driver bound to the interface"));
+    }
+    for e in &i.endpoints {
+        let dir = match e.direction.as_deref() {
+            Some("in") => "IN (device to host)",
+            Some("out") => "OUT (host to device)",
+            Some(other) => other,
+            None => "?",
+        };
+        let mut value = format!("{} {dir}", e.kind.as_deref().unwrap_or("?"));
+        if let Some(m) = e.max_packet_size {
+            value.push_str(&format!(", {m} bytes"));
+        }
+        if let Some(t) = &e.interval {
+            value.push_str(&format!(", every {t}"));
+        }
+        let note = (e.max_packet_size == Some(64)).then(|| "one 64-byte CTAPHID packet per transfer".to_owned());
+        rows.push(Row { label: format!("Endpoint 0x{}", e.address), value, note });
+    }
+    rows
+}
+
+/// The HID report descriptor: report lengths, then every item with its bytes.
+pub fn hid_section(d: &Device) -> Section {
+    let title = "HID report descriptor".to_owned();
+    let bytes = &d.report_descriptor;
+    if bytes.is_empty() {
+        return Section { title, rows: vec![row("Descriptor", "not available")] };
+    }
+    let decoded = hid::decode(bytes);
+    let mut rows = vec![row("Length", format!("{} bytes", bytes.len()))];
+    for ((kind, id), bits) in &decoded.reports {
+        let label = if *id == 0 { format!("{kind} report") } else { format!("{kind} report {id}") };
+        let value = if bits % 8 == 0 { format!("{} bytes", bits / 8) } else { format!("{bits} bits") };
+        let note = match (*id, *bits) {
+            (0, 512) => Some("the CTAPHID packet size".to_owned()),
+            (0, _) => None,
+            _ => Some("plus the report ID byte on the wire".to_owned()),
+        };
+        rows.push(Row { label, value, note });
+    }
+    if let Some(e) = &decoded.error {
+        rows.push(row_note("Problem", e.clone(), "decoding stopped here"));
+    }
+    for item in &decoded.items {
+        let hex: Vec<String> = item.bytes.iter().map(|b| format!("{b:02x}")).collect();
+        rows.push(row(
+            format!("{:04x}  {}", item.offset, hex.join(" ")),
+            format!("{}{}", "  ".repeat(item.depth), item.text),
+        ));
+    }
+    Section { title, rows }
+}
+
 /// Query a device over `io` and describe it.
 pub fn query<T: Transport>(device: &Device, io: T) -> Report {
-    let mut report = Report { sections: vec![device_section(device)], ..Report::default() };
+    let mut report = Report { sections: vec![device_section(device), usb_section(device)], ..Report::default() };
     let (mut client, init) = match Client::connect(io) {
         Ok(c) => c,
         Err(e) => {
             report.problems.push(format!("CTAPHID INIT failed: {e}"));
+            report.sections.push(hid_section(device));
             return report;
         }
     };
@@ -145,6 +295,7 @@ pub fn query<T: Transport>(device: &Device, io: T) -> Report {
         };
         report.sections.push(Section { title: "U2F (CTAP1)".into(), rows: vec![row] });
     }
+    report.sections.push(hid_section(device));
     report
 }
 
@@ -352,4 +503,93 @@ pub fn wink<T: Transport>(io: T) -> Result<(), Error> {
         return Err(Error::Protocol("this device does not support WINK".into()));
     }
     client.wink()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::discover::{Bus, UsbEndpoint, UsbInterface};
+
+    fn yubikey() -> Device {
+        Device {
+            path: "/dev/hidraw7".into(),
+            bus: Bus::Usb,
+            vendor_id: 0x1050,
+            product_id: 0x0407,
+            name: "Yubico YubiKey OTP+FIDO+CCID".into(),
+            phys: "usb-0000:00:14.0-2/input1".into(),
+            usb: Some(UsbInfo {
+                manufacturer: Some("Yubico".into()),
+                product: Some("YubiKey OTP+FIDO+CCID".into()),
+                release: Some("5.43".into()),
+                speed: Some("12".into()),
+                usb_version: Some("2.00".into()),
+                address: Some(("3".into(), "9".into())),
+                device_class: Some(("00".into(), "00".into(), "00".into())),
+                max_packet_size0: Some("64".into()),
+                configurations: Some("1".into()),
+                configuration: Some("1".into()),
+                max_power: Some("30mA".into()),
+                attributes: Some(0xA0),
+                interfaces: Some("3".into()),
+                interface: Some(UsbInterface {
+                    number: Some("01".into()),
+                    class: Some(("03".into(), "00".into(), "00".into())),
+                    driver: Some("usbhid".into()),
+                    endpoints: vec![UsbEndpoint {
+                        address: "84".into(),
+                        kind: Some("Interrupt".into()),
+                        direction: Some("in".into()),
+                        max_packet_size: Some(64),
+                        interval: Some("2ms".into()),
+                    }],
+                    ..UsbInterface::default()
+                }),
+                ..UsbInfo::default()
+            }),
+            virtual_device: false,
+            report_descriptor: vec![0x06, 0xD0, 0xF1, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x03, 0x75, 0x08, 0x95, 0x3F, 0x81, 0x02, 0xC0],
+        }
+    }
+
+    fn find<'a>(s: &'a Section, label: &str) -> &'a Row {
+        s.rows.iter().find(|r| r.label == label).unwrap_or_else(|| panic!("no row {label:?} in {s:?}"))
+    }
+
+    #[test]
+    fn usb_section_describes_a_real_key() {
+        let s = usb_section(&yubikey());
+        assert_eq!(find(&s, "Speed").value, "12 Mbit/s");
+        assert_eq!(find(&s, "Address").value, "bus 3, device 9");
+        assert_eq!(find(&s, "Configuration").value, "1 of 1");
+        assert_eq!(find(&s, "Max power").note.as_deref(), Some("bus-powered, remote wakeup (bmAttributes 0xa0)"));
+        assert_eq!(find(&s, "HID interface").value, "#01, class 03/00/00");
+        assert_eq!(find(&s, "Driver").value, "usbhid");
+        assert_eq!(find(&s, "Endpoint 0x84").value, "Interrupt IN (device to host), 64 bytes, every 2ms");
+        assert_eq!(power_note(0xC0), "self-powered (bmAttributes 0xc0)");
+    }
+
+    #[test]
+    fn hid_section_sizes_reports_with_ids() {
+        let s = hid_section(&yubikey());
+        assert_eq!(find(&s, "Input report 3").value, "63 bytes");
+        assert_eq!(find(&s, "Input report 3").note.as_deref(), Some("plus the report ID byte on the wire"));
+        assert_eq!(find(&s, "0007  85 03").value, "  Report ID (3)");
+        let mut broken = yubikey();
+        broken.report_descriptor.truncate(15);
+        assert_eq!(find(&hid_section(&broken), "Problem").value, "1 collection(s) left open");
+        broken.report_descriptor.clear();
+        assert_eq!(find(&hid_section(&broken), "Descriptor").value, "not available");
+    }
+
+    #[test]
+    fn virtual_devices_have_no_usb_descriptors() {
+        let mut d = yubikey();
+        d.usb = None;
+        d.virtual_device = true;
+        assert!(find(&usb_section(&d), "Descriptors").note.as_deref().unwrap().contains("no USB device behind it"));
+        d.vendor_id = 0x1209;
+        d.product_id = 0x0001;
+        assert!(find(&usb_section(&d), "Descriptors").note.as_deref().unwrap().contains("jotakey-bridge"));
+    }
 }

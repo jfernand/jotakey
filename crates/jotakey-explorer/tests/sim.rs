@@ -28,6 +28,12 @@ impl Transport for Sim<'_> {
     }
 }
 
+/// The report descriptor jotakey-bridge registers (`REPORT_DESCRIPTOR` in its main.rs).
+const BRIDGE_DESCRIPTOR: [u8; 34] = [
+    0x06, 0xD0, 0xF1, 0x09, 0x01, 0xA1, 0x01, 0x09, 0x20, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08, 0x95,
+    0x40, 0x81, 0x02, 0x09, 0x21, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08, 0x95, 0x40, 0x91, 0x02, 0xC0,
+];
+
 fn device() -> Device {
     Device {
         path: PathBuf::from("/dev/hidraw-sim"),
@@ -38,6 +44,7 @@ fn device() -> Device {
         phys: String::new(),
         usb: None,
         virtual_device: true,
+        report_descriptor: BRIDGE_DESCRIPTOR.to_vec(),
     }
 }
 
@@ -61,14 +68,24 @@ fn a_jotakey_reports_itself_without_a_touch_and_without_changing_state() {
     let r = report::query(&device(), Sim(&mut sim));
     assert!(r.problems.is_empty(), "{:?}", r.problems);
     let titles: Vec<&str> = r.sections.iter().map(|s| s.title.as_str()).collect();
-    assert_eq!(titles, ["Device", "CTAPHID", "CTAP2 getInfo"], "no U2F, no PIN: no further sections");
+    assert_eq!(
+        titles,
+        ["Device", "USB", "CTAPHID", "CTAP2 getInfo", "HID report descriptor"],
+        "no U2F, no PIN set: no further sections"
+    );
+    assert_eq!(value(&r, "USB", "Descriptors"), Some("none"));
+    assert_eq!(value(&r, "HID report descriptor", "Length"), Some("34 bytes"));
+    assert_eq!(value(&r, "HID report descriptor", "Input report"), Some("64 bytes"));
+    assert_eq!(value(&r, "HID report descriptor", "Output report"), Some("64 bytes"));
+    assert_eq!(value(&r, "HID report descriptor", "0000  06 d0 f1"), Some("Usage Page (FIDO Alliance)"));
+    assert_eq!(value(&r, "HID report descriptor", "0021  c0"), Some("End Collection"));
 
     assert_eq!(value(&r, "CTAPHID", "Protocol version"), Some("2"));
     assert!(value(&r, "CTAPHID", "Capabilities").unwrap().contains("NMSG"));
     assert_eq!(value(&r, "CTAP2 getInfo", "versions"), Some("FIDO_2_0"));
     assert_eq!(value(&r, "CTAP2 getInfo", "maxMsgSize"), Some("1200"));
     assert_eq!(value(&r, "CTAP2 getInfo", "rk"), Some("false"));
-    let aaguid = r.sections[2].rows.iter().find(|row| row.label == "aaguid").unwrap();
+    let aaguid = r.sections[3].rows.iter().find(|row| row.label == "aaguid").unwrap();
     assert_eq!(aaguid.note.as_deref(), Some("Jotakey"));
     assert!(r.raw_get_info.is_some());
 
@@ -95,7 +112,7 @@ fn the_details_pane_renders_a_report() {
     let mut terminal = Terminal::new(TestBackend::new(140, 50)).unwrap();
     terminal.draw(|f| app.draw(f)).unwrap();
     let screen: String = terminal.backend().buffer().content().iter().map(|c| c.symbol()).collect();
-    for needle in ["jotakey-explorer", "Devices (1)", "hidraw-sim", "CTAP2 getInfo", "FIDO_2_0", "Jotakey", "Raw getInfo"] {
+    for needle in ["jotakey-explorer", "Devices (1)", "hidraw-sim", "CTAP2 getInfo", "FIDO_2_0", "Jotakey", "HID report descriptor"] {
         assert!(screen.contains(needle), "{needle:?} not on screen");
     }
 }
