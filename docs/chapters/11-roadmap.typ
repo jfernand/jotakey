@@ -27,27 +27,20 @@ presence would let anyone holding the key list your accounts. The steps:
   first with `numberOfCredentials`, then serve `authenticatorGetNextAssertion` (0x08) from a
   short-lived iterator that a new command or a 30 s timeout invalidates. Include `user` in
   the response (only `id` unless UV was performed).
-+ *clientPIN, protocol 2.* ECDH (P-256) key agreement, HKDF-derived shared secrets,
-  AES-256-CBC for PIN transport, HMAC-SHA256 `pinUvAuthParam`. PIN hash stored as
-  `LEFT(SHA-256(PIN), 16)` under the device key. *Retry counters persisted before
-  checking*: 8 attempts in total, 3 per power cycle, then a forced reset. These lockout rules
-  are a natural Lean theorem: no trace allows more than 8 wrong PIN guesses. Add `uv`,
-  `clientPin` and `pinUvAuthToken` to getInfo.
-
-  _Status._ Started. The protocol-two primitives are in `pin_protocol.rs`: the key-agreement
-  key, the platform's COSE key parser, HKDF, AES-256-CBC and HMAC tags. They match
-  python-fido2 byte for byte and have a fuzz target (`pin_protocol`) and no surviving mutants.
-  Next, in order:
-  + PIN state behind the `Platform` trait: the PIN hash and the retry counter, in a record
-    log on the C6, in OPTIGA data objects on the key. How much of the lockout the chip
-    itself can enforce against an attacker on the MCU is still to be worked out; that
-    decides whether the PIN protects against a thief or only against a casual finder.
-  + The clientPIN sub-commands: getPINRetries, getKeyAgreement, setPIN, changePIN and
-    getPinUvAuthTokenUsingPinWithPermissions. A wrong-PIN attempt is counted durably
-    *before* the hash is compared. The token is random per power cycle and kept in RAM only.
-  + `pinUvAuthParam` in makeCredential and getAssertion, which sets the UV flag. The `uv`
-    option stays unsupported: Jotakey has no built-in verification.
-  + The Lean lockout model and theorem, then the getInfo members.
++ *clientPIN, protocol 2.* _Done_ (§6.5). getPINRetries, getKeyAgreement, setPIN, changePIN,
+  getPINToken and getPinUvAuthTokenUsingPinWithPermissions with the `mc` and `ga`
+  permissions; tokens in makeCredential and getAssertion set the UV flag. The lockout rules
+  are invariant 10, proved in Lean (§10.8) and checked by a model-based fuzz target. What
+  remains:
+  - *On the key, enforce the PIN in the OPTIGA.* Today the microcontroller compares the PIN
+    and keeps the counter, so an attacker who runs code on it can skip both. The OPTIGA's
+    monotonic counters and access conditions may let the secure element refuse to derive
+    a credential's seed unless the PIN was presented, which would make the PIN protect
+    against a laboratory thief too. Whether the Trust M V1 can do this is open.
+  - *`FIDO_2_1`.* Advertising it needs the rest of CTAP 2.1: `authenticatorSelection`,
+    credential management for resident keys, and the getInfo members that go with them.
+  - *Built-in verification* (a fingerprint sensor) would add `uv`, getUVRetries and
+    getPinUvAuthTokenUsingUvWithPermissions; the PIN stays as the fallback CTAP requires.
 + *credentialManagement (0x0A).* Enumerate RPs and credentials, delete credentials, update
   user info. Requires a `pinUvAuthToken` with the `cm` permission.
 + *Extensions.* `credProtect` (levels 1–3: hide credentials from assertion without UV),

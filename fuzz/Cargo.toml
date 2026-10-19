@@ -69,3 +69,10 @@ path = "fuzz_targets/pin_protocol.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "client_pin"
+path = "fuzz_targets/client_pin.rs"
+test = false
+doc = false
+bench = false

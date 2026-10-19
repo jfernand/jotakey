@@ -4,7 +4,7 @@
 
 = Jotakey's architecture
 
-== The ESP32-C6 board, and the USB problem
+== The ESP32-C6 board; USB limitations.
 
 This section concerns the ESP32-C6 DevKit only. The jotakey key's STM32L432 has a
 general-purpose USB device controller, so the key enumerates as an ordinary FIDO HID device
@@ -33,16 +33,16 @@ see an ordinary FIDO security key.
   ("Firmware: usb task", [Deframer → CtapHid → authenticator, and back.], "amber"),
 )
 
-#callout(kind: "info", "Why the bridge does not weaken security")[
+#callout(kind: "info", "The bridge does not weaken security")[
   FIDO already treats the host as hostile: the authenticator trusts nothing it receives, and
   every signature needs a touch on the device itself. The bridge runs *on* the host, so it
   can do nothing that host malware could not do anyway. It never sees key material, only the
-  same CTAP messages any USB host sees. The cost is convenience: the bridge is Linux-only.
+  same CTAP messages any USB host sees. The bridge is Linux-only.
   The roadmap (§11) lists a small USB-capable co-processor as the path to a standalone,
   OS-independent device.
 ]
 
-The framing on the serial line is deliberately simple:
+The framing on the serial line is simple:
 
 #bytefield(
   caption: "One frame on the serial line: 0x00, COBS(report ‖ CRC-32), 0x00",
@@ -56,16 +56,17 @@ COBS (Consistent Overhead Byte Stuffing) removes every zero byte from the body, 
 resynchronises at the next zero. Each frame starts with a zero as well as ending with one,
 which matters on this board: opening the port resets the C6, and its ROM prints a boot banner
 on the same USB port. The banner has no zero bytes, so without the leading delimiter it would
-merge with the first real frame and that reply would be lost. The CRC catches corruption. It is an integrity check, not
-a security mechanism. Corrupt frames are silently dropped, and CTAPHID's own timeouts take
-over. Logs never mix with frames: the firmware prints only to the *UART* port. That gives
-the two ports clean roles: "USB" carries the authenticator, "UART" carries diagnostics. §6.7 describes the bridge and the framing in full detail.
+merge with the first real frame and that reply would be lost. The CRC catches corruption.
+It is an integrity check, nota security mechanism. Corrupt frames are dropped, and CTAPHID's
+own timeouts take over. Logs never mix with frames: the firmware prints only to the *UART* port.
+The two ports have clean roles: "USB" carries the authenticator, "UART" carries diagnostics.
+§6.8 describes the bridge and the framing in detail.
 
 == Software layers
 
 #layers(
   caption: "Crates and their trust levels",
-  ("jotakey-core", [`no_std`, no allocation, `#![forbid(unsafe_code)]`, no `unwrap`/`panic!`/unchecked indexing or arithmetic (enforced by Clippy). CBOR, CTAP2 commands, CTAPHID, BLE framing, serial framing, credential wrapping, power-safe storage, self tests. *All* bytes from the host are interpreted here.], "amber"),
+  ("jotakey-core", [`no_std`, no allocation, `#![forbid(unsafe_code)]`, no `unwrap`/`panic!`/unchecked indexing or arithmetic (enforced by Clippy). CBOR, CTAP2 commands, the PIN protocol, CTAPHID, BLE framing, serial framing, credential wrapping, power-safe storage, self tests. *All* bytes from the host are interpreted here.], "amber"),
   ("jotakey-fw", [ESP32-C6 firmware (esp-hal, embassy, trouBLE). Thin adapters: TRNG, eFuse HMAC key, flash, button, LED, USB-Serial/JTAG, BLE GATT. Implements the core's `Platform` trait.], "dark"),
   ("jotakey-testfw", [On-device test firmware (embedded-test + probe-rs).], "light"),
   ("jotakey-bridge", [Linux host daemon (serial ⇄ uhid).], "light"),
@@ -87,14 +88,14 @@ pub trait Platform {
 ```
 ]
 
-User presence is deliberately *not* in the trait. Waiting for a button is asynchronous and
+User presence is *not* in the trait. Waiting for a button is asynchronous and
 involves keepalives and cancellation, and none of that belongs inside the protocol logic.
 Instead, the core is a *resumable state machine*. `Authenticator::process` validates a
 request completely. If it needs a touch, it parks the validated parameters in a `Pending`
 value and returns `NeedsUserPresence`. The firmware blinks the LED, sends keepalives,
 watches the button and the cancel signal, then calls `Authenticator::complete` with
 `Confirmed`, `Timeout` or `Cancelled`. Signing code is reachable *only* from `complete`
-under `Confirmed`. That structural fact is what the Lean model formalises (§9.6).
+under `Confirmed`, which is proven by the Lean model(§9.6).
 
 == The key hierarchy
 
@@ -121,11 +122,11 @@ The two platforms differ only in where the root lives and in the function `F`:
   ([Root], [`K_root`: 64 bytes in OPTIGA data object `0xF1D0`, type pre-shared secret. Created on the device at provisioning from both chips' random generators, then locked: never readable, never changeable, usable only over the encrypted link (§7.5).], [`K_dev`: 256 bits in eFuse BLOCK_KEY0, purpose HMAC_UP, read-protected by hardware.]),
   ([`F`], [TLS 1.2 PRF with SHA-256, run by the OPTIGA's `DeriveKey` command. The Trust M V1 has no HMAC command; its PRF is built from HMAC-SHA256.], [HMAC-SHA256 in the HMAC peripheral.]),
   ([Epoch], [STM32 flash, behind readout protection.], [Encrypted flash.]),
-  ([Counter], [OPTIGA hardware up-counter.], [Flash record log (§6.5).]),
+  ([Counter], [OPTIGA hardware up-counter.], [Flash record log (§6.6).]),
 )
 
 The credential format and its proofs (§9.6) are the same on both platforms: the proofs treat
-the tag function as a parameter, and say nothing about where it is computed.
+the tag function as a parameter.
 
 #callout(kind: "info", "In the code")[
   `Platform::derive_secret(label, context)` returns `F(root, label ‖ epoch ‖ context)`, and
@@ -137,9 +138,10 @@ the tag function as a parameter, and say nothing about where it is computed.
 
 Nothing secret is ever *stored* in the microcontroller's flash except the epoch (and, on the
 key, the secret that encrypts the link to the OPTIGA). The epoch is useless without the
-root, which the flash never holds.
+root, which the flash never holds. The PIN verifier is derived the same way, with the label
+`"jotakey/pin/v1"` and the PIN's hash as context, so it is useless without the root too.
 
-== Credential IDs: keys by derivation
+== Credential IDs. Keys by derivation
 
 For a non-resident credential the website stores the credential ID and hands it back at
 login. Jotakey makes the ID carry everything it needs to *re-derive* the private key, and
@@ -166,14 +168,51 @@ The nonce is not secret, and the private key is never in the ID, not even encryp
   rather than hidden.
 ]
 
+== The PIN
+
+A PIN turns "someone touched the key" into "the owner touched the key". The user sets it
+once, through the browser or the operating system (Chrome: Settings → Privacy and security
+→ Security → Manage security keys). Every request that a site marks as needing *user
+verification* then asks for it, and the signature carries the UV flag.
+
+The computer never sends the PIN in the clear, and never sends it with a signing request.
+It runs authenticatorClientPIN with PIN/UV auth protocol two (§2.4): an ECDH key agreement,
+then the PIN's hash encrypted under the shared secret. If the PIN is right, the key returns
+a *pinUvAuthToken*, 32 random bytes encrypted the same way. The next makeCredential or
+getAssertion carries `HMAC(token, clientDataHash)`, which the key checks before it asks for
+the touch. Each token is good for one relying party, the permissions it was issued with
+(`mc`, `ga`), ten minutes, and one touch.
+
+#dtable(
+  columns: (1fr, 2.4fr),
+  ("Rule", "Why"),
+  ([8 wrong PINs, then blocked until reset], [A 4-digit PIN has 10 000 values. Eight guesses give a thief a chance below 1 in 1 000, and a reset removes every credential with the PIN.]),
+  ([3 wrong PINs per power cycle], [Software cannot guess quickly; the user must unplug the key between every three guesses.]),
+  ([Counted before compared], [The decremented counter is stored *before* the PIN is processed. Unplugging the key mid-attempt cannot buy an uncounted guess (invariant 10, proved in §10.8).]),
+  ([Stored as a verifier], [The key keeps `F(root, "jotakey/pin/v1" ‖ epoch ‖ LEFT(SHA-256(PIN), 16))` from the hardware key store, not the PIN's hash. A copy of the flash cannot be used to guess the PIN offline, and a reset, which changes the epoch, leaves no verifier that can match.]),
+  ([Optional per request], [getInfo advertises `makeCredUvNotRqd`, so sites that want only presence keep working with a touch after a PIN is set. Their signatures carry UV = 0.]),
+)
+
+Reset rotates the epoch first and removes the PIN second. If the power fails in between,
+the old PIN record survives but can never match again, and the user resets once more. The
+other order could leave the old credentials usable with the PIN gone.
+
+#callout(kind: "trap", "What the PIN does not stop")[
+  The retry counter lives in the microcontroller's flash, and the microcontroller decides
+  whether the PIN was right. An attacker who manages to run code on it (§7.5) can sign
+  without asking for the PIN at all. The PIN protects against a thief without a lab, which
+  is the common case. Moving the check into the secure element is on the roadmap.
+]
+
 == Persistent state
 
 On the jotakey key, the signature counter lives in the OPTIGA instead (§7.5): a hardware
 up-counter that can only increase, survives power loss by construction, and cannot be
 rolled back even by firmware an attacker controls. The record log described here holds the
-counter and the epoch on the C6, and the epoch on the key.
+counter, the epoch and the PIN record on the C6, and the epoch and the PIN record on the key.
 
-On the C6, only two values persist: the signature counter and the epoch. Each lives in its own
+On the C6, three values persist: the signature counter, the epoch and the PIN record (a
+set flag, the retry counter and the verifier, 36 bytes). Each lives in its own
 power-loss-safe *record log* of two flash sectors. A new value is appended as a record
 `MAGIC ‖ seq ‖ payload ‖ CRC-32` after the last one. When a sector fills, the *other* sector
 is erased and the record goes there. The sector holding the current value is never erased.
@@ -339,7 +378,7 @@ a 50 ms timer. Incoming bytes go through the `Deframer` into `CtapHid::handle_pa
 transaction timeouts. The timer drives those timeouts even when no bytes arrive. Each
 outgoing packet `CtapHid` produces is framed and written back.
 
-This placement is deliberate. The whole CTAPHID state machine runs on the device, in the
+This placement is intentional. The whole CTAPHID state machine runs on the device, in the
 core, so channel isolation (invariant 5) is enforced by code the Lean model of §9.6
 describes, not by the bridge. A bridge that misbehaved could not break isolation between
 two host applications. It could only feed the device packets, which any USB host can do.
@@ -419,7 +458,7 @@ browser on the machine see the key. Stop the bridge with Ctrl-C.
   ([Framing], [Round trip of every possible report (property test), all-zero and zero-free reports, corruption and resynchronisation, and the `serial_deframe` fuzz target.]),
   ([Pump loop], [The real `pump` runs between a fake uhid (a datagram socket pair, which keeps event boundaries like `/dev/uhid`) and a pseudo-terminal standing in for the serial port. The test checks one report in each direction, that the idle bridge wakes at most twice in 300 ms (the earlier 5 ms polling loop woke 60 times), and that a hang-up ends the pump so the bridge can reconnect.]),
   ([Whole path], [`jotakey-host-tests` runs a simulated device wired exactly like the usb task (framing → `CtapHid` → authenticator), so every simulated request crosses the real framing code in both directions.]),
-  ([On hardware], [Runs with the C6 DevKit: `scripts/fido2_check.py` (python-fido2 as client and relying party), a Chrome registration and sign-in through the demo relying party in `examples/webauthn-topcoat`, and the explorer below all go through it.]),
+  ([On hardware], [Runs with the C6 DevKit: `scripts/fido2_check.py` and `fido2_pin_check.py` (python-fido2 as client and relying party), a Chrome registration and sign-in through the demo relying party in `examples/webauthn-topcoat`, and the explorer below all go through it.]),
 )
 
 The bridge sleeps in `poll(2)` on both file descriptors, the uhid device and the serial
@@ -520,10 +559,13 @@ query runs on its own thread, so a silent or misbehaving device cannot freeze th
   ([`maxMsgSize`], [`1200`], [The largest request it accepts (invariant 4).]),
   ([`maxCredentialCountInList`], [`8`], [Credential IDs per allow or exclude list.]),
   ([`maxCredentialIdLength`], [`49`], [Exactly a Jotakey credential ID: version byte, 32-byte nonce, 16-byte tag (§6.4).]),
+  ([`clientPin`], [`false` / `true`], [The key supports a PIN; `true` once one is set (§6.5). The explorer then reads the retry counter.]),
+  ([`pinUvAuthToken`, `makeCredUvNotRqd`], [`true`], [Tokens with permissions, and registration without the PIN for sites that ask only for presence.]),
+  ([`pinUvAuthProtocols`, `minPINLength`], [`[2]`, `4`], [PIN/UV auth protocol two only; PINs of at least four characters.]),
 )
 
-What is missing says as much. There is no `clientPin` or `uv` option, so the key has no
-PIN and no built-in verification; the explorer therefore skips the retry counters. There is
+What is missing says as much. There is no `uv` option, so the key has no built-in
+verification such as a fingerprint reader; the PIN is the only way to verify the user. There is
 no `algorithms` list, a CTAP 2.1 member: a client learns what a 2.0 key supports only from
 its answers (the Jotakey accepts ES256 alone). A recent YubiKey shows many more fields:
 `FIDO_2_1`, `credMgmt`, `remainingDiscoverableCredentials`, a U2F version and, once a PIN

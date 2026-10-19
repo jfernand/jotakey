@@ -64,7 +64,7 @@ The BLE framer (`src/transport/ble.rs`) uses the same private names (`ReceiveSta
 | `Authenticator::complete` | `completePresence` | |
 | `PresenceResult` (`Confirmed`, `Timeout`, `Cancelled`) | `PresenceResult` (`confirmed`, `timeout`, `cancelled`) | Same name. |
 | `Pending` | `PendingCommand` | Variants match: `Idle`, `MakeCredential`, `GetAssertion`, `Excluded`, `PinProbe`, `Reset`. |
-| `Pending::MakeCredential { rp_id_hash, client_data_hash }` | `.makeCredential relyingParty` | The model only needs to tell relying parties apart. |
+| `Pending::MakeCredential { rp_id_hash, client_data_hash, user_verified }` | `.makeCredential relyingParty` | The model only needs to tell relying parties apart. UV is not modelled here; the PIN model below covers how it is earned. |
 | `Outcome` + response bytes | `Output` (`info`, `needsPresence`, `error`, `signature`, `resetDone`) | |
 | `PendingOrSilent::Silent` (getAssertion with `up: false`) | `Command.silentAssertion` | Signed in `process`, never parked. |
 | `get_assertion::sign(…, user_present, …)`, the UP flag in authData | `Output.signature … userPresent` | `true` only from `complete` under `Confirmed`. |
@@ -85,6 +85,21 @@ The BLE framer (`src/transport/ble.rs`) uses the same private names (`ReceiveSta
 | `VERSION`, `NONCE_LEN`, `TAG_LEN`, `CRED_ID_LEN` | `formatVersion`, `nonceLength`, `tagLength`, `1 + nonceLength + tagLength` | |
 | `[u8; TAG_LEN]` return type | hypothesis `MacOutputsTagLength mac` | The Rust type guarantees what Lean must assume. |
 
+## PIN lockout (`src/ctap/client_pin.rs`, `src/platform.rs` ↔ `Jotakey/ClientPin.lean`)
+
+| Rust | Lean | Notes |
+|---|---|---|
+| `PinRecord { verifier, retries }` + `PinSession::mismatches` | `State { pin, retries, mismatches }` | The verifier becomes the PIN itself (a number); the cryptography is left out. |
+| `check_pin` (after `usable_pin`) | `attempt` | Count (store `retries - 1`), then compare. |
+| `change_pin` | `Event.changePin` | `attempt`, then the new PIN. |
+| `set_pin` | `Event.setPin` | Only when no PIN is set. |
+| `reset::complete` (its PIN half) | `Event.reset` | |
+| a new `PinSession` at power-up | `Event.powerCycle` | |
+| power lost after `store_pin(retries - 1)` | `Event.interruptedAttempt` | |
+| `PIN_RETRIES_MAX`, `MISMATCHES_PER_POWER_CYCLE` | `maxRetries`, `mismatchesPerPowerCycle` | |
+| `Status::PinInvalid` / `PinBlocked` / `PinAuthBlocked` after a comparison | `Output.wrongPin` | Every compared-and-rejected PIN, whatever the status code. |
+| — | `nextRun`, `wrongRun`, `nextStreak`, `wrongStreak` | Lean-only counters over the outputs. |
+
 ## Properties: Rust tests ↔ Lean theorems
 
 | Rust test / fuzz oracle | Lean theorem |
@@ -98,3 +113,5 @@ The BLE framer (`src/transport/ble.rs`) uses the same private names (`ReceiveSta
 | `reset_window_and_effect` | `epoch_change_requires_confirmed_touch`, `epoch_change_requires_reset_in_window` |
 | `fails_closed` | `faulted_stays_faulted_and_never_signs` |
 | `roundtrip`, `bound_to_rp` (proptests in `credential.rs`) | `unwrap_recovers_nonce`, `credential_bound_to_relying_party` |
+| `wrong_pins_are_counted_and_block`, `client_pin` fuzz model | `wrong_pins_between_successes_le_eight`, `wrong_pins_in_a_row_le_three`, `blocked_until_reset` |
+| `an_attempt_is_stored_before_the_pin_is_compared`, `client_pin` `retries_at_pin_check` oracle | `comparison_needs_a_counted_retry` |

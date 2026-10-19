@@ -89,6 +89,25 @@ def pin_protocol(message):
     return PIN_SCALAR + bytes([len(PIN_PEER)]) + PIN_PEER + message
 
 
+# client_pin: scripts of operations (see fuzz_targets/client_pin.rs). Op bytes: 0 key
+# agreement, 1 setPIN, 2 changePIN, 3 get token, 4/5 use the token, 6 power cycle,
+# 7 reset, 8 getPINRetries, 9 toggle storage failure.
+PIN_1234 = [4, 1, 2, 3, 4]          # setPIN shape: 4 digits
+RIGHT = [0]                          # guess: the current PIN
+WRONG = [3, 9, 9, 9, 9]              # guess: "9999"
+CLIENT_PIN_SCRIPTS = {
+    "lifecycle": bytes([0, 1, *PIN_1234,
+                        3, 1, 3, 0, *RIGHT, 4, 0, 0,        # token mc|ga for a.example; makeCredential
+                        3, 1, 2, 2, *RIGHT, 5, 1, 4,        # token ga; silent getAssertion
+                        5, 1, 0, 8]),                       # the same with a touch; retries
+    "lockout": bytes([0, 1, *PIN_1234,
+                      3, 1, 2, 2, *WRONG, 0, 3, 1, 2, 2, *WRONG, 0, 3, 1, 2, 2, *WRONG,
+                      3, 1, 2, 2, *RIGHT, 6, 0, 3, 1, 2, 2, *RIGHT, 8, 7, 8]),
+    "change_and_failures": bytes([0, 1, *PIN_1234, 2, *RIGHT, 6, 5, 6, 7, 8, 9,
+                                  3, 1, 2, 2, *RIGHT, 9, 0, 3, 0, 0, 0, *RIGHT, 4, 1, 2, 9, 7]),
+}
+
+
 def main():
     seeds = {
         "ctaphid_stack": {k: ctaphid(v) for k, v in REQUESTS.items()},
@@ -97,6 +116,7 @@ def main():
         "cbor_decode": {"make_credential_params": MAKE_CREDENTIAL[1:]},
         # mode 0 (raw request), presence byte 0 (Confirmed).
         "ctap_dispatch": {k: bytes([0, 0]) + v for k, v in REQUESTS.items()},
+        "client_pin": CLIENT_PIN_SCRIPTS,
         "pin_protocol": {"new_pin_enc": pin_protocol(PIN_CIPHERTEXT), "pin_auth": pin_protocol(bytes(33))},
     }
     for target, files in seeds.items():

@@ -36,20 +36,22 @@ pub fn assertion(rp_id_hash: &[u8; 32], flags: u8, sign_count: u32) -> [u8; BASE
     out
 }
 
-/// Build registration authenticator data into `buf`; returns the length used.
+/// Build registration authenticator data into `buf`; returns the length used. The flags are
+/// UP, AT and `extra_flags` (UV when a PIN token authorized the request).
 ///
 /// # Errors
 /// [`CborError::BufferFull`] if `buf` is too small (it never is with [`MAX_LEN`]).
 pub fn registration(
     buf: &mut [u8; MAX_LEN],
     rp_id_hash: &[u8; 32],
+    extra_flags: u8,
     sign_count: u32,
     aaguid: &[u8; 16],
     cred_id: &[u8; CRED_ID_LEN],
     public: &p256::PublicKey,
 ) -> Result<usize, CborError> {
     let mut e = Encoder::new(buf);
-    e.raw(&assertion(rp_id_hash, FLAG_UP | FLAG_AT, sign_count))?;
+    e.raw(&assertion(rp_id_hash, FLAG_UP | FLAG_AT | extra_flags, sign_count))?;
     e.raw(aaguid)?;
     #[allow(clippy::cast_possible_truncation)] // CRED_ID_LEN is 49.
     e.raw(&(CRED_ID_LEN as u16).to_be_bytes())?;
@@ -74,9 +76,11 @@ mod tests {
     fn registration_layout() {
         let sk = crate::crypto::derive_credential_key(&[1; 32], &[2; 32], &[3; 32]).unwrap();
         let mut buf = [0u8; MAX_LEN];
-        let n = registration(&mut buf, &[0xAA; 32], 7, &[0x11; 16], &[0x22; CRED_ID_LEN], &sk.public_key()).unwrap();
+        let n = registration(&mut buf, &[0xAA; 32], 0, 7, &[0x11; 16], &[0x22; CRED_ID_LEN], &sk.public_key()).unwrap();
         assert_eq!(n, MAX_LEN);
         assert_eq!(buf[32], FLAG_UP | FLAG_AT);
+        registration(&mut buf, &[0xAA; 32], FLAG_UV, 7, &[0x11; 16], &[0x22; CRED_ID_LEN], &sk.public_key()).unwrap();
+        assert_eq!(buf[32], FLAG_UP | FLAG_UV | FLAG_AT);
         assert_eq!(&buf[33..37], &[0, 0, 0, 7]);
         assert_eq!(&buf[37..53], &[0x11; 16]);
         assert_eq!(&buf[53..55], &[0, 49]);

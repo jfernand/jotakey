@@ -13,11 +13,13 @@
 //! - a signature that was parked needed `PresenceResult::Confirmed`; one produced without
 //!   parking is a getAssertion whose signed data has the UP flag clear (invariant 1);
 //! - every successful response body is canonical CBOR (strict decoder accepts it);
-//! - nothing stays parked once a response has been produced.
+//! - nothing stays parked once a response has been produced;
+//! - no single request can set, change or spend the PIN (a fresh authenticator has no
+//!   key-agreement key, so nothing can be authenticated), and nothing signs with UV.
 
 #![no_main]
 
-use jotakey_core::authdata::FLAG_UP;
+use jotakey_core::authdata::{FLAG_UP, FLAG_UV};
 use jotakey_core::cbor::{Decoder, Encoder, Key};
 use jotakey_core::ctap::{Authenticator, Outcome, command};
 use jotakey_core::mock::MockPlatform;
@@ -142,6 +144,7 @@ fuzz_target!(|data: &[u8]| {
     };
 
     let before = platform.counter;
+    let pin_before = platform.pin;
     let mut parked = false;
     let n = match auth.process(&mut platform, &request, &mut out) {
         Outcome::Response(n) => n,
@@ -162,6 +165,8 @@ fuzz_target!(|data: &[u8]| {
             assert_eq!(assertion_flags(&out[1..n]) & FLAG_UP, 0, "silent signature with UP set");
         }
         assert_eq!(platform.counter, before + 1, "counter must move by exactly one");
+        // makeCredential's authData is member 2 as well.
+        assert_eq!(assertion_flags(&out[1..n]) & FLAG_UV, 0, "UV without a token");
     } else {
         assert_eq!(platform.counter, before, "counter moved without a signature");
     }
@@ -170,6 +175,7 @@ fuzz_target!(|data: &[u8]| {
         d.skip(0).expect("response must be canonical CBOR");
         d.finish().expect("no trailing bytes in response");
     }
+    assert_eq!(platform.pin, pin_before, "the PIN record changed");
     // Nothing may remain parked after complete.
     assert_eq!(auth.pending(), &jotakey_core::ctap::Pending::Idle);
 });

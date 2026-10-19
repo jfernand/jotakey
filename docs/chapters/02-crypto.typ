@@ -60,7 +60,7 @@ default algorithm, *ES256*, is ECDSA over the NIST P-256 elliptic curve with SHA
 
 == Protecting a PIN in transit
 
-The PIN (chapter 11) travels from the computer to the key over USB, where other software on
+The PIN (§6.5) travels from the computer to the key over USB, where other software on
 the computer can watch it. CTAP's *PIN/UV auth protocol two* first agrees a secret, then uses
 it to encrypt and authenticate:
 

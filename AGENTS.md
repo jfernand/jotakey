@@ -25,10 +25,12 @@ Stop and ask a human.
     64-byte reports over the serial port and exposes a virtual FIDO HID device through `/dev/uhid`.
     The bridge is **untrusted** (as the host always is in FIDO). Security must never depend on it.
     BLE exists only on the C6.
-- **MVP scope = minimal CTAP2.0**: `authenticatorGetInfo`, `authenticatorMakeCredential`,
-  `authenticatorGetAssertion`, `authenticatorReset`. Credentials are non-resident and there is no PIN.
-  The full CTAP2.1 passkey roadmap (resident keys, clientPIN v2, credMgmt, hmac-secret, credProtect,
-  U2F) is documented in `docs/jotakey.typ` and is next.
+- **Scope = CTAP2.0 plus the CTAP 2.1 PIN**: `authenticatorGetInfo`, `authenticatorMakeCredential`,
+  `authenticatorGetAssertion`, `authenticatorReset`, and `authenticatorClientPIN` with PIN/UV auth
+  protocol two (getPINRetries, getKeyAgreement, setPIN, changePIN, getPINToken,
+  getPinUvAuthTokenUsingPinWithPermissions; permissions `mc` and `ga`). Credentials are
+  non-resident. The rest of the CTAP2.1 passkey roadmap (resident keys, credMgmt, hmac-secret,
+  credProtect, U2F) is documented in `docs/jotakey.typ` and is next.
 - Documentation: `docs/jotakey.typ` (Typst, **ISSS design system**, template `docs/isss-template.typ`).
   It explains FIDO/passkeys, the design, the threat model, and formal verification in depth
   for a reader new to the field. The board is documented in `hardware/HARDWARE.md`.
@@ -67,6 +69,13 @@ Each invariant is enforced in code, tested, and (where marked ⊢) proved in the
    private key, nonce or tag is ever logged, printed, `Debug`-formatted, or returned in an error.
 9. **Constant time:** branching and memory access on secret data are forbidden in our own code.
    Use `subtle` for comparisons and RustCrypto for scalar arithmetic.
+10. ⊢ **PIN lockout:** at most 8 wrong PINs between correct entries (then `PIN_BLOCKED` until
+   `authenticatorReset`) and at most 3 per power cycle (`PIN_AUTH_BLOCKED`). Every attempt is
+   counted durably *before* the PIN is processed: `check_pin` stores `retries − 1` through
+   `Platform::store_pin`, and only then decrypts and compares. A PIN is stored only as
+   `F(root, "jotakey/pin/v1" ‖ epoch ‖ LEFT(SHA-256(PIN), 16))`. Reset rotates the epoch
+   *before* it removes the PIN. Tokens live in RAM only; a touch that completes a request
+   authorized by one spends it.
 
 ## 3. Key hierarchy (do not change without updating doc + Lean model)
 
@@ -95,7 +104,8 @@ Both platforms share one hierarchy; only the root and the function that derives 
   The seed is derived only after the tag has verified.
 - `credId = 0x01 ‖ nonce(32) ‖ tag(16)`.
 - **In code:** `Platform::derive_secret(label, context, out)` computes
-  `F(root, label ‖ epoch ‖ context)`; labels `CredentialTag` and `CredentialSeed`. The core
+  `F(root, label ‖ epoch ‖ context)`; labels `CredentialTag`, `CredentialSeed` and
+  `PinVerifier` (context `LEFT(SHA-256(PIN), 16)`; invariant 10). The core
   asks for one credential at a time (`ctap::PlatformTagger`, `ctap::credential_seed`), and a
   failing derivation is an error, never "not our credential".
 - **Shielded connection (key):** OPTIGA ↔ STM32 traffic for the root and the counter is
@@ -104,8 +114,9 @@ Both platforms share one hierarchy; only the root and the function that derives 
   provisioning, like the root.
 - **Signature counter (key):** OPTIGA monotonic up-counter `0xE120`, threshold 600 000 (the
   rated endurance). At the threshold it freezes and the key refuses to sign.
-- Attestation: `packed` self-attestation. Persistent MCU state: the key stores the epoch and
-  the binding secret; the C6 stores the counter and the epoch.
+- Attestation: `packed` self-attestation. Persistent MCU state: the key stores the epoch, the
+  binding secret and the PIN record; the C6 stores the counter, the epoch and the PIN record
+  (`PinRecord`, 36 bytes: set flag, retries, verifier).
 
 ## 3a. Design decisions made during implementation (keep consistent)
 
@@ -115,6 +126,10 @@ Both platforms share one hierarchy; only the root and the function that derives 
 - **User presence:** the sensor must be seen released after the request, then pressed for
   ≥ 40 ms; 30 s timeout; keepalive `UP_NEEDED` every ≤ 100 ms. The key reads its touch
   electrode with the STM32 touch-sensing controller (TSC); the C6 reads its BOOT button.
+- **PIN and UV:** getInfo advertises `clientPin`, `pinUvAuthToken` and `makeCredUvNotRqd`
+  (registration without the PIN stays allowed for non-resident credentials) but not `uv`
+  (no built-in verification). `versions` stays `FIDO_2_0` until the rest of CTAP 2.1 is in.
+  The UV flag is set only for requests whose `pinUvAuthParam` verifies against the live token.
 - **Self tests** take an explicit fault-injection parameter (`run_kats(None)` in production)
   so tests can prove the fail-closed path.
 
@@ -139,10 +154,10 @@ The ESP32-C6:
 - **BLE is off by default;** a 3 s button hold while idle enables advertising for 120 s.
   FIDO characteristics require an encrypted link (LESC, Just Works; no display). Bonds are
   RAM-only in the MVP.
-- **Persistent state** = counter + epoch only, each in a two-sector `storage::RecordLog`
-  (append + read-back verify; never erase the sector holding the latest record). Region:
-  `jotakey` partition at 0x3F0000 (`crates/jotakey-fw/partitions.csv`). The test firmware
-  uses only the scratch half at 0x3F8000.
+- **Persistent state** = counter + epoch + PIN record, each in a two-sector `storage::RecordLog`
+  (append + read-back verify; never erase the sector holding the latest record): sectors 0–1,
+  2–3 and 4–5 of the `jotakey` partition at 0x3F0000 (`crates/jotakey-fw/partitions.csv`).
+  The test firmware uses only the scratch half at 0x3F8000.
 - **`dev-key` feature** = INSECURE software root key (magenta LED at boot). Never ship it.
 
 ## 4. Coding rules
@@ -215,6 +230,7 @@ hardware/                the jotakey key: HARDWARE.md, KiCad project, layout/rou
 examples/webauthn-topcoat a demo relying party (Topcoat + webauthn-rs) for trying the key in a browser
 scripts/provision.sh     human-run, irreversible device provisioning (dry-run by default)
 scripts/fido2_check.py   independent check with python-fido2 (client + RP server)
+scripts/fido2_pin_check.py the same for the PIN (no touch by default; --touch for UV sign-in)
 scripts/99-jotakey.rules udev rules for /dev/uhid and the bridge's hidraw device
 ```
 

@@ -9,7 +9,8 @@
 --   3. `Jotakey/CtapHid.lean`      CTAPHID reassembly; inductive types, recursive proofs
 --   4. `Jotakey/Authenticator.lean` the user-presence/counter state machine; structures, traces
 --   5. `Jotakey/Credential.lean`   credential IDs; `variable`, assumptions as hypotheses
---   6. `Main.lean`, `AxiomAudit.lean` the executable spec and the axiom check
+--   6. `Jotakey/ClientPin.lean`    PIN lockout; invariants carried through traces
+--   7. `Main.lean`, `AxiomAudit.lean` the executable spec and the axiom check
 --
 -- Three kinds of comments appear throughout:
 --   `--` ...            a line comment, ignored by Lean (like `//` in Rust)
@@ -21,3 +22,4 @@ import Jotakey.Cbor.Cbor
 import Jotakey.CtapHid
 import Jotakey.Authenticator
 import Jotakey.Credential
+import Jotakey.ClientPin

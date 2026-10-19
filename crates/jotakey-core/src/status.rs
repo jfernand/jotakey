@@ -1,5 +1,5 @@
 // (c) Javier Fernandez @ JotaSoft 2026
-//! CTAP status codes (CTAP 2.0 §6.3) used by this authenticator.
+//! CTAP status codes (CTAP 2.1 §8.2) used by this authenticator.
 
 /// A CTAP status code. `Success` is the only non-error value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,9 +27,15 @@ pub enum Status {
     NoCredentials = 0x2E,
     UserActionTimeout = 0x2F,
     NotAllowed = 0x30,
+    PinInvalid = 0x31,
+    PinBlocked = 0x32,
     PinAuthInvalid = 0x33,
+    PinAuthBlocked = 0x34,
     PinNotSet = 0x35,
+    PinPolicyViolation = 0x37,
     RequestTooLarge = 0x39,
+    InvalidSubcommand = 0x3E,
+    UnauthorizedPermission = 0x40,
     Other = 0x7F,
 }
 

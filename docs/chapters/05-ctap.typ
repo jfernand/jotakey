@@ -8,7 +8,7 @@ WebAuthn is the browser's API. *CTAP*, the Client-to-Authenticator Protocol, is 
 browser actually sends to the key. CTAP2 messages are a command byte followed by a
 *CBOR* map. The answer is a status byte followed by a CBOR map.
 
-== CBOR, and why strictness matters
+== CBOR
 
 CBOR (RFC 8949) is a binary JSON: integers, byte strings, text strings, arrays, maps,
 booleans. Each item starts with a *head* byte: 3 bits of major type and 5 bits of
@@ -46,10 +46,10 @@ that the Rust decoder and the Lean model agree on over 100 000 inputs.
 #dtable(
   columns: (0.5fr, 1.5fr, 2.5fr),
   ("Byte", "Command", "Jotakey MVP"),
-  ([0x01], [authenticatorMakeCredential], [Yes. ES256 only; `rk` and `uv` options refused.]),
-  ([0x02], [authenticatorGetAssertion], [Yes. Allow list required (non-resident credentials).]),
+  ([0x01], [authenticatorMakeCredential], [Yes. ES256 only; `rk` and `uv` options refused. With a PIN token, the UV flag is set.]),
+  ([0x02], [authenticatorGetAssertion], [Yes. Allow list required (non-resident credentials). With a PIN token, the UV flag is set.]),
   ([0x04], [authenticatorGetInfo], [Yes. Versions, AAGUID, options, limits.]),
-  ([0x06], [authenticatorClientPIN], [No (roadmap). Zero-length `pinAuth` probes get `PIN_NOT_SET` after a touch.]),
+  ([0x06], [authenticatorClientPIN], [Yes, PIN/UV auth protocol two: getPINRetries, getKeyAgreement, setPIN, changePIN, and tokens with the `mc` and `ga` permissions (§6.5). Zero-length `pinUvAuthParam` probes get `PIN_NOT_SET` or `PIN_INVALID` after a touch.]),
   ([0x07], [authenticatorReset], [Yes. Within 10 s of power-up, with a touch.]),
   ([0x08], [authenticatorGetNextAssertion], [Not needed without resident keys.]),
 )
@@ -58,10 +58,14 @@ that the Rust decoder and the Lean model agree on over 100 000 inputs.
 ```
 { 1: ["FIDO_2_0"],                         ; versions
   3: h'6a6f74616b65792d7630312d63360001',  ; AAGUID
-  4: {"rk": false, "up": true, "plat": false},
+  4: {"rk": false, "up": true, "plat": false,
+      "clientPin": false,                   ; true once a PIN is set
+      "pinUvAuthToken": true, "makeCredUvNotRqd": true},
   5: 1200,                                  ; maxMsgSize
+  6: [2],                                   ; pinUvAuthProtocols
   7: 8,                                     ; maxCredentialCountInList
-  8: 49 }                                   ; maxCredentialIdLength
+  8: 49,                                    ; maxCredentialIdLength
+  13: 4 }                                   ; minPINLength
 ```
 ]
 

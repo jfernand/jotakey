@@ -244,6 +244,12 @@ impl Platform for NoPlatform {
     fn rotate_epoch(&mut self) -> Result<(), jotakey_core::platform::PlatformError> {
         Err(jotakey_core::platform::PlatformError)
     }
+    fn load_pin(&mut self) -> Result<jotakey_core::platform::PinRecord, jotakey_core::platform::PlatformError> {
+        Err(jotakey_core::platform::PlatformError)
+    }
+    fn store_pin(&mut self, _: &jotakey_core::platform::PinRecord) -> Result<(), jotakey_core::platform::PlatformError> {
+        Err(jotakey_core::platform::PlatformError)
+    }
     fn uptime_ms(&self) -> u64 {
         u64::MAX
     }

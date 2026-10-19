@@ -1,12 +1,19 @@
 // (c) Javier Fernandez @ JotaSoft 2026
-//! authenticatorMakeCredential (CTAP 2.0 §5.1).
+//! authenticatorMakeCredential (CTAP 2.1 §6.1).
+//!
+//! With a `pinUvAuthParam` made from a pinUvAuthToken with the `mc` permission, the
+//! credential is created with the UV flag. Without one it is created all the same, with UV
+//! clear, even when a PIN is set: getInfo advertises `makeCredUvNotRqd`, since these
+//! credentials are not discoverable.
 
 use super::parse::{self, EntityId, PARAM_DEPTH};
-use super::{Pending, PlatformTagger, Response, credential_seed, write_success};
-use crate::authdata;
+use super::client_pin::permission;
+use super::{Pending, PinSession, PlatformTagger, Response, credential_seed, write_success};
+use crate::authdata::{self, FLAG_UV};
 use crate::cbor::{Decoder, Key};
 use crate::credential::{self, NONCE_LEN};
 use crate::crypto::{self, COSE_ALG_ES256};
+use crate::pin_protocol;
 use crate::platform::Platform;
 use crate::status::Status;
 
@@ -18,6 +25,7 @@ struct Request<'a> {
     exclude_list: Option<&'a [u8]>,
     options: parse::Options,
     pin_auth: Option<&'a [u8]>,
+    pin_protocol: Option<u64>,
 }
 
 fn parse(params: &[u8]) -> Result<Request<'_>, Status> {
@@ -31,6 +39,7 @@ fn parse(params: &[u8]) -> Result<Request<'_>, Status> {
     let mut exclude_list = None;
     let mut options = parse::Options::default();
     let mut pin_auth = None;
+    let mut pin_protocol = None;
     while let Some(k) = d.next_key(&mut m)? {
         match k {
             Key::Int(0x01) => cdh = Some(parse::hash32(&mut d)?),
@@ -73,9 +82,7 @@ fn parse(params: &[u8]) -> Result<Request<'_>, Status> {
             Key::Int(0x06) => parse::extensions(&mut d)?,
             Key::Int(0x07) => options = parse::options(&mut d)?,
             Key::Int(0x08) => pin_auth = Some(d.bytes()?),
-            Key::Int(0x09) => {
-                d.unsigned()?;
-            }
+            Key::Int(0x09) => pin_protocol = Some(d.unsigned()?),
             _ => d.skip(PARAM_DEPTH)?,
         }
     }
@@ -86,17 +93,31 @@ fn parse(params: &[u8]) -> Result<Request<'_>, Status> {
     if !user_seen || !algs_seen {
         return Err(Status::MissingParameter);
     }
-    Ok(Request { client_data_hash, rp_id_hash, es256_offered, exclude_list, options, pin_auth })
+    Ok(Request { client_data_hash, rp_id_hash, es256_offered, exclude_list, options, pin_auth, pin_protocol })
 }
 
 /// Validate the request and decide what to park.
-pub fn process<P: Platform>(platform: &mut P, params: &[u8]) -> Result<Pending, Status> {
+pub fn process<P: Platform>(platform: &mut P, session: &mut PinSession, params: &[u8]) -> Result<Pending, Status> {
     let req = parse(params)?;
 
     // Zero-length pinAuth is the platform's "touch to select this device" probe.
-    if let Some(pa) = req.pin_auth {
-        return if pa.is_empty() { Ok(Pending::PinProbe) } else { Err(Status::PinAuthInvalid) };
+    if req.pin_auth.is_some_and(<[u8]>::is_empty) {
+        return Ok(Pending::PinProbe);
     }
+    let user_verified = match req.pin_auth {
+        Some(param) => {
+            pin_protocol::check_version(req.pin_protocol)?;
+            session.authorize(
+                platform.uptime_ms(),
+                permission::MAKE_CREDENTIAL,
+                &req.rp_id_hash,
+                &req.client_data_hash,
+                param,
+            )?;
+            true
+        }
+        None => false,
+    };
 
     // Step 1: the exclude list. If any ID is ours for this RP, report it after a touch.
     if let Some(raw) = req.exclude_list {
@@ -129,7 +150,7 @@ pub fn process<P: Platform>(platform: &mut P, params: &[u8]) -> Result<Pending, 
         return Err(Status::InvalidOption);
     }
 
-    Ok(Pending::MakeCredential { rp_id_hash: req.rp_id_hash, client_data_hash: req.client_data_hash })
+    Ok(Pending::MakeCredential { rp_id_hash: req.rp_id_hash, client_data_hash: req.client_data_hash, user_verified })
 }
 
 /// Mint the credential after the user touched the device.
@@ -138,6 +159,7 @@ pub fn complete<P: Platform>(
     aaguid: &[u8; 16],
     rp_id_hash: &[u8; 32],
     client_data_hash: &[u8; 32],
+    user_verified: bool,
     out: &mut Response,
 ) -> Result<usize, Status> {
     let mut nonce = [0u8; NONCE_LEN];
@@ -150,7 +172,8 @@ pub fn complete<P: Platform>(
     let count = platform.increment_counter().map_err(|_| Status::Other)?;
 
     let mut ad = [0u8; authdata::MAX_LEN];
-    let ad_len = authdata::registration(&mut ad, rp_id_hash, count, aaguid, &cred_id, &sk.public_key())
+    let extra = if user_verified { FLAG_UV } else { 0 };
+    let ad_len = authdata::registration(&mut ad, rp_id_hash, extra, count, aaguid, &cred_id, &sk.public_key())
         .map_err(|_| Status::Other)?;
     let ad = ad.get(..ad_len).ok_or(Status::Other)?;
 

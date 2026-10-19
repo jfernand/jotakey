@@ -41,6 +41,18 @@ pub const PROTOCOL: u64 = 2;
 /// keeps this label although the KDF above is what is actually used.
 pub const COSE_ALG_ECDH_ES_HKDF_256: i64 = -25;
 
+/// Check a command's `pinUvAuthProtocol` when it carries a `pinUvAuthParam`.
+///
+/// # Errors
+/// [`Status::MissingParameter`] if absent, [`Status::InvalidParameter`] if not [`PROTOCOL`].
+pub fn check_version(protocol: Option<u64>) -> Result<(), Status> {
+    match protocol {
+        None => Err(Status::MissingParameter),
+        Some(PROTOCOL) => Ok(()),
+        Some(_) => Err(Status::InvalidParameter),
+    }
+}
+
 /// AES block size; also the IV length.
 pub const BLOCK_LEN: usize = 16;
 

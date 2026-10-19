@@ -15,7 +15,7 @@ holes one above another. Chapter 9 adds the last one, proof.
   ([Fuzzing], [Crashes, hangs and invariant violations on inputs nobody imagined.], [`fuzz/` (6 targets)]),
   ([Mutation testing], [Gaps in the *tests themselves*: code whose breakage no test notices.], [`cargo mutants`]),
   ([On-device tests], [What only silicon can show: the TRNG, the HMAC key, real flash, timing.], [`crates/jotakey-testfw`]),
-  ([End-to-end], [The whole chain as a relying party sees it.], [`crates/jotakey-host-tests`, `scripts/fido2_check.py`]),
+  ([End-to-end], [The whole chain as a relying party sees it.], [`crates/jotakey-host-tests`, `scripts/fido2_check.py`, `scripts/fido2_pin_check.py`]),
 )
 
 == Unit, scenario and property tests
@@ -147,7 +147,7 @@ with sorted keys before any credential logic runs. A target that only ever hits 
   needs its own test.
 ]
 
-=== The seven targets
+=== The eight targets
 
 Each target runs the real core code against `MockPlatform`, a deterministic stand-in for
 the hardware: its random numbers come from a seeded generator and its key store is
@@ -159,14 +159,23 @@ software HMAC, so every crash reproduces exactly. Its failure switches (`fail_rn
   columns: (0.9fr, 1.4fr, 2.2fr, 0.45fr),
   ("Target", "Input", "Oracle (beyond: no panic, no hang)", "Inv."),
   ([`cbor_decode`], [Raw bytes to the strict CBOR decoder.], [Anything accepted re-encodes to *exactly* the input bytes: no value has two encodings.], [4]),
-  ([`ctap_dispatch`], [`[mode, presence, …]`: a raw request, or byte overwrites of a valid makeCredential/getAssertion template; the presence byte picks touch, timeout or cancel.], [The counter moves only on a successful makeCredential/getAssertion, by exactly one. A signature produced after parking needed a confirmed touch; one produced without parking is a getAssertion with the UP flag clear. Success bodies are canonical CBOR with no trailing bytes. Nothing stays parked. Responses are 1 to `MAX_MSG_SIZE` bytes.], [1, 2, 4]),
+  ([`ctap_dispatch`], [`[mode, presence, …]`: a raw request, or byte overwrites of a valid makeCredential/getAssertion template; the presence byte picks touch, timeout or cancel.], [The counter moves only on a successful makeCredential/getAssertion, by exactly one. A signature produced after parking needed a confirmed touch; one produced without parking is a getAssertion with the UP flag clear. Success bodies are canonical CBOR with no trailing bytes. Nothing stays parked. Responses are 1 to `MAX_MSG_SIZE` bytes. No single request changes the PIN record or signs with UV.], [1, 2, 4, 10]),
   ([`ctaphid_stack`], [Records `[flags, packet(64)]`: channel choice, clock jumps, touch or timeout.], [The full USB path: reassembly, the authenticator, fragmentation. Receive state stays within bounds; no request is left unanswered; output is bounded.], [4, 5]),
   ([`ble_stream`], [A fragment size, then GATT writes of chosen lengths with clock advances.], [The BLE framer and the authenticator together. No notification exceeds the fragment size.], [4]),
   ([`serial_deframe`], [A script of raw bytes, intact frames and frames with one byte overwritten.], [Every report emitted came from wire bytes that are exactly its encoding (so its CRC was valid and no second encoding is accepted); nothing is emitted before a delimiter; an intact frame always gets through, whatever garbage came before it.], [4]),
   ([`credential_unwrap`], [A tag key, an `rpIdHash` and a candidate credential ID.], [An accepted ID is exactly what `wrap` mints for the recovered nonce at that RP; a minted ID always unwraps to its nonce.], [3]),
   ([`pin_protocol`], [A key-agreement scalar, the platform's COSE key, then a message.], [An accepted key re-encodes to the same key, and a key without extra labels is byte for byte the canonical encoding. `decrypt` accepts exactly `iv ‖ whole blocks`, and re-encrypting under the same IV gives the message back. `verify` accepts only `authenticate`'s tag. Checked with a planted bug (CBC chaining removed): caught on the first seed.], [4]),
+  ([`client_pin`], [A script: key agreement, setPIN, changePIN, token requests, makeCredential and getAssertion with the token, power cycles, resets, failing storage. The target is a correct platform; the input only chooses what it does.], [A plain model of the CTAP 2.1 PIN rules predicts the exact status of every step; the stored retries, mismatch count, token and UV flags must match it. The stored counter must already be one lower when the PIN is first processed. A planted bug that compared before counting was caught.], [1, 10]),
 )
 ]
+
+The `client_pin` target had its own lesson. Its first oracle compared every status code
+with the model, and a planted bug that compared the PIN *before* storing the attempt
+passed it: from the outside the two orders answer identically. What the order protects
+against is a power cut between the two steps, which no status code shows. The fix was to
+make the order itself observable: the mock platform notes the stored counter at the
+moment the PIN is first processed, and the oracle requires it to be one lower already. The
+planted bug then failed within seconds, and so did the unit test written alongside.
 
 The `serial_deframe` property "an intact frame always gets through" is the regression test
 for the bridge startup hang of chapter 6: before every frame began with a delimiter, boot text
@@ -233,15 +242,18 @@ The limits are as important:
 The latest run, two minutes per target from the seeds with no failures:
 
 #dtable(
-  columns: (1fr, 1fr, 1fr, 1fr, 1fr, 1fr, 1fr),
-  ("cbor_decode", "ctap_dispatch", "ctaphid_stack", "ble_stream", "serial_deframe", "credential_unwrap", "pin_protocol"),
-  ([14.9 M], [2.7 M], [0.6 M], [2.6 M], [2.2 M], [35.4 M], [0.07 M]),
+  columns: (1fr, 1fr, 1fr, 1fr),
+  ("cbor_decode", "ctap_dispatch", "ctaphid_stack", "ble_stream"),
+  ([14.9 M], [3.4 M], [0.6 M], [2.6 M]),
+  ("serial_deframe", "credential_unwrap", "pin_protocol", "client_pin"),
+  ([2.2 M], [35.4 M], [0.07 M], [0.01 M]),
 )
 
 Executions per run depend on how much code each input reaches: a CTAPHID input carries
 whole transactions through the authenticator, including ECDSA signatures, while a
 credential ID check is one HMAC. A `pin_protocol` input costs a full elliptic-curve
-key agreement, which is why that target manages the fewest runs. Longer runs before a release are worth their time, and
+key agreement, and a `client_pin` script up to 64 operations with several each, which is
+why those two manage the fewest runs. Longer runs before a release are worth their time, and
 inputs captured from real browsers through the bridge make good seeds.
 
 == Mutation testing
@@ -258,7 +270,8 @@ no test notices.
   ([First run], [61 / 459], [Revealed untested boundaries (user-ID length 64/65, reset window at exactly 10 000 ms), optional members whose *type* was never checked, CTAPHID resync corners, status codes only compared with themselves, and self tests whose failure branch could never run.]),
   ([After fixes], [0], [New targeted tests; an unreachable branch replaced by a compile-time assertion; dead API removed; fault injection added to the self tests.]),
   ([Storage added], [11], [The new record log passed its functional tests, yet its on-flash *format*, CRC rejection and sector-switch schedule were unpinned: mutants that wasted slots or erased too often survived. Fixed with a golden layout test, an erase-count schedule test and corruption tests.]),
-  ([Current], [*0 / 532*], [446 caught, 81 unviable (do not compile), 5 time out (infinite loops, counted as caught). Includes the PIN protocol primitives.]),
+  ([clientPIN added], [6 / 696], [The token lifetime was tested only through its own constant, the session's `Debug` output not at all, and one buffer size was an equivalent mutant. Fixed with a literal ten-minute test, a `Debug` test, and a compile-time assertion in place of the arithmetic.]),
+  ([Current], [*0 / 690*], [597 caught, 87 unviable (do not compile), 6 time out (infinite loops, counted as caught).]),
 )
 
 The policy (`AGENTS.md` §4) is *zero unexplained survivors*. The only excluded class is
@@ -312,7 +325,13 @@ against two devices:
 
 Finally, `scripts/fido2_check.py` drives the device with Yubico's *python-fido2*, both as
 client *and* as relying-party server. That is a completely independent implementation of
-both ends of the protocol.
+both ends of the protocol. `scripts/fido2_pin_check.py` does the same for the PIN: it sets
+one, checks that a wrong guess is counted and a right one restores the counter, gets
+tokens and changes the PIN, all without a touch; with `--touch` it also registers and signs
+in with user verification required. The PIN protocol's primitives were pinned byte for
+byte to python-fido2 before any of this ran, and on the C6 the device passed every no-touch
+check on the first run (python-fido2 itself refuses to send a PIN shorter than four
+characters, so that rule is tested only in Rust).
 
 == Static checks
 

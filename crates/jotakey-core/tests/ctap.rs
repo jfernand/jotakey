@@ -252,7 +252,12 @@ fn pin_auth_probe() {
     let mut p = make_credential_params(RP);
     p.push((V::U(8), V::B(vec![])));
     assert_eq!(h.status(&request(MAKE_CREDENTIAL, p.clone())), Status::PinNotSet.code());
-    p.last_mut().unwrap().1 = V::B(vec![1; 16]);
+    // A real pinUvAuthParam needs its protocol, protocol two, and a token.
+    p.last_mut().unwrap().1 = V::B(vec![1; 32]);
+    assert_eq!(h.status(&request(MAKE_CREDENTIAL, p.clone())), Status::MissingParameter.code());
+    p.push((V::U(9), V::U(1)));
+    assert_eq!(h.status(&request(MAKE_CREDENTIAL, p.clone())), Status::InvalidParameter.code());
+    p.last_mut().unwrap().1 = V::U(2);
     assert_eq!(h.status(&request(MAKE_CREDENTIAL, p)), Status::PinAuthInvalid.code());
 }
 
@@ -280,7 +285,8 @@ fn missing_and_malformed_parameters() {
     // Empty request and unknown command.
     assert_eq!(h.status(&[]), Status::InvalidLength.code());
     assert_eq!(h.status(&[0x42]), Status::InvalidCommand.code());
-    assert_eq!(h.status(&[CLIENT_PIN, 0xa0]), Status::InvalidCommand.code());
+    assert_eq!(h.status(&[0x0B]), Status::InvalidCommand.code());
+    assert_eq!(h.status(&[CLIENT_PIN, 0xa0]), Status::MissingParameter.code());
     // No allow list: nothing to sign with.
     assert_eq!(
         h.status(&request(GET_ASSERTION, vec![(V::U(1), V::t(RP)), (V::U(2), V::B(CDH.to_vec()))])),
@@ -400,7 +406,9 @@ fn optional_members_are_type_checked() {
     assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 4, V::U(1)))), unexpected);
     assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 4, V::M(vec![])))), 0);
     assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 6, V::B(vec![])))), Status::PinNotSet.code());
-    assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 6, V::B(vec![1; 16])))), Status::PinAuthInvalid.code());
+    assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 6, V::B(vec![1; 16])))), Status::MissingParameter.code());
+    assert_eq!(h.status(&request(GET_ASSERTION, with(with(ga(), 6, V::B(vec![1; 16])), 7, V::U(2)))), Status::PinAuthInvalid.code());
+    assert_eq!(h.status(&request(GET_ASSERTION, with(with(ga(), 6, V::B(vec![1; 16])), 7, V::U(1)))), Status::InvalidParameter.code());
     assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 7, V::t("one")))), unexpected);
     // Entity members and descriptor transports are type-checked too.
     let mut p = make_credential_params(RP);

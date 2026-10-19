@@ -11,10 +11,10 @@ what it means, how the proof works, and which later theorem relies on it. The so
 carry the same explanations in their doc comments (*Proves* and *How*), so the chapter and
 the code can be read side by side.
 
-There are 45 theorems in four files. Most are *lemmas*: stepping stones, proved because a
+There are 56 theorems in five files. Most are *lemmas*: stepping stones, proved because a
 bigger proof needs them. Following the dependencies from each lemma to the theorems that
 use it, we eventually reach theorems that nothing else uses. These are the *key theorems*:
-the conclusions the whole development exists to establish. There are twelve.
+the conclusions the whole development exists to establish. There are sixteen.
 
 #let inv(body) = text(size: 7pt, fill: fg-muted)[#body]
 
@@ -45,6 +45,14 @@ the conclusions the whole development exists to establish. There are twelve.
     [Legitimate credentials keep working. This is the anti-vacuity partner of the next theorem.]),
   ([`credential_bound_to_relying_party` #inv[· invariant 3] \ An ID minted for one relying party is rejected at any other, assuming the MAC does not collide.],
     [Phishing resistance at the credential level: an ID is useless outside the site that created it.]),
+  ([`wrong_pins_between_successes_le_eight` #inv[· invariant 10] \ At most 8 wrong PINs are compared between correct entries, whatever happens in between.],
+    [A thief gets 8 guesses at the PIN, not 10 000. Power cycles and interrupted attempts do not add any.]),
+  ([`wrong_pins_in_a_row_le_three` #inv[· invariant 10] \ At most 3 wrong PINs in a row without a power cycle.],
+    [Guessing runs at the pace of a human unplugging the key.]),
+  ([`blocked_until_reset` #inv[· invariant 10] \ A blocked PIN accepts nothing until a reset.],
+    [The only way past a blocked PIN is a reset, which also ends every credential.]),
+  ([`comparison_needs_a_counted_retry` #inv[· invariant 10] \ A PIN is compared only after a retry was counted for it.],
+    [The rule that makes the counter mean something; the Rust side checks the same order.]),
 )
 
 The invariant numbers are those of `AGENTS.md`, §2. Two of the key theorems prove no
@@ -70,7 +78,7 @@ on them:
   outputs, with no assumption about the MAC at all. `credential_bound_to_relying_party` is
   a corollary.
 
-All twelve key theorems and these four are listed in `formal/AxiomAudit.lean`, which checks
+All sixteen key theorems and these four are listed in `formal/AxiomAudit.lean`, which checks
 on every build that they rest only on Lean's three standard axioms (§9.3). The two panels
 below show which theorem is proved from which; key theorems are at the left margin.
 
@@ -92,7 +100,7 @@ decodeHead_consumes_input
 ```
 ]
 
-#codepanel(title: "Who uses whom: CTAPHID, authenticator, credentials")[
+#codepanel(title: "Who uses whom: CTAPHID, authenticator, credentials, PIN")[
 ```
 receivePackets_ignores_other_channels ─ receivePacket_ignores_other_channels
 receivePackets_preserves_well_formed
@@ -116,13 +124,20 @@ faulted_stays_faulted_and_never_signs   (direct)
 
 unwrap_recovers_nonce                   (direct)
 credential_bound_to_relying_party ─ unwrap_accepts_only_wrapped_ids
+
+wrong_pins_between_successes_le_eight
+└─ runTrace_keeps_budget ─ handleEvent_keeps_budget ─ attempt_keeps_budget
+wrong_pins_in_a_row_le_three
+└─ runTrace_keeps_streak ─ handleEvent_keeps_streak ─ attempt_keeps_streak
+blocked_until_reset ─ blocked_step
+comparison_needs_a_counted_retry        (direct)
 ```
 ]
 
 The reading order follows the files: numbers and bytes first (§10.2), then CBOR heads
 (§10.3) and the validator built on them (§10.4), CTAPHID (§10.5), the authenticator state
-machine (§10.6) and credential IDs (§10.7). §10.8 lists what the proofs leave out, and
-§10.9 maps every Rust name to its Lean counterpart. The Lean
+machine (§10.6), credential IDs (§10.7) and the PIN lockout (§10.8). §10.9 lists what the
+proofs leave out, and §10.10 maps every Rust name to its Lean counterpart. The Lean
 syntax is introduced in the same order in the comments of the source files, and
 `formal/Jotakey.lean` repeats the order.
 
@@ -142,7 +157,7 @@ Four conventions run through all the files:
   (`decodeHead_accepts_only_canonical`), and variables after what they hold (`width`,
   `relyingParty`, `nextSequence`). The one deliberate exception is `ih`, the conventional
   name for an induction hypothesis. The Rust code follows the same rule in its own
-  conventions; §10.9 translates between the two.
+  conventions; §10.10 translates between the two.
 - *Hypotheses are arguments.* `(hFits : value < 256 ^ width)` in a theorem's signature
   means "assuming the value fits in `width` bytes". Hypothesis names start with `h` and
   say what they assume. Calling the theorem requires a proof of each, so every assumption
@@ -680,6 +695,42 @@ cryptographic proofs, such as EasyCrypt or SSProve, and is outside the scope of 
 project.
 ]
 
+== PIN lockout
+
+*File:* `formal/Jotakey/ClientPin.lean`. A PIN is only as strong as the limit on guessing
+it: a 4-digit PIN with unlimited tries falls in 10 000 attempts. The model keeps the
+persisted state (the PIN and the retry counter, starting at 8) and the RAM state (wrong PINs
+in this power cycle). An *attempt* counts itself first, storing `retries - 1`, and then
+compares. A correct PIN refills the counter and clears the mismatches; a wrong one adds a
+mismatch. At 0 retries the PIN is blocked; at 3 mismatches PIN entry stops until the next
+power cycle. The events are attempts, changes of PIN, setting it, power cycles, resets, and
+`interruptedAttempt`: power lost after the attempt was counted.
+
+- *`comparison_needs_a_counted_retry`*: a PIN is compared, rightly or wrongly, only with a
+  retry left and fewer than 3 mismatches, and a wrong one leaves the counter exactly one
+  lower. Case analysis over `attempt`.
+- *`wrong_pins_between_successes_le_eight`* (key theorem): along *any* trace from a state
+  with at most 8 retries, at most 8 wrong PINs are compared between one correct entry (or
+  setting the PIN, or a reset) and the next. The induction carries the budget
+  `wrong + retries ≤ 8`: a wrong PIN adds one to `wrong` and removes one retry, and every
+  event that clears `wrong` refills the counter. Since `retries` cannot go below 0, `wrong`
+  stays at most 8. An interrupted attempt removes a retry without comparing anything, which
+  only helps.
+- *`wrong_pins_in_a_row_le_three`*: from power-up, at most 3 wrong PINs are compared in a
+  row without a correct entry, a power cycle or a reset between them. Same shape, with the
+  invariant `streak ≤ mismatches ≤ 3`.
+- *`blocked_until_reset`* (key theorem): once the counter is 0 with a PIN set, no trace
+  without a reset accepts a PIN. Every other event either refuses or, for `setPin`, sees a
+  PIN already set, and none of them raises the counter.
+
+What makes "counted before compared" matter is the power cut: if the device compared first
+and stored afterwards, unplugging it at the right moment would give an attacker a free
+guess. The model has no event in which a comparison happens without its cost, because
+`attempt` lowers the counter in the same step. On the Rust side the order is checked
+directly: the mock platform records the stored counter at the moment the PIN is first
+processed, and both a unit test and the `client_pin` fuzz target require it to be one
+lower already. A planted bug that compared first was caught by both.
+
 == What the proofs leave out
 
 Each model makes choices about what to leave out (§9.4), and those choices are as important
@@ -692,6 +743,7 @@ as the theorems. In one place:
   ([CTAPHID], [`INIT`, `CANCEL`, timeouts and the response path. A combined theorem — owner packets interleaved with foreign ones give the same result as the owner packets alone — would follow from the existing lemmas but is not stated.]),
   ([Authenticator], [The parser's classification of requests into `Command`, the clock that provides `uptimeMs`, flash write failures, and keepalives. Fault absorption is proved per event, not over traces.]),
   ([Credentials], [The cryptography: the MAC is a parameter, and `hNoCrossSiteCollision` idealises collision resistance. Key derivation (HKDF, P-256 scalars) is not modelled.]),
+  ([PIN lockout], [The PIN protocol's cryptography (key agreement, encryption, MACs) and the tokens: which requests count as attempts is taken from the code, not derived. Storage write failures are not modelled (in Rust they stop the attempt before the comparison). The reset here is unconditional; its window and touch are proved in the authenticator model.]),
   ([Link to Rust], [Only the CBOR model is tied to the code by differential testing. The others are tied by careful transcription, review, and the tests and fuzz oracles of chapter 8 that check the same properties on the real code (§9.7). The planned Aeneas experiment would replace transcription with translation.]),
 )
 
@@ -734,7 +786,7 @@ and `AGENTS.md` requires both to change together with any rename.
   ([*Authenticator*], [], []),
   ([`Authenticator::process`, `complete`], [`processRequest`, `completePresence`], [Rust parses CBOR; Lean receives a classified `Command`.]),
   ([`PresenceResult`], [`PresenceResult`], [Same name.]),
-  ([`Pending`], [`PendingCommand`], [Same variants.]),
+  ([`Pending`], [`PendingCommand`], [Same variants. Their `user_verified` (UV) is not modelled here.]),
   ([`PendingOrSilent::Silent`], [`Command.silentAssertion`], [getAssertion with `up: false`: signed in `process`, never parked.]),
   ([`sign(…, user_present, …)`], [`Output.signature … userPresent`], [The UP flag; `true` only from `complete` under `Confirmed`.]),
   ([`Outcome` + response bytes], [`Output`], []),
@@ -745,6 +797,12 @@ and `AGENTS.md` requires both to change together with any rename.
   ([`wrap`, `unwrap` (`tagger`, `rp_id_hash`, `id`)], [`wrap`, `unwrap` (`mac key`, `relyingParty`, `credentialId`)], [Lean takes the MAC as a parameter `mac`; Rust's `Tagger` plays `mac key`. Rust's `unwrap` can also fail when the hardware does, which the model leaves out.]),
   ([`VERSION`, `NONCE_LEN`, `TAG_LEN`], [`formatVersion`, `nonceLength`, `tagLength`], []),
   ([return type `[u8; TAG_LEN]`], [hypothesis `MacOutputsTagLength mac`], [The Rust type guarantees what Lean must assume.]),
+  ([*PIN lockout*], [], []),
+  ([`PinRecord`, `PinSession::mismatches`], [`State` (`pin`, `retries`, `mismatches`)], [The verifier becomes the PIN; no cryptography.]),
+  ([`check_pin`, `change_pin`, `set_pin`], [`attempt`, `Event.changePin`, `Event.setPin`], [`attempt` counts, then compares.]),
+  ([`PIN_RETRIES_MAX`, `MISMATCHES_PER_POWER_CYCLE`], [`maxRetries`, `mismatchesPerPowerCycle`], []),
+  ([power lost after `store_pin`], [`Event.interruptedAttempt`], []),
+  ([PIN statuses after a comparison], [`Output.wrongPin`], [Whatever the status code.]),
 )
 ]
 
@@ -764,5 +822,7 @@ what the Lean theorems prove about the model.
   ([`reset_window_and_effect`], [`epoch_change_requires_confirmed_touch`, `epoch_change_requires_reset_in_window`]),
   ([`fails_closed`], [`faulted_stays_faulted_and_never_signs`]),
   ([`roundtrip`, `bound_to_rp` (`credential.rs`)], [`unwrap_recovers_nonce`, `credential_bound_to_relying_party`]),
+  ([`wrong_pins_are_counted_and_block`, `client_pin` model], [`wrong_pins_between_successes_le_eight`, `wrong_pins_in_a_row_le_three`, `blocked_until_reset`]),
+  ([`an_attempt_is_stored_before_the_pin_is_compared`, `retries_at_pin_check` oracle], [`comparison_needs_a_counted_retry`]),
 )
 ]

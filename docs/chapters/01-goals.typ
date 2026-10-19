@@ -74,9 +74,11 @@ We assume a strong attacker.
     [*Irrelevant.* Public keys cannot be used to log in; credential IDs are useless without
      the device's root key.]),
   ([Thief, casual], [Holds the device for minutes, no lab.],
-    [*Partially defeated.* No PIN in the MVP: the thief can log in where the user only needs
-     a security key. Accounts that also require a password stay safe. (Adding a PIN is in the
-     roadmap, §11.)]),
+    [*Defeated with a PIN; partially without.* With a PIN set, every login that asks for
+     user verification needs it, and the key blocks after 8 wrong guesses (3 per power
+     cycle, invariant 10). Without a PIN, or where a site asks only for presence, the thief
+     can log in where the user only needs a security key. Accounts that also require a
+     password stay safe.]),
   ([Thief, laboratory], [Decapsulation, voltage/EM fault injection, power analysis.],
     [*Jotakey key: partially defeated.* The root secret and the counter stay in the OPTIGA
      secure element (EAL6+ hardware). A thief who breaks the STM32 can *use* the key while holding
@@ -99,7 +101,7 @@ We assume a strong attacker.
 
 == Security invariants
 
-The design is centered around by nine invariants. They are written in `AGENTS.md` (normative for
+The design is centered around ten invariants. They are written in `AGENTS.md` (normative for
 anyone changing the code). Each is enforced in code and checked by tests. Where marked
 ⊢, they are also proved in Lean. Appendix A traces each invariant to its implementation,
 tests and theorems.
@@ -116,4 +118,5 @@ tests and theorems.
   ([7], [Fail closed: failed self tests disable the authenticator permanently.], [⊢]),
   ([8], [The root secret never leaves its hardware key store (OPTIGA or eFuse HMAC); secrets are zeroized, never logged.], []),
   ([9], [No secret-dependent branches or memory accesses in our code.], []),
+  ([10], [At most 8 wrong PINs between correct ones, 3 per power cycle; every attempt is counted durably before the PIN is compared.], [⊢]),
 )

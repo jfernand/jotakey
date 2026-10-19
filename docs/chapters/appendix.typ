@@ -21,7 +21,8 @@ Every invariant of `AGENTS.md` §2, with where it is enforced, tested and proved
   ([6], [`ctap/reset.rs` window + touch; epoch rotation], [`reset_window_and_effect`, `reset_window_boundary_is_inclusive`], [`Authenticator.epoch_change_requires_confirmed_touch`, `epoch_change_requires_reset_in_window`]),
   ([7], [`main.rs` boot sequence; `Authenticator::fault`; `RngHealth` on every byte], [`fails_closed`, `every_injected_fault_is_detected`, on-device KATs and TRNG], [`Authenticator.faulted_stays_faulted_and_never_signs`]),
   ([8], [`Zeroizing` secrets; HMAC peripheral (C6) or OPTIGA (key); no `Debug` of secrets], [Review; `cargo deny`], [—]),
-  ([9], [`subtle::ConstantTimeEq`; RustCrypto `p256`], [Review], [—]),
+  ([9], [`subtle::ConstantTimeEq`; RustCrypto `p256` and bitsliced `aes`; branch-free PIN policy scan], [Review], [—]),
+  ([10], [`ctap/client_pin.rs` `check_pin` (store `retries − 1`, then compare), `usable_pin`, `PinSession::mismatches`; PIN log (C6)], [`wrong_pins_are_counted_and_block`, `an_attempt_is_stored_before_the_pin_is_compared`, `a_failed_restore_after_a_correct_pin_issues_no_token`; `client_pin` model and `retries_at_pin_check` oracle], [`ClientPin.wrong_pins_between_successes_le_eight`, `wrong_pins_in_a_row_le_three`, `blocked_until_reset`, `comparison_needs_a_counted_retry`]),
 )
 ]
 
@@ -37,9 +38,9 @@ Every invariant of `AGENTS.md` §2, with where it is enforced, tested and proved
   ([`crates/jotakey-bridge`], [Linux serial ⇄ uhid bridge.]),
   ([`crates/jotakey-host-tests`], [Independent client, simulator, RP checks, hardware tests.]),
   ([`crates/jotakey-explorer`], [`just explore`: terminal browser for attached FIDO keys (read-only).]),
-  ([`fuzz/`], [Seven cargo-fuzz targets; `seeds/` written by `make_seeds.py`.]),
+  ([`fuzz/`], [Eight cargo-fuzz targets; `seeds/` written by `make_seeds.py`.]),
   ([`formal/`], [Lean 4: `Cbor`, `CtapHid`, `Authenticator`, `Credential`; `Main.lean` (executable spec); `AxiomAudit.lean`.]),
-  ([`scripts/`], [`provision.sh` (irreversible, human-only), udev rules, `fido2_check.py`.]),
+  ([`scripts/`], [`provision.sh` (irreversible, human-only), udev rules, `fido2_check.py`, `fido2_pin_check.py`.]),
   ([`docs/`], [This report (`typst compile docs/jotakey.typ`).]),
 )
 
