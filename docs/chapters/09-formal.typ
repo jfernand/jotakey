@@ -2,21 +2,21 @@
 #import "../isss-template.typ": *
 #import "../lib.typ": *
 
-= Formal verification, from the ground up
+= Formal verification
 
 This chapter assumes no background in formal methods. It explains what formal
 verification is, surveys the techniques, teaches enough Lean 4 to read Jotakey's proofs,
 walks through the main ones, and is explicit about what they do *not* guarantee. Chapter
 10 then goes through every theorem in detail.
 
-== What a proof buys you
+== Proofs vs. tests
 
 Every test in chapter 8 checks *some* inputs. A fuzzer may run a billion of them, but a
 CTAP message has more possible values than there are atoms in the universe. As Dijkstra
 put it in 1970, "program testing can be used to show the presence of bugs, but never to
 show their absence."
 
-A *formal proof* is different in kind. It is a mathematical argument, checked mechanically
+A *formal proof* is different. It is a mathematical argument, checked mechanically
 by a computer, that a property holds for *every* input, *every* sequence of events, *every*
 possible state. When we prove "no execution of the authenticator state machine produces a
 signature without a confirmed touch", we are not sampling executions. We have shown that
@@ -58,7 +58,7 @@ Landmark results show what the strong end can reach:
 - *Amazon Web Services*: TLA+ for distributed protocols; the Cedar authorization language,
   whose specification and proofs are written in Lean.
 
-== Lean 4 in twenty minutes
+== Lean 4 primer
 
 Lean 4 is both a functional programming language and a proof assistant. That duality is
 exactly what we need: the *same* definitions can be run (as an executable specification)
@@ -116,7 +116,7 @@ issue commands that build it step by step:
   ([`exact`, `apply`], [Use an existing lemma to finish, or reduce, the goal.]),
 )
 
-=== Who checks the checker?
+=== Quis custodiet ipsos custodes?
 
 Tactics are elaborate and could contain bugs. That does not matter. Every tactic only
 *proposes* a proof term, and a small, separate *kernel* type-checks the final term. Only
@@ -141,7 +141,7 @@ trouble: `sorryAx`, which records an unfinished proof, and `Lean.ofReduceBool`, 
 records a proof that trusts the compiler. Neither appears, and `just lean` fails the build
 if either ever does.
 
-== Modelling: deciding what to prove about
+== Modelling
 
 A model is a deliberate simplification. Jotakey's models follow three rules:
 
@@ -439,7 +439,7 @@ exact boundary (`19 00 ff`) by hand. The random property test
 `accepted_heads_are_canonical` did *not* catch it: random bytes rarely land on a value of
 exactly 255 after a `39`. Each net has different holes.
 
-=== What a pass does and does not mean
+=== What a passing differential test means
 
 A pass means: on 101 536 inputs, chosen to sit on the boundaries, the shipped decoder gives
 exactly the answers of a function proved to have canonical uniqueness, termination and the
