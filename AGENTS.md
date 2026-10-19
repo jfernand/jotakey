@@ -222,7 +222,7 @@ crates/jotakey-fw        ESP32-C6 firmware (esp-hal, embassy, BLE via esp-radio 
 crates/jotakey-testfw    on-device test firmware (embedded-test + probe-rs)
 crates/jotakey-bridge    Linux serial↔uhid bridge
 crates/jotakey-host-tests end-to-end tests against a real device through the bridge
-crates/jotakey-explorer  ratatui browser for FIDO keys over hidraw: INIT, getInfo, PIN retries, U2F VERSION
+crates/jotakey-explorer  ratatui browser for FIDO keys over hidraw: USB and HID descriptors (sysfs), INIT, getInfo, PIN retries, U2F VERSION
 fuzz/                    cargo-fuzz targets; seeds/ from make_seeds.py
 formal/                  Lean 4 models, proofs, executable spec; NAMES.md maps Rust ↔ Lean names
 docs/                    Typst document (ISSS design)

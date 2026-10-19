@@ -9,4 +9,5 @@ pub mod app;
 pub mod cbor;
 pub mod ctaphid;
 pub mod discover;
+pub mod hid;
 pub mod report;

@@ -139,7 +139,7 @@ impl App {
             let report = match Hidraw::open(&device.path) {
                 Ok(io) => report::query(&device, io),
                 Err(e) => Report {
-                    sections: vec![report::device_section(&device)],
+                    sections: report::local_sections(&device),
                     problems: vec![format!("cannot open {}: {}", device.path.display(), crate::ctaphid::Error::Io(e))],
                     ..Report::default()
                 },
@@ -300,7 +300,7 @@ impl App {
         let lines = match self.entries.get(&device.path) {
             Some(Entry::Done(report)) => report_lines(report, self.raw),
             _ => {
-                let mut lines = section_lines(&report::device_section(&device));
+                let mut lines: Vec<Line<'static>> = report::local_sections(&device).iter().take(2).flat_map(section_lines).collect();
                 lines.push(Line::from(Span::styled("Querying the device…", Style::new().fg(ACCENT))));
                 lines
             }

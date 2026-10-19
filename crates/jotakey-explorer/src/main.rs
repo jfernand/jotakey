@@ -49,7 +49,7 @@ fn dump() -> std::io::Result<()> {
         let r = match Hidraw::open(&d.path) {
             Ok(io) => report::query(d, io),
             Err(e) => Report {
-                sections: vec![report::device_section(d)],
+                sections: report::local_sections(d),
                 problems: vec![format!("cannot open {}: {}", d.path.display(), Error::Io(e))],
                 ..Report::default()
             },
