@@ -135,7 +135,7 @@ async fn home(cx: &Cx) -> Result<impl View> {
             <body>
                 <main>
                     <h1>"Jotakey demo"</h1>
-                    <p class="lead">"A relying party on your own machine: register a security key, then sign in with it."</p>
+                    <p class="lead">"A relying party demo. Register a security key, then sign in with it."</p>
                     if signed_in {
                         <section class="card ok">
                             <h2>"Signed in as " (name.as_str())</h2>
