@@ -54,8 +54,12 @@ uses webauthn-rs's *security key* flow, which matches that:
 
 - `residentKey: "discouraged"`. The key does not store credentials, so sign-in starts with
   a username and the server sends that user's credential IDs.
-- `userVerification: "preferred"`. With no PIN on the key, it signs with UV clear, and
-  webauthn-rs accepts that. A relying party that *requires* UV would be refused.
+- `userVerification: "discouraged"`, and no `credProtect` extension. Jotakey checks
+  presence (a touch) but has no PIN, which webauthn-rs calls a *user-presence-only security
+  key* (the `danger-user-presence-only-security-keys` feature). Without that setting,
+  webauthn-rs requests credProtect "userVerificationRequired", and Chrome refuses the
+  registration: "Requested protection policy is inconsistent or incongruent with other
+  requested parameters". A relying party that *requires* UV cannot use a Jotakey yet.
 - `attestation: "none"` and ES256 (`-7`), the only algorithm Jotakey implements.
 
 ## Before you put this in front of users

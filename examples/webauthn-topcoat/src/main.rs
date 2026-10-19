@@ -42,6 +42,8 @@ async fn main() {
     let webauthn = WebauthnBuilder::new("localhost", &origin)
         .expect("RP ID matches the origin")
         .rp_name("Jotakey demo")
+        // Touch, no PIN: no credProtect extension, userVerification "discouraged".
+        .danger_set_user_presence_only_security_keys(true)
         .build()
         .expect("WebAuthn configuration");
 
