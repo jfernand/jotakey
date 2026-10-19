@@ -11,7 +11,10 @@ publish = false
 [dependencies]
 topcoat = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-webauthn-rs = "0.5.5"
+# Jotakey checks user presence (a touch) but has no PIN, so it is a "user presence only"
+# security key in webauthn-rs terms; without this feature webauthn-rs asks for credProtect
+# "userVerificationRequired", which browsers reject for non-discoverable credentials.
+webauthn-rs = { version = "0.5.5", features = ["danger-user-presence-only-security-keys"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
