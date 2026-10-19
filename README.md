@@ -22,6 +22,7 @@ It runs on two platforms:
 | `hardware/MANUFACTURING.md` | How to order a hardware release from JLCPCB. |
 | `crates/jotakey-core` | The protocol core: `no_std`, no allocation, no `unsafe`. |
 | `formal/` | Lean 4 models and proofs. |
+| `crates/jotakey-explorer` | `just explore`: a terminal browser for the FIDO keys attached to this computer, any make. |
 | `examples/webauthn-topcoat` | A demo web app: register a Jotakey and sign in with it, on `localhost`. |
 
 ## Versions

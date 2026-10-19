@@ -42,6 +42,10 @@ testfw:
 bridge port="/dev/ttyACM0":
     cargo run -p jotakey-bridge --release -- {{port}}
 
+# Browse the FIDO keys attached to this computer (read-only). `just explore --dump` prints them.
+explore *args:
+    cargo run -p jotakey-explorer --release -- {{args}}
+
 host-tests:
     cargo test -p jotakey-host-tests -- --ignored --test-threads=1
 

@@ -4,6 +4,7 @@ members = [
     "crates/jotakey-core",
     "crates/jotakey-bridge",
     "crates/jotakey-host-tests",
+    "crates/jotakey-explorer",
 ]
 # Firmware crates target riscv32imac-unknown-none-elf and the fuzz crate needs nightly +
 # libFuzzer; they are built from their own directories, as is the example web app.
