@@ -1,0 +1,21 @@
+# (c) Javier Fernandez @ JotaSoft 2026
+# A minimal relying party: register a security key and sign in with it. See README.md.
+[package]
+name = "webauthn-topcoat"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+authors = ["Javier Fernandez @ JotaSoft"]
+publish = false
+
+[dependencies]
+topcoat = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+webauthn-rs = "0.5.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Standalone workspace: an example with server dependencies (tokio, OpenSSL through
+# webauthn-rs) that the device code never links.
+[workspace]
+members = ["."]
