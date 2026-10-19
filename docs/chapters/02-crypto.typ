@@ -2,7 +2,7 @@
 #import "../isss-template.typ": *
 #import "../lib.typ": *
 
-= Cryptography in one chapter
+= Cryptography primer
 
 FIDO2 uses a handful of standard primitives. This chapter explains just enough of each to
 follow the rest of the report. No mathematics beyond arithmetic is required.
@@ -22,7 +22,7 @@ someone holding `key` can compute. Changing a single bit of the message changes 
 unpredictably. Jotakey uses HMAC in two ways:
 
 - to *derive* independent keys from one root key, with a different label for each purpose
-  (`"jotakey/mac/v1"`, `"jotakey/seed/v1"`);
+  (`"jotakey/tag/v1"`, `"jotakey/seed/v1"`);
 - to *authenticate* credential IDs, so the device can recognise its own IDs and reject
   forged or foreign ones (§6.4).
 
@@ -45,10 +45,11 @@ default algorithm, *ES256*, is ECDSA over the NIST P-256 elliptic curve with SHA
   $k dot G$, and from it two numbers $(r, s)$. Verification checks an equation using only
   $Q$.
 
-#callout(kind: "trap", "The nonce is everything")[
+#callout(kind: "trap", "The nonce")[
   If two signatures ever share the same $k$, or if $k$ is even slightly predictable, simple
-  algebra recovers the private key. This is how Sony's PlayStation 3 signing key leaked in
-  2010. Jotakey therefore uses *hedged* nonces (RFC 6979 §3.6): $k$ is derived
+  algebra recovers the private key. This is how Sony's PlayStation 3 signing key leaked in 2010.
+
+  Jotakey therefore uses *hedged* nonces (RFC 6979 §3.6): $k$ is derived
   deterministically from the private key and the message, *and* mixed with 32 fresh bytes
   from the hardware random number generator. A broken RNG cannot cause nonce reuse, because
   the deterministic part protects. A fault attack that skips or repeats part of the
@@ -56,6 +57,28 @@ default algorithm, *ES256*, is ECDSA over the NIST P-256 elliptic curve with SHA
   known-answer self test checks the deterministic path against the RFC's published vector
   at every boot.
 ]
+
+== Protecting a PIN in transit
+
+The PIN (chapter 11) travels from the computer to the key over USB, where other software on
+the computer can watch it. CTAP's *PIN/UV auth protocol two* first agrees a secret, then uses
+it to encrypt and authenticate:
+
+- *ECDH (elliptic-curve Diffie–Hellman).* Each side has a P-256 key pair and sends the
+  other its public key. Each multiplies its own secret scalar by the other's public point;
+  both arrive at the same point, which an eavesdropper who saw only the public keys cannot
+  compute. The authenticator's key pair lasts one power cycle; the computer's lasts one command.
+- *HKDF* turns the shared point's x-coordinate into two independent 32-byte keys: one for
+  HMAC, one for AES.
+- *AES-256-CBC* encrypts the PIN (padded to 64 bytes) and, later, the token the key hands
+  back. A fresh random IV goes in front of every ciphertext. No padding scheme is needed
+  because every message is a whole number of 16-byte blocks.
+- *HMAC-SHA256* tags each request, proving that it came from the side that holds the
+  shared secret.
+
+Jotakey's implementation (`pin_protocol.rs`) is checked byte for byte against
+python-fido2's, an independent implementation that browsers' test suites also use. The AES is RustCrypto's bitsliced software AES,
+which has no secret-dependent table lookups.
 
 == Randomness
 
