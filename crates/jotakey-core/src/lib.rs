@@ -34,6 +34,7 @@ pub mod crypto;
 pub mod ctap;
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
+pub mod pin_protocol;
 pub mod platform;
 pub mod selftest;
 pub mod status;

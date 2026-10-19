@@ -11,7 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 jotakey-core = { path = "../crates/jotakey-core", features = ["mock"] }
-p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa"] }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdh", "ecdsa"] }
 
 # Standalone workspace: built with nightly + sanitizers, separate from the main one.
 [workspace]
@@ -59,6 +59,13 @@ bench = false
 [[bin]]
 name = "serial_deframe"
 path = "fuzz_targets/serial_deframe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pin_protocol"
+path = "fuzz_targets/pin_protocol.rs"
 test = false
 doc = false
 bench = false

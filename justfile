@@ -14,7 +14,7 @@ fuzz target time="300":
     cd fuzz && mkdir -p corpus/{{target}} && cargo +nightly fuzz run {{target}} corpus/{{target}} $(test -d seeds/{{target}} && echo seeds/{{target}}) -- -max_total_time={{time}}
 
 fuzz-all time="120":
-    for t in cbor_decode ctap_dispatch ctaphid_stack ble_stream serial_deframe credential_unwrap; do \
+    for t in cbor_decode ctap_dispatch ctaphid_stack ble_stream serial_deframe credential_unwrap pin_protocol; do \
         {{just_executable()}} fuzz $t {{time}} || exit 1; \
     done
 

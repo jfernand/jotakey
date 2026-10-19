@@ -202,7 +202,7 @@ The `fw`, `flash`, `testfw`, `host-tests` and `bridge` recipes target the ESP32-
 ## 6. Layout
 
 ```
-crates/jotakey-core      protocol core (CBOR, CTAP2, CTAPHID, BLE framing, credentials, self-tests)
+crates/jotakey-core      protocol core (CBOR, CTAP2, CTAPHID, BLE framing, credentials, PIN protocol, self-tests)
 crates/jotakey-fw        ESP32-C6 firmware (esp-hal, embassy, BLE via esp-radio + trouble-host)
 crates/jotakey-testfw    on-device test firmware (embedded-test + probe-rs)
 crates/jotakey-bridge    Linux serial↔uhid bridge
