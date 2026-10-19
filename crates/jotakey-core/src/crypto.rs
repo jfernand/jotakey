@@ -120,6 +120,14 @@ pub const COSE_ALG_ES256: i64 = -7;
 /// [`CborError::BufferFull`] if `enc` is out of space, or [`CborError::Unsupported`] for the
 /// identity point (impossible for a key derived from a nonzero scalar).
 pub fn encode_cose_key(public: &p256::PublicKey, enc: &mut Encoder<'_>) -> Result<(), CborError> {
+    encode_cose_key_with_alg(public, COSE_ALG_ES256, enc)
+}
+
+/// Encode `public` as a P-256 COSE_Key labelled with algorithm `alg`.
+///
+/// # Errors
+/// As [`encode_cose_key`].
+pub fn encode_cose_key_with_alg(public: &p256::PublicKey, alg: i64, enc: &mut Encoder<'_>) -> Result<(), CborError> {
     let point = public.to_encoded_point(false);
     let (Some(x), Some(y)) = (point.x(), point.y()) else {
         return Err(CborError::Unsupported);
@@ -128,7 +136,7 @@ pub fn encode_cose_key(public: &p256::PublicKey, enc: &mut Encoder<'_>) -> Resul
     enc.int(1)?; // kty
     enc.int(2)?; //   EC2
     enc.int(3)?; // alg
-    enc.int(COSE_ALG_ES256)?;
+    enc.int(alg)?;
     enc.int(-1)?; // crv
     enc.int(1)?; //   P-256
     enc.int(-2)?; // x

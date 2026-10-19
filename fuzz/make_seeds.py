@@ -69,6 +69,26 @@ def serial():
     return bytes([3 * len(boot)]) + boot + bytes([1]) + bytes(range(64)) + bytes([1]) + bytes(64)
 
 
+# pin_protocol: the authenticator scalar, the platform's COSE key and a ciphertext, from the
+# python-fido2 vectors in crates/jotakey-core/src/pin_protocol.rs.
+PIN_SCALAR = bytes(range(1, 33))
+PIN_PEER = head(5, 5) + b"".join([
+    head(0, 1), head(0, 2), head(0, 3), head(1, 24),
+    head(1, 0), head(0, 1),
+    head(1, 1), bstr(bytes.fromhex("261efbd3550cf068ef013ed7366ba32f5d6fe557b4b2abce8ade58cba168a55e")),
+    head(1, 2), bstr(bytes.fromhex("1788a0b29a56a6abec4084c0c96bd3dcbca6b507f35dbea9e985708479d8bdc9")),
+])
+PIN_CIPHERTEXT = bytes.fromhex(
+    "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf8291a56a04b2f8b88b9f3732e3635b2c"
+    "830437c66240d732de4f761d7801110ab6026bdb0f02c92fd38b430ce0688e32"
+    "049329fa5b574ebf107fc915f3776e2b")
+
+
+def pin_protocol(message):
+    assert len(PIN_PEER) == 78
+    return PIN_SCALAR + bytes([len(PIN_PEER)]) + PIN_PEER + message
+
+
 def main():
     seeds = {
         "ctaphid_stack": {k: ctaphid(v) for k, v in REQUESTS.items()},
@@ -77,6 +97,7 @@ def main():
         "cbor_decode": {"make_credential_params": MAKE_CREDENTIAL[1:]},
         # mode 0 (raw request), presence byte 0 (Confirmed).
         "ctap_dispatch": {k: bytes([0, 0]) + v for k, v in REQUESTS.items()},
+        "pin_protocol": {"new_pin_enc": pin_protocol(PIN_CIPHERTEXT), "pin_auth": pin_protocol(bytes(33))},
     }
     for target, files in seeds.items():
         d = HERE / target
