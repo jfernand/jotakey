@@ -60,13 +60,13 @@ merge with the first real frame and that reply would be lost. The CRC catches co
 It is an integrity check, nota security mechanism. Corrupt frames are dropped, and CTAPHID's
 own timeouts take over. Logs never mix with frames: the firmware prints only to the *UART* port.
 The two ports have clean roles: "USB" carries the authenticator, "UART" carries diagnostics.
-§6.8 describes the bridge and the framing in detail.
+§6.7 describes the bridge and the framing in detail.
 
 == Software layers
 
 #layers(
   caption: "Crates and their trust levels",
-  ("jotakey-core", [`no_std`, no allocation, `#![forbid(unsafe_code)]`, no `unwrap`/`panic!`/unchecked indexing or arithmetic (enforced by Clippy). CBOR, CTAP2 commands, the PIN protocol, CTAPHID, BLE framing, serial framing, credential wrapping, power-safe storage, self tests. *All* bytes from the host are interpreted here.], "amber"),
+  ("jotakey-core", [`no_std`, no allocation, `#![forbid(unsafe_code)]`, no `unwrap`/`panic!`/unchecked indexing or arithmetic (enforced by Clippy). CBOR, CTAP2 commands, CTAPHID, BLE framing, serial framing, credential wrapping, power-safe storage, self tests. *All* bytes from the host are interpreted here.], "amber"),
   ("jotakey-fw", [ESP32-C6 firmware (esp-hal, embassy, trouBLE). Thin adapters: TRNG, eFuse HMAC key, flash, button, LED, USB-Serial/JTAG, BLE GATT. Implements the core's `Platform` trait.], "dark"),
   ("jotakey-testfw", [On-device test firmware (embedded-test + probe-rs).], "light"),
   ("jotakey-bridge", [Linux host daemon (serial ⇄ uhid).], "light"),
@@ -122,7 +122,7 @@ The two platforms differ only in where the root lives and in the function `F`:
   ([Root], [`K_root`: 64 bytes in OPTIGA data object `0xF1D0`, type pre-shared secret. Created on the device at provisioning from both chips' random generators, then locked: never readable, never changeable, usable only over the encrypted link (§7.5).], [`K_dev`: 256 bits in eFuse BLOCK_KEY0, purpose HMAC_UP, read-protected by hardware.]),
   ([`F`], [TLS 1.2 PRF with SHA-256, run by the OPTIGA's `DeriveKey` command. The Trust M V1 has no HMAC command; its PRF is built from HMAC-SHA256.], [HMAC-SHA256 in the HMAC peripheral.]),
   ([Epoch], [STM32 flash, behind readout protection.], [Encrypted flash.]),
-  ([Counter], [OPTIGA hardware up-counter.], [Flash record log (§6.6).]),
+  ([Counter], [OPTIGA hardware up-counter.], [Flash record log (§6.5).]),
 )
 
 The credential format and its proofs (§9.6) are the same on both platforms: the proofs treat
@@ -138,8 +138,7 @@ the tag function as a parameter.
 
 Nothing secret is ever *stored* in the microcontroller's flash except the epoch (and, on the
 key, the secret that encrypts the link to the OPTIGA). The epoch is useless without the
-root, which the flash never holds. The PIN verifier is derived the same way, with the label
-`"jotakey/pin/v1"` and the PIN's hash as context, so it is useless without the root too.
+root, which the flash never holds.
 
 == Credential IDs. Keys by derivation
 
@@ -168,51 +167,14 @@ The nonce is not secret, and the private key is never in the ID, not even encryp
   rather than hidden.
 ]
 
-== The PIN
-
-A PIN turns "someone touched the key" into "the owner touched the key". The user sets it
-once, through the browser or the operating system (Chrome: Settings → Privacy and security
-→ Security → Manage security keys). Every request that a site marks as needing *user
-verification* then asks for it, and the signature carries the UV flag.
-
-The computer never sends the PIN in the clear, and never sends it with a signing request.
-It runs authenticatorClientPIN with PIN/UV auth protocol two (§2.4): an ECDH key agreement,
-then the PIN's hash encrypted under the shared secret. If the PIN is right, the key returns
-a *pinUvAuthToken*, 32 random bytes encrypted the same way. The next makeCredential or
-getAssertion carries `HMAC(token, clientDataHash)`, which the key checks before it asks for
-the touch. Each token is good for one relying party, the permissions it was issued with
-(`mc`, `ga`), ten minutes, and one touch.
-
-#dtable(
-  columns: (1fr, 2.4fr),
-  ("Rule", "Why"),
-  ([8 wrong PINs, then blocked until reset], [A 4-digit PIN has 10 000 values. Eight guesses give a thief a chance below 1 in 1 000, and a reset removes every credential with the PIN.]),
-  ([3 wrong PINs per power cycle], [Software cannot guess quickly; the user must unplug the key between every three guesses.]),
-  ([Counted before compared], [The decremented counter is stored *before* the PIN is processed. Unplugging the key mid-attempt cannot buy an uncounted guess (invariant 10, proved in §10.8).]),
-  ([Stored as a verifier], [The key keeps `F(root, "jotakey/pin/v1" ‖ epoch ‖ LEFT(SHA-256(PIN), 16))` from the hardware key store, not the PIN's hash. A copy of the flash cannot be used to guess the PIN offline, and a reset, which changes the epoch, leaves no verifier that can match.]),
-  ([Optional per request], [getInfo advertises `makeCredUvNotRqd`, so sites that want only presence keep working with a touch after a PIN is set. Their signatures carry UV = 0.]),
-)
-
-Reset rotates the epoch first and removes the PIN second. If the power fails in between,
-the old PIN record survives but can never match again, and the user resets once more. The
-other order could leave the old credentials usable with the PIN gone.
-
-#callout(kind: "trap", "What the PIN does not stop")[
-  The retry counter lives in the microcontroller's flash, and the microcontroller decides
-  whether the PIN was right. An attacker who manages to run code on it (§7.5) can sign
-  without asking for the PIN at all. The PIN protects against a thief without a lab, which
-  is the common case. Moving the check into the secure element is on the roadmap.
-]
-
 == Persistent state
 
 On the jotakey key, the signature counter lives in the OPTIGA instead (§7.5): a hardware
 up-counter that can only increase, survives power loss by construction, and cannot be
 rolled back even by firmware an attacker controls. The record log described here holds the
-counter, the epoch and the PIN record on the C6, and the epoch and the PIN record on the key.
+counter and the epoch on the C6, and the epoch on the key.
 
-On the C6, three values persist: the signature counter, the epoch and the PIN record (a
-set flag, the retry counter and the verifier, 36 bytes). Each lives in its own
+On the C6, only two values persist: the signature counter and the epoch. Each lives in its own
 power-loss-safe *record log* of two flash sectors. A new value is appended as a record
 `MAGIC ‖ seq ‖ payload ‖ CRC-32` after the last one. When a sector fills, the *other* sector
 is erased and the record goes there. The sector holding the current value is never erased.
@@ -242,7 +204,7 @@ for two consecutive 20 ms polls. A button taped down, or still held from a previ
 request, never approves anything. Holding BOOT for 3 s while idle turns on BLE for two
 minutes, so the radio is never exposed without the owner's intent.
 
-== The USB bridge in detail
+== The USB bridge
 
 §6.1 introduced `jotakey-bridge` in one paragraph. This section describes it completely:
 what happens to a request on its way from the browser to the chip, what each layer does,
@@ -256,7 +218,7 @@ they arrived intact. Every protocol decision is made on the device, by the same 
 that is tested, fuzzed and modelled in Lean. The bridge is about 330 lines in total:
 `main.rs` (127) and `uhid.rs` (202, including tests).
 
-=== The journey of one request
+=== A request's journey
 
 #sequence(
   ("Browser", "Linux HID", "jotakey-bridge", "Firmware usb task", "Authenticator"),
@@ -283,7 +245,7 @@ task. Replies and keepalives travel the same path backwards: `CtapHid` splits th
 reports, the usb task frames them, the bridge unframes them and injects each one into the
 kernel with `UHID_INPUT2`, and the browser reads it from hidraw.
 
-=== On the host: a virtual HID device through uhid
+=== On the host
 
 `uhid` is a Linux kernel interface for implementing HID devices in user space. A program
 opens `/dev/uhid` and exchanges fixed-size `struct uhid_event` records with the kernel. To
@@ -318,7 +280,7 @@ takes through the kernel, an output report from a device without report IDs can 
 with a leading report-number byte of 0. The bridge accepts 64 or 65 bytes and strips that
 byte. Anything else is ignored.
 
-=== On the wire: one frame, byte by byte
+=== On the wire
 
 The serial link is a byte stream, so reports need boundaries. Each report travels as one
 frame: `COBS(report ‖ CRC-32(report)) ‖ 0x00`. This is the actual frame for the first
@@ -369,7 +331,7 @@ importantly, the DTR and RTS control lines are wired to the chip's reset logic (
 how flashing tools reset it), so opening the port the usual way can reboot the
 authenticator. The bridge opens the port with DTR off and clears RTS.
 
-=== On the device: the usb task
+=== On the device
 
 On the chip, `crates/jotakey-fw/src/usb.rs` runs one task that waits on four things at
 once: bytes from the serial port, a reply from the authenticator, a keepalive request, and
@@ -404,7 +366,7 @@ until the port hangs up or fails, wait 500 ms, try again.
   ([Two bridges on one port], [Both read the same stream and each gets part of it. Frames break and are dropped. Run exactly one.]),
 )
 
-=== What a hostile bridge can and cannot do
+=== Hostile bridges
 
 The bridge is outside the security boundary, like the rest of the host. Treating it as an
 attacker gives this picture:
@@ -423,7 +385,7 @@ or to a malicious USB host. That is the threat model FIDO is designed for. The b
 no new attack on the key. It is a new place for host-side malware to hide, which is one
 more reason the roadmap replaces it with a USB co-processor.
 
-#callout(kind: "trap", "Access to /dev/uhid is powerful")[
+#callout(kind: "trap", "Access to /dev/uhid")[
   A process that can write to `/dev/uhid` can create *any* HID device, including a
   keyboard that types commands. `scripts/99-jotakey.rules` gives the `plugdev` group that
   access, which is convenient on a development machine. On a shared or long-lived system,
@@ -449,7 +411,7 @@ just bridge /dev/serial/by-id/usb-Espressif…  # or: cargo run -p jotakey-bridg
 With the bridge running, `python3 scripts/fido2_check.py`, `just host-tests` and any
 browser on the machine see the key. Stop the bridge with Ctrl-C.
 
-=== How it is tested, and current status
+=== Testing
 
 #dtable(
   columns: (1.1fr, 2.4fr),
@@ -458,7 +420,7 @@ browser on the machine see the key. Stop the bridge with Ctrl-C.
   ([Framing], [Round trip of every possible report (property test), all-zero and zero-free reports, corruption and resynchronisation, and the `serial_deframe` fuzz target.]),
   ([Pump loop], [The real `pump` runs between a fake uhid (a datagram socket pair, which keeps event boundaries like `/dev/uhid`) and a pseudo-terminal standing in for the serial port. The test checks one report in each direction, that the idle bridge wakes at most twice in 300 ms (the earlier 5 ms polling loop woke 60 times), and that a hang-up ends the pump so the bridge can reconnect.]),
   ([Whole path], [`jotakey-host-tests` runs a simulated device wired exactly like the usb task (framing → `CtapHid` → authenticator), so every simulated request crosses the real framing code in both directions.]),
-  ([On hardware], [Runs with the C6 DevKit: `scripts/fido2_check.py` and `fido2_pin_check.py` (python-fido2 as client and relying party), a Chrome registration and sign-in through the demo relying party in `examples/webauthn-topcoat`, and the explorer below all go through it.]),
+  ([On hardware], [Runs with the C6 DevKit: `scripts/fido2_check.py` (python-fido2 as client and relying party), a Chrome registration and sign-in through the demo relying party in `examples/webauthn-topcoat`, and the explorer below all go through it.]),
 )
 
 The bridge sleeps in `poll(2)` on both file descriptors, the uhid device and the serial
@@ -467,13 +429,13 @@ bytes, forwards them at once, and uses no CPU while idle. It needs no timer of i
 because all CTAPHID timeouts run on the device. A hang-up or error on the serial port ends
 the loop, and the bridge goes back to waiting for the board.
 
-One limitation is known. The bridge is *Linux-only*, because `uhid` is a Linux interface;
+The bridge is *Linux-only*, because `uhid` is a Linux interface;
 other systems would need their own virtual-HID mechanism.
 
 == Looking at keys: the explorer
 
-Chapter 5 describes what an authenticator says about itself. `jotakey-explorer` lets you
-watch it say it. It is a terminal program that lists every FIDO key attached to the
+Chapter 5 describes what an authenticator says about itself. `jotakey-explorer` exposes that information.
+It is a terminal program that lists every FIDO key attached to the
 computer, of any make, and shows what the selected one reports. It is useful for three
 things: checking that the bridge and the firmware are alive, comparing a Jotakey with
 other keys, and learning the protocol from real answers instead of tables.
@@ -519,10 +481,55 @@ product IDs, the USB descriptor strings and the physical port come from sysfs to
 touching the device. The list is rescanned every two seconds, so keys can be plugged and
 unplugged while it runs.
 
-=== What it asks, and why that is safe
+=== USB and HID descriptors
 
-People will point this tool at the keys that guard their real accounts, so it is
-*read-only by construction*. It sends only these requests:
+Before it sends anything, the explorer shows what the kernel learnt when the key was
+plugged in. The *USB* section comes from the device, configuration, interface and
+endpoint descriptors in sysfs. A typical FIDO key is a full-speed (12 Mbit/s), bus-powered
+device whose HID interface has class `03/00/00`: HID, with no boot protocol, because it is
+not a keyboard. That interface has two interrupt endpoints of 64 bytes, one IN and one
+OUT, each carrying one CTAPHID packet per transfer, polled every few milliseconds. Keys
+with OTP or smart-card functions show more interfaces: an OTP function is a second HID
+interface that pretends to be a boot keyboard and types its codes. The bridge's device is
+virtual, made through `/dev/uhid`, so it has no USB descriptors; the C6 behind it
+enumerates as a USB serial port instead.
+
+The *HID report descriptor* section decodes the descriptor item by item, with each item's
+offset and bytes. It is the same description `jotakey-bridge` registers, and most FIDO keys
+send it nearly byte for byte:
+
+#codepanel(title: "The bridge's report descriptor")[
+```
+Length         34 bytes
+Input report   64 bytes   (the CTAPHID packet size)
+Output report  64 bytes   (the CTAPHID packet size)
+0000  06 d0 f1   Usage Page (FIDO Alliance)
+0003  09 01      Usage (CTAPHID)
+0005  a1 01      Collection (Application)
+0007  09 20        Usage (Input Report Data)
+0009  15 00        Logical Minimum (0)
+000b  26 ff 00     Logical Maximum (255)
+000e  75 08        Report Size (8)
+0010  95 40        Report Count (64)
+0012  81 02        Input (Data, Var, Abs)
+0014  09 21        Usage (Output Report Data)
+  …                (the same four items again)
+001f  91 02        Output (Data, Var, Abs)
+0021  c0         End Collection
+```
+]
+
+*Global* items such as Report Size and Report Count set state; *main* items such as Input
+and Output declare a field with that state; Collection and End Collection group them. The
+explorer adds up the fields to give each report's length: 8 bits × 64 = 64 bytes each way,
+the CTAPHID packet size. A descriptor with report IDs adds an ID byte in front of every
+report; FIDO keys use none, since a CTAPHID packet is a bare 64-byte report. The descriptor comes from the device, so it is untrusted like
+everything else: a truncated or unbalanced one is shown up to the problem, never trusted
+past it.
+
+=== Explorer queries
+
+This tool is *read-only by construction*. It sends only these requests:
 
 #dtable(
   columns: (1.25fr, 2.2fr, 0.9fr),
@@ -532,6 +539,7 @@ People will point this tool at the keys that guard their real accounts, so it is
   ([`authenticatorClientPIN` getPINRetries / getUVRetries], [How many wrong PINs or failed fingerprints are left. Sent only if getInfo says a PIN or built-in UV is set up.], [None: the counters are read, not spent]),
   ([U2F `VERSION` (over `CTAPHID_MSG`)], [`U2F_V2` if the key also speaks the older protocol. Sent only without the NMSG bit.], [None]),
   ([CTAPHID `WINK`, on `w` only], [Nothing; the key blinks so you can tell which one it is.], [None]),
+  ([None: sysfs], [The USB and HID descriptors above, which the kernel read when the key was plugged in.], [None; no I/O to the key at all]),
 )
 
 Nothing it sends creates or uses a credential, asks for a touch, or changes anything on the
@@ -559,9 +567,6 @@ query runs on its own thread, so a silent or misbehaving device cannot freeze th
   ([`maxMsgSize`], [`1200`], [The largest request it accepts (invariant 4).]),
   ([`maxCredentialCountInList`], [`8`], [Credential IDs per allow or exclude list.]),
   ([`maxCredentialIdLength`], [`49`], [Exactly a Jotakey credential ID: version byte, 32-byte nonce, 16-byte tag (§6.4).]),
-  ([`clientPin`], [`false` / `true`], [The key supports a PIN; `true` once one is set (§6.5). The explorer then reads the retry counter.]),
-  ([`pinUvAuthToken`, `makeCredUvNotRqd`], [`true`], [Tokens with permissions, and registration without the PIN for sites that ask only for presence.]),
-  ([`pinUvAuthProtocols`, `minPINLength`], [`[2]`, `4`], [PIN/UV auth protocol two only; PINs of at least four characters.]),
 )
 
 What is missing says as much. There is no `uv` option, so the key has no built-in

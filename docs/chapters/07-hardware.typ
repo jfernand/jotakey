@@ -9,7 +9,7 @@ ESP32-C6 offers, how Jotakey uses it, and where it falls short (§7.1–7.4). It
 the jotakey key, which adds the secure element the C6 lacks (§7.5), and how its board is
 designed (§7.6).
 
-== What the chip provides
+== MCU features
 
 #dtable(
   columns: (1.1fr, 2.4fr),
@@ -18,7 +18,7 @@ designed (§7.6).
   ([HMAC peripheral], [Computes HMAC-SHA256 with an eFuse key the CPU never sees. Jotakey's only access to `K_dev`.]),
   ([Secure Boot v2], [The ROM verifies the bootloader's RSA-3072 signature, and the bootloader verifies the app's, against a key digest in eFuse. Only firmware signed by the owner runs.]),
   ([Flash encryption], [XTS-AES encryption of flash contents with an on-chip key generated at first boot. Protects the firmware image and the `jotakey` partition (epoch, counter) against off-chip reading.]),
-  ([TRNG], [Hardware entropy from SAR ADC and RF noise; health-tested continuously (§2.4).]),
+  ([TRNG], [Hardware entropy from SAR ADC and RF noise; health-tested continuously (§2.5).]),
   ([JTAG / download-mode fuses], [Burned at provisioning so a physical attacker cannot attach a debugger or dump flash through the ROM loader.]),
 )
 
@@ -101,6 +101,42 @@ talk over I²C.
   ([OPTIGA and STM32 random generators], [Both feed every random value, mixed with SHA-512, so one weak generator is not enough to weaken the key. The STM32's generator reports its own health errors (invariant 7).]),
   ([STM32 readout protection], [Level 2 on production units: the debug port, booting from RAM and the factory bootloader are disabled for good, and the flash cannot be read out. The setting is irreversible.]),
 )
+
+=== The microcontroller: STM32L432KC
+
+The STM32L432KC is an ultra-low-power Arm Cortex-M4 with a floating-point unit, in a
+5 × 5 mm UFQFPN32 package ("K" is the 32-pin package, "C" the 256 KB of flash). The key's
+firmware is not written yet, so the table says what each feature is for in the design.
+Features the design does not rely on are marked as candidates. The figures are from the
+datasheet (DS11451) and the reference manual (RM0394) in `hardware/datasheets`.
+
+#dtable(
+  columns: (1.1fr, 2.4fr),
+  ("Feature", "Role in Jotakey"),
+  ([Cortex-M4F, 80 MHz, MPU], [Runs CTAP, the USB stack and the ECDSA P-256 signatures in software (RustCrypto, the same code as on the C6). The memory protection unit can make the stack and data non-executable.]),
+  ([256 KB flash: 128 pages of 2 KB, ECC], [Firmware, plus the record logs for the epoch, the binding secret and the PIN record (§6.6). Error correction fixes single-bit errors and detects double-bit ones in every 64-bit word; the record logs add their own CRC on top.]),
+  ([64 KB SRAM: 48 KB SRAM1 + 16 KB SRAM2], [The core does not allocate, so its buffers are fixed: the largest is a 1200-byte message. SRAM2 has hardware parity and can be write-protected in 1 KB pages. Candidate: hold the short-lived per-credential seeds there, where a glitch that flips a bit raises a parity error instead of going unnoticed.]),
+  ([USB 2.0 full speed, crystal-less], [The key is a native USB HID device: no bridge. The 48 MHz USB clock comes from the internal HSI48 oscillator, which the clock recovery system (CRS) trims against the host's 1 ms start-of-frame packets, and the D+ pull-up is internal. No crystal, no resistors (`hardware/HARDWARE.md` §2).]),
+  ([Touch sensing controller (TSC)], [User presence. Up to 3 channels in this package; the key uses one, the electrode on PB5 with its sampling capacitor on PB4 (group 2). The controller runs the charge-transfer measurement in hardware, with spread spectrum against noise and a max-count error flag for a faulty channel.]),
+  ([True random number generator], [An analog noise source post-processed by LFSRs, one 32-bit word every 42 RNG clock cycles. It runs its own health tests (repetition count, too slow a clock) and stops on a *seed error*, which the firmware treats as fatal (invariant 7). ST advises building an approved DRBG on top for NIST use; Jotakey instead mixes it with the OPTIGA's generator through SHA-512 and runs the same SP 800-90B tests as on the C6.]),
+  ([Readout protection (RDP)], [Level 2 on production units: no debug port, no boot from RAM, no factory bootloader, and the option bytes are frozen. The datasheet calls it irreversible. Level 1 alone would not do: it blocks reads through the debugger, but published attacks defeat it on several STM32 families (see "What a physical attacker gets" below).]),
+  ([Write protection (WRP), 2 areas of 2 KB pages], [Candidate: set over the firmware before level 2, which freezes the option bytes. The flash controller would then refuse to erase or program those pages, so code an attacker manages to run could not make itself permanent.]),
+  ([Proprietary code readout protection (PCROP)], [Execute-only flash: code there can be run, not read, even by the CPU's own data accesses. Of little use here: the firmware is open source, and its secrets are data, not code.]),
+  ([Firewall], [Candidate. Three segments (code, flash data, RAM data) that only code entering through a *call gate* can reach; any other access resets the chip. It is only effective with RDP level 2. Putting the OPTIGA driver and the binding secret behind it would keep a bug elsewhere in the firmware from reading the secret. It does not stop a fault-injection attacker, who can bypass it like RDP.]),
+  ([96-bit unique ID], [Not to be exposed. A USB serial number lets any program on the computer recognise the same key across sessions and users, so the firmware will report no `iSerialNumber`.]),
+  ([Brown-out reset, 1.71–3.6 V supply], [Holds the chip in reset while the supply is below its threshold, at power-up and when it sags. It is not a glitch detector: the supply glitches used in fault injection are typically too short for it to react.]),
+  ([SWD], [On five bottom-side test pads for a pogo-pin jig. Disabled for good by RDP level 2.]),
+)
+
+*Why this part.* It has everything a security key needs on one chip: crystal-less USB, a
+touch controller and a true random number generator, in a package that fits a 12 mm
+board, with 256 KB of flash for a Rust firmware carrying a USB stack and P-256. Its sibling, the STM32L442KC, adds an AES accelerator
+(RM0394, Table 1) and nothing else. Jotakey uses AES only for the PIN protocol, a few
+blocks per PIN entry, which bitsliced software AES does in constant time (§2.4), so the
+accelerator would buy nothing. A Cortex-M33 with TrustZone (STM32L5, U5) would isolate parts
+of the firmware from each other in hardware. The firewall above does a smaller version of
+that, and neither changes the picture against a laboratory attacker, which is why the
+secrets live in the OPTIGA.
 
 === Provisioning
 
