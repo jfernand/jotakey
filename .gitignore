@@ -14,3 +14,10 @@ docs/references/*
 hardware/datasheets/*
 !hardware/datasheets/README.md
 Initial prompt.txt
+
+# IDE
+/.idea/
+
+# cargo-mutants output
+/mutants.out/
+/mutants.out.old/
