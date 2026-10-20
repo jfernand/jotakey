@@ -63,24 +63,38 @@ TRACKS = [
     # Under the MCU. NRST: pin 4 -> C8 -> a via between C4 and C8 -> TP3 on the bottom.
     ("/NRST", "F", 0.2, [(99.75, 95.94), (99.75, 97.22), (98.75, 97.22)]),
     ("/NRST", "B", 0.2, [(98.75, 97.22), (99.95, 98.42)]),
-    # 3V3: VDD pin 1 -> C4, VDDA pin 5 -> C6 -> C7; a bottom-layer link under the MCU joins
+    # Three 3V3 rails joined by the 0R bring-up links: the LDO's (+3V3) -> R6 -> the MCU's
+    # (+3V3_MCU) -> R7 -> the OPTIGA's (+3V3_SE).
+    # LDO output -> R6, which sits beside it.
+    ("+3V3", "F", 0.3, [(96.45, 86.64), (97.22, 86.64), (97.75, 86.11)]),
+    # R6 -> R7 under U4, between its rows of pins; a via between them takes the MCU's rail
+    # down the MCU's right side on the bottom.
+    ("+3V3_MCU", "F", 0.3, [(97.75, 84.99), (102.44, 84.99), (102.55, 85.1)]),
+    # VDD pin 1 -> C4, VDDA pin 5 -> C6 -> C7; a bottom-layer link under the MCU joins
     # them and feeds TP4.
-    ("+3V3", "F", 0.2, [(98.25, 95.94), (98.25, 96.5), (97.8, 96.95), (97.8, 97.22), (96.9, 97.22)]),
-    ("+3V3", "F", 0.2, [(100.25, 95.94), (100.25, 96.5), (100.85, 97.1), (100.85, 97.22),
-                        (101.95, 97.22), (102.9, 97.22)]),
-    ("+3V3", "B", 0.3, [(96.9, 97.22), (97.6, 96.52), (102.2, 96.52), (102.9, 97.22),
-                        (102.54, 98.4)]),
+    ("+3V3_MCU", "F", 0.2, [(98.25, 95.94), (98.25, 96.5), (97.8, 96.95), (97.8, 97.22),
+                            (96.9, 97.22)]),
+    ("+3V3_MCU", "F", 0.2, [(100.25, 95.94), (100.25, 96.5), (100.85, 97.1), (100.85, 97.22),
+                            (101.95, 97.22), (102.9, 97.22)]),
+    ("+3V3_MCU", "B", 0.3, [(96.9, 97.22), (97.6, 96.52), (102.2, 96.52), (102.9, 97.22),
+                            (102.54, 98.4)]),
     # MCU VDD pin 17: a via at the package corner lets SDA and SCL pass over it; C5 beside it.
-    ("+3V3", "F", 0.2, [(101.75, 91.06), (101.75, 90.5), (102.0, 90.25), (102.55, 90.25),
-                        (103.7, 90.42)]),
+    ("+3V3_MCU", "F", 0.2, [(101.75, 91.06), (101.75, 90.5), (102.0, 90.25), (102.55, 90.25),
+                            (103.7, 90.42)]),
     # Bottom-layer link down the MCU's right side: pin 17's corner via to the 3V3 under it.
-    ("+3V3", "B", 0.3, [(102.55, 90.25), (102.55, 96.87), (102.9, 97.22)]),
-    # C5 -> R4's 3V3 end, under SCL.
-    ("+3V3", "F", 0.2, [(103.7, 90.42), (104.05, 90.77), (104.65, 90.77), (105.0, 91.11)]),
+    ("+3V3_MCU", "B", 0.3, [(102.55, 90.25), (102.55, 96.87), (102.9, 97.22)]),
+    # Up the same line to R6 and R7.
+    ("+3V3_MCU", "B", 0.3, [(102.55, 85.1), (102.55, 90.25)]),
+    ("+3V3_MCU", "F", 0.3, [(102.55, 84.41), (102.55, 85.1)]),
+    # R7 -> R3's 3V3 end, and over the top of U2 and down the board's edge to C9 and the
+    # OPTIGA's VCC; SDA reaches U2 under it.
+    ("+3V3_SE", "F", 0.2, [(102.55, 83.39), (103.4, 83.39), (103.4, 85.49)]),
+    ("+3V3_SE", "F", 0.2, [(103.4, 83.39), (107.9, 83.39), (108.2, 83.69), (108.2, 88.92),
+                           (107.9, 89.22)]),
     # The OPTIGA's VCC and C9 sit beyond SE_RST: a bottom-layer hop from the R4 side.
-    ("+3V3", "F", 0.2, [(105.0, 91.11), (105.78, 90.7)]),
-    ("+3V3", "B", 0.2, [(105.78, 90.7), (107.1, 89.7)]),
-    ("+3V3", "F", 0.2, [(107.1, 89.7), (107.9, 89.22)]),
+    ("+3V3_SE", "F", 0.2, [(105.0, 91.11), (105.78, 90.7)]),
+    ("+3V3_SE", "B", 0.2, [(105.78, 90.7), (107.1, 89.7)]),
+    ("+3V3_SE", "F", 0.2, [(107.1, 89.7), (107.9, 89.22)]),
     # SE_RST leaves pin 11 straight, between pins 10 and 12, before Freerouting takes over.
     ("/SE_RST", "F", 0.2, [(102.44, 94.25), (103.4, 94.25)]),
     # BOOT0 pull-down, straight across.
@@ -94,15 +108,16 @@ VIAS = [
     ("VBUS", (96.5, 82.6)),
     ("VBUS", (100.0, 87.5)),
     ("/NRST", (98.75, 97.22)),
-    ("+3V3", (96.9, 97.22)),
-    ("+3V3", (102.9, 97.22)),
-    ("+3V3", (102.55, 90.25)),
-    ("+3V3", (105.78, 90.7)),
-    ("+3V3", (107.1, 89.7)),
+    ("+3V3_MCU", (96.9, 97.22)),
+    ("+3V3_MCU", (102.9, 97.22)),
+    ("+3V3_MCU", (102.55, 90.25)),
+    ("+3V3_MCU", (102.55, 85.1)),
+    ("+3V3_SE", (105.78, 90.7)),
+    ("+3V3_SE", (107.1, 89.7)),
 ]
 # GND is not autorouted: the pours carry it. These connect what the pours cannot reach.
 GND_TRACKS = [
-    ("F", 0.5, [(103.5, 78.5), (103.5, 83.0)]),   # plug GND contact into the top pour
+    ("F", 0.5, [(103.5, 78.5), (103.5, 82.6)]),   # plug GND contact into the top pour
     ("F", 0.3, [(100.0, 83.86), (100.0, 82.5)]),  # U4 GND, boxed in by D- and D+
     ("F", 0.2, [(97.56, 95.25), (97.1, 95.25), (96.6, 95.75)]),  # U1 pin 32, a corner pin
     # U1 pin 16 -> C5 and into U1's exposed pad, between pins 15 and 17.
@@ -112,6 +127,7 @@ GND_TRACKS = [
     ("F", 0.2, [(107.9, 90.18), (107.9, 91.0)]),   # C9 GND, hemmed in by the board edge
 ]
 GND_VIAS = [
+    (103.5, 82.6),  # the plug's GND contact, in the strip of top pour above the OPTIGA's 3V3
     (100.0, 82.5),
     (92.3, 86.7),   # the top pour around the LDO, between C1 and C3
     (96.6, 95.75),

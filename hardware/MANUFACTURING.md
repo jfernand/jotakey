@@ -21,7 +21,7 @@ parity and refilled zones). It writes `fab/hw-v<version>/` (not tracked by git):
 | `jotakey-key-hw-v<version>-bom.csv` | BOM (assembly) |
 | `jotakey-key-hw-v<version>-cpl.csv` | CPL / pick and place (assembly) |
 
-Only the 20 parts with an LCSC number are assembled. The USB-A contacts (J1), the touch
+Only the 22 parts with an LCSC number are assembled. The USB-A contacts (J1), the touch
 electrode (E1) and the SWD pads (TP1–TP5) are copper on the board.
 
 ## 2. PCB options
@@ -60,7 +60,7 @@ In JLCPCB's Gerber viewer:
 
 - [ ] The outline: 47 mm long, 18 mm wide, 12 mm at the tongue; no other cut-outs.
 - [ ] The four contacts reach the tongue's edge; VBUS and GND (outer) are longer.
-- [ ] Bottom silkscreen reads `HW 0.1.0` (not `${HW_VERSION}`), and the SWD labels
+- [ ] Bottom silkscreen reads the version, e.g. `HW 0.2.0` (not `${HW_VERSION}`), and the SWD labels
       DIO, CLK, RST, 3V3, GND.
 - [ ] Top silkscreen: the bolt on the touch pad, `jotakey`, and MCU, OPTIGA, LDO, ESD.
 
@@ -84,5 +84,17 @@ assembled batch small (2–5) and test the fit on those.
 ## 6. Bring-up
 
 Program and debug through the SWD pads with a pogo-pin jig (see `HARDWARE.md` §4); keep the
-first units at readout protection level 0. Provisioning and locking (`AGENTS.md` §3a) come
+first units at readout protection level 0.
+
+A hand-assembled board comes up in stages, through the 0 Ω links R6 and R7 (`HARDWARE.md` §1),
+fitted last:
+
+1. Before power: no short between VBUS and GND, 3V3 and GND, or D+ and D−.
+2. R6 and R7 off: plug in through a USB power meter. The LDO's output (R6's pad on the LDO
+   side) reads 3.3 V and the board draws almost nothing.
+3. Fit R6: a blank STM32 draws a few mA, and `probe-rs info` finds it over SWD.
+4. Fit R7: the OPTIGA answers at I2C address 0x30.
+
+A fault then points at one stage. Tens of mA at any step means a short or a part turned
+round: unplug at once. Provisioning and locking (`AGENTS.md` §3a) come
 after the firmware port.
