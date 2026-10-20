@@ -165,7 +165,9 @@ fn no_signature_without_presence() {
     let mut h = Harness::new();
     let (id, _, _) = register(&mut h, RP);
     let counter = h.platform.counter;
-    for (up, want) in [(PresenceResult::Timeout, Status::UserActionTimeout), (PresenceResult::Cancelled, Status::KeepaliveCancel)] {
+    for (up, want) in
+        [(PresenceResult::Timeout, Status::UserActionTimeout), (PresenceResult::Cancelled, Status::KeepaliveCancel)]
+    {
         let (st, body) = h.run(&request(GET_ASSERTION, get_assertion_params(RP, &[&id])), up);
         assert_eq!(st, want.code());
         assert!(body.is_empty());
@@ -407,8 +409,14 @@ fn optional_members_are_type_checked() {
     assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 4, V::M(vec![])))), 0);
     assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 6, V::B(vec![])))), Status::PinNotSet.code());
     assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 6, V::B(vec![1; 16])))), Status::MissingParameter.code());
-    assert_eq!(h.status(&request(GET_ASSERTION, with(with(ga(), 6, V::B(vec![1; 16])), 7, V::U(2)))), Status::PinAuthInvalid.code());
-    assert_eq!(h.status(&request(GET_ASSERTION, with(with(ga(), 6, V::B(vec![1; 16])), 7, V::U(1)))), Status::InvalidParameter.code());
+    assert_eq!(
+        h.status(&request(GET_ASSERTION, with(with(ga(), 6, V::B(vec![1; 16])), 7, V::U(2)))),
+        Status::PinAuthInvalid.code()
+    );
+    assert_eq!(
+        h.status(&request(GET_ASSERTION, with(with(ga(), 6, V::B(vec![1; 16])), 7, V::U(1)))),
+        Status::InvalidParameter.code()
+    );
     assert_eq!(h.status(&request(GET_ASSERTION, with(ga(), 7, V::t("one")))), unexpected);
     // Entity members and descriptor transports are type-checked too.
     let mut p = make_credential_params(RP);
@@ -419,13 +427,25 @@ fn optional_members_are_type_checked() {
         (V::t("type"), V::t("public-key")),
         (V::t("transports"), V::A(vec![V::U(1)])),
     ]);
-    assert_eq!(h.status(&request(GET_ASSERTION, vec![(V::U(1), V::t(RP)), (V::U(2), V::B(CDH.to_vec())), (V::U(3), V::A(vec![bad_desc]))])), unexpected);
+    assert_eq!(
+        h.status(&request(
+            GET_ASSERTION,
+            vec![(V::U(1), V::t(RP)), (V::U(2), V::B(CDH.to_vec())), (V::U(3), V::A(vec![bad_desc]))]
+        )),
+        unexpected
+    );
     let good_desc = V::M(vec![
         (V::t("id"), V::B(id.clone())),
         (V::t("type"), V::t("public-key")),
         (V::t("transports"), V::A(vec![V::t("usb")])),
     ]);
-    assert_eq!(h.status(&request(GET_ASSERTION, vec![(V::U(1), V::t(RP)), (V::U(2), V::B(CDH.to_vec())), (V::U(3), V::A(vec![good_desc]))])), 0);
+    assert_eq!(
+        h.status(&request(
+            GET_ASSERTION,
+            vec![(V::U(1), V::t(RP)), (V::U(2), V::B(CDH.to_vec())), (V::U(3), V::A(vec![good_desc]))]
+        )),
+        0
+    );
 }
 
 #[test]

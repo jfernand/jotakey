@@ -561,8 +561,7 @@ mod tests {
         let origin = Url::parse("http://localhost:3000").unwrap();
         let builder = WebauthnBuilder::new("localhost", &origin).unwrap();
         let webauthn = builder.danger_set_user_presence_only_security_keys(true).build().unwrap();
-        let (options, _) =
-            webauthn.start_securitykey_registration(Uuid::new_v4(), "a", "a", None, None, None).unwrap();
+        let (options, _) = webauthn.start_securitykey_registration(Uuid::new_v4(), "a", "a", None, None, None).unwrap();
         let options = serde_json::to_value(ask_for_pin(options)).unwrap();
         assert_eq!(options["publicKey"]["authenticatorSelection"]["userVerification"], "required");
         assert!(options["publicKey"].get("extensions").is_none_or(|e| e.get("credentialProtectionPolicy").is_none()));

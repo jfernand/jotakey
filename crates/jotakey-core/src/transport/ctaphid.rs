@@ -196,7 +196,14 @@ impl CtapHid {
         Self {
             receive_state: ReceiveState::Idle,
             receive_buffer: [0; MAX_MSG_SIZE],
-            transmit_state: TransmitState { channel: 0, command: 0, length: 0, sent: 0, next_sequence: 0, active: false },
+            transmit_state: TransmitState {
+                channel: 0,
+                command: 0,
+                length: 0,
+                sent: 0,
+                next_sequence: 0,
+                active: false,
+            },
             transmit_buffer: [0; MAX_MSG_SIZE],
             urgent: None,
             next_channel: 1,
@@ -245,7 +252,8 @@ impl CtapHid {
             return;
         };
         dst.copy_from_slice(data);
-        self.transmit_state = TransmitState { channel, command, length: data.len(), sent: 0, next_sequence: 0, active: true };
+        self.transmit_state =
+            TransmitState { channel, command, length: data.len(), sent: 0, next_sequence: 0, active: true };
     }
 
     /// Send the authenticator's answer to the request on `channel`. Ignored if the request was
@@ -321,7 +329,14 @@ impl CtapHid {
         if let (Some(dst), Some(src)) = (self.receive_buffer.get_mut(..first), p.get(7..7usize.saturating_add(first))) {
             dst.copy_from_slice(src);
         }
-        self.receive_state = ReceiveState::Receiving { channel, command, total: announced_length, received: first, next_sequence: 0, last_packet_ms: now_ms };
+        self.receive_state = ReceiveState::Receiving {
+            channel,
+            command,
+            total: announced_length,
+            received: first,
+            next_sequence: 0,
+            last_packet_ms: now_ms,
+        };
         self.maybe_dispatch()
     }
 
@@ -346,7 +361,9 @@ impl CtapHid {
                     self.receive_state = ReceiveState::Idle;
                     event = HidEvent::Abort { channel };
                 }
-                ReceiveState::Receiving { channel: owner, .. } if owner == channel => self.receive_state = ReceiveState::Idle,
+                ReceiveState::Receiving { channel: owner, .. } if owner == channel => {
+                    self.receive_state = ReceiveState::Idle
+                }
                 _ => {}
             }
             channel
@@ -357,15 +374,32 @@ impl CtapHid {
         let c = new_channel.to_be_bytes();
         let (maj, min, build) = VERSION;
         let resp = [
-            p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], // nonce
-            c[0], c[1], c[2], c[3], 2, maj, min, build, CAPABILITIES,
+            p[7],
+            p[8],
+            p[9],
+            p[10],
+            p[11],
+            p[12],
+            p[13],
+            p[14], // nonce
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+            2,
+            maj,
+            min,
+            build,
+            CAPABILITIES,
         ];
         self.urgent = Some(single_packet(channel, cmd::INIT, &resp));
         event
     }
 
     fn handle_cont(&mut self, channel: u32, p: &Packet, now_ms: u64) -> HidEvent {
-        let ReceiveState::Receiving { channel: owner, command, total, received, next_sequence, .. } = self.receive_state else {
+        let ReceiveState::Receiving { channel: owner, command, total, received, next_sequence, .. } =
+            self.receive_state
+        else {
             return HidEvent::None;
         };
         if owner != channel {
@@ -378,11 +412,19 @@ impl CtapHid {
         }
         let n = total.saturating_sub(received).min(CONT_DATA);
         let end = received.saturating_add(n);
-        if let (Some(dst), Some(src)) = (self.receive_buffer.get_mut(received..end), p.get(5..5usize.saturating_add(n))) {
+        if let (Some(dst), Some(src)) = (self.receive_buffer.get_mut(received..end), p.get(5..5usize.saturating_add(n)))
+        {
             dst.copy_from_slice(src);
         }
         // Sequence numbers never pass 0x7F: see the assertion on MAX_MSG_SIZE below.
-        self.receive_state = ReceiveState::Receiving { channel, command, total, received: end, next_sequence: next_sequence.saturating_add(1), last_packet_ms: now_ms };
+        self.receive_state = ReceiveState::Receiving {
+            channel,
+            command,
+            total,
+            received: end,
+            next_sequence: next_sequence.saturating_add(1),
+            last_packet_ms: now_ms,
+        };
         self.maybe_dispatch()
     }
 
@@ -403,7 +445,14 @@ impl CtapHid {
                 }
                 if let (Some(d), Some(s)) = (self.transmit_buffer.get_mut(..total), self.receive_buffer.get(..total)) {
                     d.copy_from_slice(s);
-                    self.transmit_state = TransmitState { channel, command: cmd::PING, length: total, sent: 0, next_sequence: 0, active: true };
+                    self.transmit_state = TransmitState {
+                        channel,
+                        command: cmd::PING,
+                        length: total,
+                        sent: 0,
+                        next_sequence: 0,
+                        active: true,
+                    };
                 }
                 HidEvent::None
             }
@@ -456,7 +505,9 @@ impl CtapHid {
             self.transmit_state.next_sequence = t.next_sequence.saturating_add(1);
         }
         let end = t.sent.saturating_add(n);
-        if let (Some(dst), Some(src)) = (p.get_mut(hdr_len..hdr_len.saturating_add(n)), self.transmit_buffer.get(t.sent..end)) {
+        if let (Some(dst), Some(src)) =
+            (p.get_mut(hdr_len..hdr_len.saturating_add(n)), self.transmit_buffer.get(t.sent..end))
+        {
             dst.copy_from_slice(src);
         }
         self.transmit_state.sent = end;

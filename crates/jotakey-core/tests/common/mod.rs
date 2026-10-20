@@ -178,10 +178,7 @@ pub fn make_credential_params(rp: &str) -> Vec<(V, V)> {
                 (V::t("displayName"), V::t("Alice")),
             ]),
         ),
-        (
-            V::U(4),
-            V::A(vec![V::M(vec![(V::t("alg"), V::int(-7)), (V::t("type"), V::t("public-key"))])]),
-        ),
+        (V::U(4), V::A(vec![V::M(vec![(V::t("alg"), V::int(-7)), (V::t("type"), V::t("public-key"))])])),
     ]
 }
 

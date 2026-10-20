@@ -13,7 +13,7 @@ use jotakey_core::authdata::{FLAG_AT, FLAG_UP, FLAG_UV};
 use jotakey_core::ctap::client_pin::{MISMATCHES_PER_POWER_CYCLE, TOKEN_LIFETIME_MS};
 use jotakey_core::ctap::command::*;
 use jotakey_core::ctap::{Authenticator, Outcome};
-use jotakey_core::platform::{PIN_RETRIES_MAX, Platform, PinRecord, PresenceResult};
+use jotakey_core::platform::{PIN_RETRIES_MAX, PinRecord, Platform, PresenceResult};
 use jotakey_core::status::Status;
 use sha2::{Digest, Sha256};
 
@@ -60,7 +60,8 @@ fn pin_hash(pin: &[u8]) -> [u8; 16] {
 impl Client {
     /// getKeyAgreement and ECDH: a client ready to talk to the authenticator.
     fn connect(h: &mut Harness) -> Self {
-        let (st, body) = h.run(&request(CLIENT_PIN, vec![(V::U(1), V::U(2)), (V::U(2), V::U(2))]), PresenceResult::Confirmed);
+        let (st, body) =
+            h.run(&request(CLIENT_PIN, vec![(V::U(1), V::U(2)), (V::U(2), V::U(2))]), PresenceResult::Confirmed);
         assert_eq!(st, 0, "getKeyAgreement");
         let (resp, _) = V::decode(&body);
         let key = resp.get(&V::U(1)).unwrap();
@@ -182,7 +183,8 @@ impl Client {
 }
 
 fn retries(h: &mut Harness) -> u64 {
-    let (st, body) = h.run(&request(CLIENT_PIN, vec![(V::U(1), V::U(2)), (V::U(2), V::U(1))]), PresenceResult::Confirmed);
+    let (st, body) =
+        h.run(&request(CLIENT_PIN, vec![(V::U(1), V::U(2)), (V::U(2), V::U(1))]), PresenceResult::Confirmed);
     assert_eq!(st, 0);
     match V::decode(&body).0.get(&V::U(3)) {
         Some(V::U(n)) => *n,
@@ -207,7 +209,8 @@ fn with_token(mut params: Vec<(V, V)>, token: &[u8; 32], protocol_key: u64) -> V
 
 /// makeCredential authorized by `token`; (status, flags, credential id).
 fn register_uv(h: &mut Harness, rp: &str, token: &[u8; 32]) -> (u8, u8, Vec<u8>) {
-    let (st, body) = h.run(&request(MAKE_CREDENTIAL, with_token(make_credential_params(rp), token, 9)), PresenceResult::Confirmed);
+    let (st, body) =
+        h.run(&request(MAKE_CREDENTIAL, with_token(make_credential_params(rp), token, 9)), PresenceResult::Confirmed);
     if st != 0 {
         return (st, 0, vec![]);
     }
@@ -327,7 +330,11 @@ fn the_token_is_bound_to_its_permissions_and_relying_party() {
     let mut params = get_assertion_params(RP, &[&id]);
     params.push((V::U(6), V::B(hmac(&token, &[&CDH])[..16].to_vec())));
     params.push((V::U(7), V::U(2)));
-    assert_eq!(h.status(&request(GET_ASSERTION, params)), Status::PinAuthInvalid.code(), "a truncated (protocol one) tag");
+    assert_eq!(
+        h.status(&request(GET_ASSERTION, params)),
+        Status::PinAuthInvalid.code(),
+        "a truncated (protocol one) tag"
+    );
 
     // A new token replaces the old one.
     let first = c.token(&mut h, "1234", GA, None).unwrap();
@@ -668,7 +675,10 @@ fn request_shape_and_sub_commands() {
     assert_eq!(st(&mut h, vec![(V::U(1), V::U(1)), (V::U(2), V::U(2))]), Status::InvalidParameter.code());
     assert_eq!(st(&mut h, vec![(V::U(1), V::U(2))]), Status::MissingParameter.code());
     for unsupported in [0, 6, 7, 8, 10, 0x100] {
-        assert_eq!(st(&mut h, vec![(V::U(1), V::U(2)), (V::U(2), V::U(unsupported))]), Status::InvalidSubcommand.code());
+        assert_eq!(
+            st(&mut h, vec![(V::U(1), V::U(2)), (V::U(2), V::U(unsupported))]),
+            Status::InvalidSubcommand.code()
+        );
     }
     // Members are type-checked, unknown ones skipped.
     assert_eq!(st(&mut h, vec![(V::U(1), V::t("two")), (V::U(2), V::U(2))]), Status::CborUnexpectedType.code());

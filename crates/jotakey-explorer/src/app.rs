@@ -247,7 +247,10 @@ impl App {
         let line = if self.status.is_empty() {
             Line::from(Span::styled(help, Style::new().dark_gray()))
         } else {
-            Line::from(vec![Span::styled(format!("{}  ", self.status), Style::new().fg(ACCENT)), Span::styled(help, Style::new().dark_gray())])
+            Line::from(vec![
+                Span::styled(format!("{}  ", self.status), Style::new().fg(ACCENT)),
+                Span::styled(help, Style::new().dark_gray()),
+            ])
         };
         frame.render_widget(line, footer);
     }
@@ -279,7 +282,14 @@ impl App {
                 ListItem::new(Text::from(vec![
                     Line::from(vec![Span::styled(d.label(), Style::new().bold()), state]),
                     Line::from(Span::styled(
-                        format!("{}  {:04x}:{:04x}  {}{}", d.node(), d.vendor_id, d.product_id, d.bus, if d.virtual_device { " (virtual)" } else { "" }),
+                        format!(
+                            "{}  {:04x}:{:04x}  {}{}",
+                            d.node(),
+                            d.vendor_id,
+                            d.product_id,
+                            d.bus,
+                            if d.virtual_device { " (virtual)" } else { "" }
+                        ),
                         Style::new().dark_gray(),
                     )),
                 ]))
@@ -300,7 +310,8 @@ impl App {
         let lines = match self.entries.get(&device.path) {
             Some(Entry::Done(report)) => report_lines(report, self.raw),
             _ => {
-                let mut lines: Vec<Line<'static>> = report::local_sections(&device).iter().take(2).flat_map(section_lines).collect();
+                let mut lines: Vec<Line<'static>> =
+                    report::local_sections(&device).iter().take(2).flat_map(section_lines).collect();
                 lines.push(Line::from(Span::styled("Querying the device…", Style::new().fg(ACCENT))));
                 lines
             }
@@ -309,12 +320,16 @@ impl App {
         let max = u16::try_from(lines.len().saturating_sub(1)).unwrap_or(u16::MAX);
         self.scroll = self.scroll.min(max);
         let block = self.pane(&device.label(), Focus::Details);
-        frame.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }).scroll((self.scroll, 0)), area);
+        frame.render_widget(
+            Paragraph::new(lines).block(block).wrap(Wrap { trim: false }).scroll((self.scroll, 0)),
+            area,
+        );
     }
 }
 
 fn section_lines(section: &report::Section) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(Span::styled(section.title.clone(), Style::new().fg(ACCENT).add_modifier(Modifier::BOLD)))];
+    let mut lines =
+        vec![Line::from(Span::styled(section.title.clone(), Style::new().fg(ACCENT).add_modifier(Modifier::BOLD)))];
     let width = section.rows.iter().map(|r| r.label.chars().count()).max().unwrap_or(0).min(32);
     for r in &section.rows {
         let mut spans = vec![
@@ -356,7 +371,9 @@ pub fn report_lines(report: &Report, raw: bool) -> Vec<Line<'static>> {
                 lines.push(Line::raw(format!("  {v}")));
             }
         }
-        (Some(_), false) => lines.push(Line::from(Span::styled("x shows the raw getInfo reply", Style::new().dark_gray()))),
+        (Some(_), false) => {
+            lines.push(Line::from(Span::styled("x shows the raw getInfo reply", Style::new().dark_gray())))
+        }
         _ => {}
     }
     lines

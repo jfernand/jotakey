@@ -73,8 +73,9 @@ pub fn run_kats(inject: Option<SelfTestError>) -> Result<(), SelfTestError> {
 /// RFC 6979 §A.2.5, P-256, SHA-256, message "sample": deterministic signature (no extra
 /// entropy), then a hedged signature that must verify (pairwise consistency).
 fn ecdsa_kat(corrupt: bool) -> Result<(), SelfTestError> {
-    let sk = p256::SecretKey::from_bytes(&hex!("C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721").into())
-        .map_err(|_| SelfTestError::Ecdsa)?;
+    let sk =
+        p256::SecretKey::from_bytes(&hex!("C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721").into())
+            .map_err(|_| SelfTestError::Ecdsa)?;
     let msg: &[u8] = if corrupt { b"samplE" } else { b"sample" };
     let sig = crypto::sign_with_ad(&sk, &[msg], &[]).map_err(|_| SelfTestError::Ecdsa)?;
     let expected = ecdsa::Signature::<p256::NistP256>::from_scalars(

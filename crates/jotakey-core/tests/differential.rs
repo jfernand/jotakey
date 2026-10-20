@@ -35,8 +35,20 @@ impl Rng {
 }
 
 const EDGE: [u64; 14] = [
-    0, 1, 23, 24, 255, 256, 65_535, 65_536, 0xFFFF_FFFF, 0x1_0000_0000,
-    (1 << 63) - 1, 1 << 63, u64::MAX - 1, u64::MAX,
+    0,
+    1,
+    23,
+    24,
+    255,
+    256,
+    65_535,
+    65_536,
+    0xFFFF_FFFF,
+    0x1_0000_0000,
+    (1 << 63) - 1,
+    1 << 63,
+    u64::MAX - 1,
+    u64::MAX,
 ];
 
 fn gen_uint(r: &mut Rng) -> u64 {
@@ -144,11 +156,8 @@ fn rust_decoder_agrees_with_lean_spec() {
         inputs.push([vec![b], vec![0xff; 8]].concat());
     }
 
-    let mut child = Command::new(&spec)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("spawn jotakey-spec");
+    let mut child =
+        Command::new(&spec).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("spawn jotakey-spec");
     let mut stdin = child.stdin.take().unwrap();
     let queries: Vec<(String, String)> = inputs
         .iter()

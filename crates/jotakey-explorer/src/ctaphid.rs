@@ -210,7 +210,10 @@ impl<T: Transport> Client<T> {
         p[7..7 + first].copy_from_slice(&data[..first]);
         self.io.send(&p)?;
         for (seq, chunk) in data[first..].chunks(PACKET_SIZE - 5).enumerate() {
-            let seq = u8::try_from(seq).ok().filter(|s| *s < 0x80).ok_or_else(|| Error::Protocol("message too long".into()))?;
+            let seq = u8::try_from(seq)
+                .ok()
+                .filter(|s| *s < 0x80)
+                .ok_or_else(|| Error::Protocol("message too long".into()))?;
             let mut p = [0u8; PACKET_SIZE];
             p[..4].copy_from_slice(&self.channel.to_be_bytes());
             p[4] = seq;

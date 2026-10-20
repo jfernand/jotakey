@@ -269,11 +269,8 @@ mod tests {
         use esp_hal::rmt::{PulseCode, Rmt, TxChannelConfig, TxChannelCreator};
         use esp_hal::time::Rate;
         let rmt = Rmt::new(p.RMT, Rate::from_mhz(80)).unwrap();
-        let mut ch = rmt
-            .channel0
-            .configure_tx(&TxChannelConfig::default().with_clk_divider(1))
-            .unwrap()
-            .with_pin(p.GPIO8);
+        let mut ch =
+            rmt.channel0.configure_tx(&TxChannelConfig::default().with_clk_divider(1)).unwrap().with_pin(p.GPIO8);
         let one = PulseCode::new(Level::High, 64, Level::Low, 36);
         let zero = PulseCode::new(Level::High, 32, Level::Low, 68);
         for color in [0x00_10_00u32, 0] {

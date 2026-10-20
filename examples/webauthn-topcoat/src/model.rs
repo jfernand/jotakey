@@ -195,8 +195,9 @@ mod tests {
         assert_eq!(aaguid(&buf[..n]), Err(Unread::BadCbor(CborError::NonCanonicalMap)));
         object.push(0);
         assert_eq!(aaguid(&object), Err(Unread::BadCbor(CborError::TrailingBytes)));
-        assert!(unread_message(&Unread::BadCbor(CborError::NonCanonicalMap))
-            .starts_with("Hmm, it looks like your browser just sent bad CBOR: its map keys are not in canonical order."));
+        assert!(unread_message(&Unread::BadCbor(CborError::NonCanonicalMap)).starts_with(
+            "Hmm, it looks like your browser just sent bad CBOR: its map keys are not in canonical order."
+        ));
     }
 
     #[test]

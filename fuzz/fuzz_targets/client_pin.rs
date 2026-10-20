@@ -263,7 +263,10 @@ impl World {
         (status, self.out[1..n].to_vec(), parked)
     }
 
-    fn client_pin(&mut self, members: impl FnOnce(&mut Encoder<'_>) -> Result<(), jotakey_core::cbor::CborError>) -> (Status, Vec<u8>) {
+    fn client_pin(
+        &mut self,
+        members: impl FnOnce(&mut Encoder<'_>) -> Result<(), jotakey_core::cbor::CborError>,
+    ) -> (Status, Vec<u8>) {
         let mut req = vec![command::CLIENT_PIN];
         req.extend(encode(members));
         let (st, body, parked) = self.send(&req, PresenceResult::Confirmed);
@@ -298,9 +301,25 @@ impl World {
 fn status_of(b: u8) -> Status {
     use Status::*;
     for s in [
-        Success, InvalidCommand, InvalidParameter, InvalidLength, MissingParameter, CborUnexpectedType, InvalidCbor,
-        NotAllowed, PinInvalid, PinBlocked, PinAuthInvalid, PinAuthBlocked, PinNotSet, PinPolicyViolation,
-        InvalidSubcommand, UnauthorizedPermission, UserActionTimeout, NoCredentials, Other,
+        Success,
+        InvalidCommand,
+        InvalidParameter,
+        InvalidLength,
+        MissingParameter,
+        CborUnexpectedType,
+        InvalidCbor,
+        NotAllowed,
+        PinInvalid,
+        PinBlocked,
+        PinAuthInvalid,
+        PinAuthBlocked,
+        PinNotSet,
+        PinPolicyViolation,
+        InvalidSubcommand,
+        UnauthorizedPermission,
+        UserActionTimeout,
+        NoCredentials,
+        Other,
     ] {
         if s.code() == b {
             return s;
@@ -559,7 +578,12 @@ fn step(w: &mut World, s: &mut Script<'_>) {
                 w.model.token = None; // the touch spends it
                 Ok(())
             });
-            assert_eq!(result(st), expected, "{} with token", if assertion { "getAssertion" } else { "makeCredential" });
+            assert_eq!(
+                result(st),
+                expected,
+                "{} with token",
+                if assertion { "getAssertion" } else { "makeCredential" }
+            );
             assert_eq!(parked, expected.is_ok() && !silent || st == Status::UserActionTimeout);
             if st == Status::Success {
                 let ad = member_bytes(&body, 2);
@@ -629,7 +653,11 @@ fuzz_target!(|data: &[u8]| {
         // once the attempt was stored (invariant 10).
         if matches!(op, 2 | 3) && w.platform.retries_at_pin_check.is_some() {
             assert!(w.platform.pin_writes > attempts_before);
-            assert_eq!(w.platform.retries_at_pin_check, Some(retries_before - 1), "PIN processed before the attempt was counted");
+            assert_eq!(
+                w.platform.retries_at_pin_check,
+                Some(retries_before - 1),
+                "PIN processed before the attempt was counted"
+            );
         }
         steps += 1;
         // The device agrees with the model…
