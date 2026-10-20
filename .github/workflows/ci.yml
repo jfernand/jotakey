@@ -1,0 +1,186 @@
+# (c) Javier Fernandez @ JotaSoft 2026
+# Tests on every push and pull request, and every Monday, when it also fuzzes for longer
+# and runs mutation testing (AGENTS.md §4–5). The weekly run catches what changes without
+# a commit: new RustSec advisories (cargo deny) and toolchain updates.
+#
+# Nothing here touches hardware: the on-device tests (just testfw) and the end-to-end tests
+# against a board (just host-tests) need a C6 DevKit on a desk, so CI only builds them.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_DENY_VERSION: "0.20.2"
+  CARGO_FUZZ_VERSION: "0.13.2"
+  CARGO_MUTANTS_VERSION: "27.1.0"
+  TYPST_VERSION: "0.15.1"
+
+jobs:
+  # The workspace: the core, the bridge, the host tests and the explorer.
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust stable
+        run: rustup toolchain install stable --profile minimal -c clippy,rustfmt && rustup default stable
+      - name: Formatting (every crate, also those outside the workspace)
+        run: |
+          cargo fmt --all --check
+          for dir in crates/jotakey-fw crates/jotakey-testfw fuzz examples/webauthn-topcoat; do
+            cargo fmt --check --manifest-path "$dir/Cargo.toml"
+          done
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+      - name: Install cargo-deny
+        run: |
+          curl -sSfL "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin "cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl/cargo-deny"
+      - name: Licences and advisories (workspace, firmware, demo)
+        run: |
+          cargo deny check
+          (cd crates/jotakey-fw && cargo deny check)
+          (cd examples/webauthn-topcoat && cargo deny check)
+
+  # ESP32-C6 firmware and on-device test firmware: build only (no board in CI).
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust stable for RISC-V
+        run: |
+          rustup toolchain install stable --profile minimal -c clippy -t riscv32imac-unknown-none-elf
+          rustup default stable
+      - name: Firmware (just fw)
+        working-directory: crates/jotakey-fw
+        run: |
+          cargo build --release
+          cargo clippy --release -- -D warnings
+      - name: On-device test firmware, built but not run (just testfw needs a board)
+        working-directory: crates/jotakey-testfw
+        run: cargo build --tests
+
+  # Lean models and proofs, the axiom audit, and the Rust decoder against the Lean spec.
+  formal:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install elan (the Lean version comes from formal/lean-toolchain)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build and check the proofs (just lean)
+        run: |
+          (cd formal && lake build)
+          ! grep -rn --include=*.lean -E '\bsorry\b|^\s*axiom |native_decide' formal/Jotakey formal/Main.lean
+          scripts/axiom-audit.sh
+      - name: Rust stable
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Differential test, Rust vs Lean (just diff)
+        env:
+          # Fail, rather than skip, if the Lean spec binary is missing.
+          JOTAKEY_REQUIRE_SPEC: "1"
+        run: cargo test -p jotakey-core --test differential -- --nocapture
+
+  # Every fuzz target: a short run on each push, longer every Monday (just fuzz-all).
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust nightly
+        run: rustup toolchain install nightly --profile minimal
+      - name: Install cargo-fuzz
+        run: |
+          curl -sSfL "https://github.com/rust-fuzz/cargo-fuzz/releases/download/${CARGO_FUZZ_VERSION}/cargo-fuzz-${CARGO_FUZZ_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin" cargo-fuzz
+      - name: Fuzz
+        working-directory: fuzz
+        env:
+          SECONDS_PER_TARGET: ${{ github.event_name == 'schedule' && '600' || '30' }}
+        run: |
+          for t in $(cargo +nightly fuzz list); do
+            mkdir -p "corpus/$t"
+            seeds=$(test -d "seeds/$t" && echo "seeds/$t" || true)
+            cargo +nightly fuzz run "$t" "corpus/$t" $seeds -- -max_total_time="$SECONDS_PER_TARGET"
+          done
+      - name: Keep any crash
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+
+  # Mutation testing of the core: every Monday, and on demand (just mutants; slow).
+  mutants:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust stable
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Install cargo-mutants
+        run: |
+          curl -sSfL "https://github.com/sourcefrog/cargo-mutants/releases/download/v${CARGO_MUTANTS_VERSION}/cargo-mutants-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin" cargo-mutants
+      - name: Mutants (0 missed, exclusions in .cargo/mutants.toml)
+        run: cargo mutants -p jotakey-core
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants
+          path: mutants.out
+
+  # The demo relying party: unit tests, the end-to-end smoke test, and the CDK synthesis tests.
+  demo:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: examples/webauthn-topcoat
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust stable
+        run: rustup toolchain install stable --profile minimal -c clippy && rustup default stable
+      - name: Clippy and unit tests
+        run: |
+          cargo clippy --all-targets --features dynamodb -- -D warnings
+          cargo test
+      - name: Smoke test against a local server (state in memory)
+        run: |
+          cargo build
+          PORT=3000 ./target/debug/webauthn-topcoat &
+          for _ in $(seq 50); do curl -sf http://localhost:3000/ >/dev/null && break; sleep 0.2; done
+          pipx run --spec uv uv run -q --with cbor2 --with requests --with cryptography \
+            python3 -I smoke_test.py http://localhost:3000
+      - name: CDK synthesis tests
+        working-directory: examples/webauthn-topcoat/infra
+        run: |
+          npm ci
+          npx jest
+
+  # The design report, screen and print versions.
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Typst
+        run: |
+          curl -sSfL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
+            | tar -xJ --strip-components=1 -C /usr/local/bin typst-x86_64-unknown-linux-musl/typst
+      - name: Build (just doc, just doc-print)
+        run: |
+          typst compile --font-path docs/fonts --ignore-system-fonts docs/jotakey.typ /tmp/jotakey.pdf
+          typst compile --font-path docs/fonts --ignore-system-fonts --input print=true docs/jotakey.typ /tmp/jotakey-print.pdf
