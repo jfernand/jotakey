@@ -22,12 +22,17 @@ serde_json = "1"
 # advisories. The current client (rustls 0.23) is "default-https-client".
 aws-config = { version = "1.12", optional = true, default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-sdk-dynamodb = { version = "1.131", optional = true, default-features = false, features = ["default-https-client", "rt-tokio"] }
+# The `lambda` feature: webauthn-rs links OpenSSL; build it from source for the Lambda target
+# rather than depend on the build machine's.
+openssl = { version = "0.10.81", optional = true, features = ["vendored"] }
 
 [features]
 # Keep accounts, ceremonies and sessions in DynamoDB when DYNAMODB_TABLE is set. A ceremony's
 # state (its challenge) is then serialised into the table between the start and finish
 # requests; it never goes to the browser.
 dynamodb = ["dep:aws-config", "dep:aws-sdk-dynamodb", "webauthn-rs/danger-allow-state-serialisation"]
+# What the AWS Lambda build needs (infra/README.md): DynamoDB and a static OpenSSL.
+lambda = ["dynamodb", "dep:openssl"]
 
 # Standalone workspace: an example with server dependencies (tokio, OpenSSL through
 # webauthn-rs) that the device code never links.

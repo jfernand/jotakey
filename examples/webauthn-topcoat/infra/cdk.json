@@ -1,0 +1,13 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+  "context": {
+    "domainName": "jotakey.casaroja.es",
+    "zoneName": "casaroja.es",
+    "hostedZoneId": "Z0754445AFRVQ5WHZNCR",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:target-partitions": [
+      "aws"
+    ],
+    "@aws-cdk/core:defaultCrossStackReferences": "strong"
+  }
+}

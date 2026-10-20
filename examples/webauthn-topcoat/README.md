@@ -39,6 +39,11 @@ On your own domain, behind something that terminates HTTPS:
 ORIGIN=https://jotakey.casaroja.es cargo run
 ```
 
+## On AWS
+
+`infra/` deploys the demo to https://jotakey.casaroja.es: Lambda behind an API Gateway HTTP
+API, with the state in DynamoDB. `infra/README.md` has the steps.
+
 ## State in DynamoDB
 
 `cargo build --features dynamodb` adds a DynamoDB backend (`src/store/dynamo.rs`). Set
@@ -118,6 +123,7 @@ This is a demo. A real deployment also needs:
 - **HTTPS** in front of it, and `ORIGIN` set to your `https://` URL (see Configuration).
 - **Persistent storage:** the `dynamodb` feature, or another backend in `src/store/`.
   Ceremonies expire after 5 minutes and sessions after an hour in either backend.
-- **Rate limiting** on the four `/api` routes, which is not there yet.
+- **Rate limiting** on the four `/api` routes. The server has none; the AWS deployment
+  throttles the whole API at API Gateway.
 - **Two keys per user**, or another recovery path: a credential cannot be copied off a
   Jotakey, so a lost key is a lost login.
