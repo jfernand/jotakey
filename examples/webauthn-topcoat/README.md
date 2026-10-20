@@ -23,6 +23,23 @@ Signed out, the page also lists the registered users: click a name to sign in wi
 
 `PORT=8080 cargo run` serves on another port.
 
+## Test it
+
+`cargo test` runs the unit tests. `smoke_test.py` drives a running server end to end with a
+software authenticator that answers like a Jotakey. It checks every ceremony the page offers
+and the server's refusals (replays, duplicate credentials, a counter that does not go up, a
+PIN key without verification, a session for an account that was deleted), and then removes
+the accounts it made:
+
+```sh
+cargo run &
+uv run -q --with cbor2 --with requests --with cryptography \
+    python3 -I smoke_test.py http://localhost:3000
+```
+
+Against the live site, pass its URL instead. Its sessions and ceremonies stay in the table
+until they expire (an hour, 5 minutes).
+
 ## Configuration
 
 Everything is optional and comes from the environment:

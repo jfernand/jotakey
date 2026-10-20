@@ -48,7 +48,14 @@ npx cdk deploy --all
 The first deploy waits for the certificate to validate (a few minutes). Then open
 https://jotakey.casaroja.es.
 
-After a code change: commit it, then `infra/build.sh` and `npx cdk deploy JotakeyRp`.
+After a code change: commit it, then `infra/build.sh` and `npx cdk deploy JotakeyRp`. Check
+the deployment with the smoke test (from `examples/webauthn-topcoat`), which cleans up after
+itself:
+
+```sh
+uv run -q --with cbor2 --with requests --with cryptography \
+    python3 -I smoke_test.py https://jotakey.casaroja.es
+```
 
 The page's footer names the commit the server was built from, linked to GitHub, so push
 before deploying. `build.sh` refuses uncommitted changes to the demo; `ALLOW_DIRTY=1` builds
