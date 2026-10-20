@@ -225,7 +225,7 @@ impl Store {
             Err(e) => match from_json::<Vec<SecurityKey>>(keys) {
                 Ok(bare) => bare
                     .into_iter()
-                    .map(|key| Key { key, registered: 0, sign_ins: 0, last_used: None, aaguid: None })
+                    .map(|key| Key { key, registered: 0, sign_ins: 0, last_used: None, aaguid: None, unread: None })
                     .collect(),
                 Err(_) => return Err(e),
             },

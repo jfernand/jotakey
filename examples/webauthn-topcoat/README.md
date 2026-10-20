@@ -130,7 +130,11 @@ transports, algorithm, attestation format, when it was registered and last used,
 counter, with what the authenticator reported at this sign-in.
 
 It also recognises a Jotakey (`src/model.rs`). At registration the server reads the AAGUID,
-the 16-byte model ID in the authenticator data. A Jotakey's is ASCII, `jotakey-` followed by
+the 16-byte model ID in the authenticator data, with Jotakey's own CBOR decoder
+(`jotakey_core::cbor`, the one the key runs). That decoder accepts only CTAP2 canonical CBOR:
+if the browser's attestation object breaks a rule (keys out of order, a non-shortest number),
+the key still registers, and the page says so: "Hmm, it looks like your browser just sent bad
+CBOR: its map keys are not in canonical order." A Jotakey's is ASCII, `jotakey-` followed by
 the model (`jotakey_core::AAGUID`, e.g. `jotakey-v01-c6`). A sign-in does not carry the
 AAGUID, so the page looks up the key used: "You signed in with a Jotakey (v01-c6)". If the
 browser zeroed the AAGUID, a 49-byte credential ID starting with `0x01`, Jotakey's format,

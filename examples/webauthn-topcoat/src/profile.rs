@@ -65,7 +65,7 @@ fn key_rows(key: &Key) -> Vec<(&'static str, String)> {
         "device-bound: it never leaves the authenticator"
     };
     vec![
-        ("Model", model::describe(key.aaguid.as_ref(), cred.cred_id.as_ref())),
+        ("Model", model::describe(key.aaguid.as_ref(), key.unread.as_deref(), cred.cred_id.as_ref())),
         ("Credential ID", credential_id(&cred.cred_id)),
         ("Kind", kind.into()),
         ("Backed up", yes_no(cred.backup_state).into()),

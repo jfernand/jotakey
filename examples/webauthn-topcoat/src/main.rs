@@ -330,11 +330,21 @@ async fn register_finish(cx: &Cx, Json(req): Json<Finish<RegisterPublicKeyCreden
         Ok(k) => with_transports(k, &req.credential),
         Err(e) => return Ok(failed(e)),
     };
-    let aaguid = model::aaguid(req.credential.response.attestation_object.as_ref());
-    let model = model::describe(aaguid.as_ref(), key.cred_id().as_ref());
+    // The model is a label: if Jotakey's strict decoder rejects the browser's CBOR, the key
+    // still registers (webauthn-rs accepted it), and the page says what was wrong.
+    let (aaguid, unread) = match model::aaguid(req.credential.response.attestation_object.as_ref()) {
+        Ok(aaguid) => (aaguid, None),
+        Err(why) => (None, Some(model::unread_message(&why))),
+    };
+    let model = model::describe(aaguid.as_ref(), unread.as_deref(), key.cred_id().as_ref());
+    let reply = json!({ "ok": true, "username": username, "model": model, "warning": unread });
     // A credential ID belongs to one account only; a username to one user handle.
-    match stored!(app.store.add_key(&username, user_id, Key::new(key, aaguid)).await) {
-        AddKey::Added(keys) => Ok(Json(json!({ "ok": true, "username": username, "keys": keys, "model": model }))),
+    match stored!(app.store.add_key(&username, user_id, Key::new(key, aaguid, unread)).await) {
+        AddKey::Added(keys) => {
+            let mut reply = reply;
+            reply["keys"] = json!(keys);
+            Ok(Json(reply))
+        }
         AddKey::Taken => Ok(failed("that username was taken meanwhile; choose another")),
         AddKey::Duplicate => Ok(failed("this credential is already registered")),
     }

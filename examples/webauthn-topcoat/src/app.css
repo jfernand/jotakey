@@ -38,3 +38,4 @@ h3 { font-size: 1rem; margin: 1.25rem 0 0.5rem; }
 .jotakey { font-weight: 600; border-left: 4px solid var(--accent); padding-left: 0.75rem; }
 #status.ok { color: var(--ok); }
 #status.error { color: var(--error); }
+#status.warning { color: var(--ink); border-left: 4px solid var(--accent); padding-left: 0.75rem; }
