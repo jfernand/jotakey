@@ -63,8 +63,7 @@ pub fn derive_credential_key(
     let hk = Hkdf::<Sha256>::new(Some(rp_id_hash), seed);
     let mut okm = Zeroizing::new([0u8; 32]);
     for ctr in 0u8..=255 {
-        hk.expand_multi_info(&[CRED_KEY_INFO, nonce, &[ctr]], okm.as_mut())
-            .map_err(|_| CryptoError)?;
+        hk.expand_multi_info(&[CRED_KEY_INFO, nonce, &[ctr]], okm.as_mut()).map_err(|_| CryptoError)?;
         if let Ok(sk) = SecretKey::from_bytes(&(*okm).into()) {
             return Ok(sk);
         }
@@ -93,10 +92,7 @@ pub fn sign_with_ad(sk: &SecretKey, msg_parts: &[&[u8]], ad: &[u8]) -> Result<De
     let digest = sha256(msg_parts);
     let z = bits2field::<NistP256>(&digest).map_err(|_| CryptoError)?;
     let scalar = sk.to_nonzero_scalar();
-    let (sig, _) = scalar
-        .as_ref()
-        .try_sign_prehashed_rfc6979::<Sha256>(&z, ad)
-        .map_err(|_| CryptoError)?;
+    let (sig, _) = scalar.as_ref().try_sign_prehashed_rfc6979::<Sha256>(&z, ad).map_err(|_| CryptoError)?;
     Ok(sig.to_der())
 }
 
@@ -152,10 +148,7 @@ mod tests {
 
     #[test]
     fn sha256_abc() {
-        assert_eq!(
-            sha256(&[b"a", b"bc"]),
-            hex!("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
-        );
+        assert_eq!(sha256(&[b"a", b"bc"]), hex!("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
     }
 
     #[test]

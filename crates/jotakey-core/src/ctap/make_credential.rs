@@ -6,8 +6,8 @@
 //! clear, even when a PIN is set: getInfo advertises `makeCredUvNotRqd`, since these
 //! credentials are not discoverable.
 
-use super::parse::{self, EntityId, PARAM_DEPTH};
 use super::client_pin::permission;
+use super::parse::{self, EntityId, PARAM_DEPTH};
 use super::{Pending, PinSession, PlatformTagger, Response, credential_seed, write_success};
 use crate::authdata::{self, FLAG_UV};
 use crate::cbor::{Decoder, Key};
@@ -164,7 +164,8 @@ pub fn complete<P: Platform>(
 ) -> Result<usize, Status> {
     let mut nonce = [0u8; NONCE_LEN];
     platform.random_bytes(&mut nonce).map_err(|_| Status::Other)?;
-    let cred_id = credential::wrap(&mut PlatformTagger(&mut *platform), rp_id_hash, &nonce).map_err(|_| Status::Other)?;
+    let cred_id =
+        credential::wrap(&mut PlatformTagger(&mut *platform), rp_id_hash, &nonce).map_err(|_| Status::Other)?;
     let seed = credential_seed(platform, rp_id_hash, &nonce)?;
     let sk = crypto::derive_credential_key(&seed, rp_id_hash, &nonce).map_err(|_| Status::Other)?;
 

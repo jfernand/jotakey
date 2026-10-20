@@ -1,0 +1,5 @@
+# (c) Javier Fernandez @ JotaSoft 2026
+# The style the code was written in: 120 columns, and short items kept on one line.
+# CI checks it (cargo fmt --check, .github/workflows/ci.yml).
+max_width = 120
+use_small_heuristics = "Max"

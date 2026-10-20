@@ -206,7 +206,13 @@ impl Store {
         }
     }
 
-    pub async fn start_session(&self, hash: &TokenHash, username: &str, user_id: Uuid, expires: SystemTime) -> Result<()> {
+    pub async fn start_session(
+        &self,
+        hash: &TokenHash,
+        username: &str,
+        user_id: Uuid,
+        expires: SystemTime,
+    ) -> Result<()> {
         match self {
             Store::Memory(s) => {
                 s.start_session(hash, username, user_id, expires);

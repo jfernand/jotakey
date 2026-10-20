@@ -103,11 +103,9 @@ impl Store {
                 pin: matches!(item.get("pin"), Some(AttributeValue::Bool(true))),
                 state: from_json(state)?,
             },
-            "authentication" => Ceremony::Authentication {
-                username,
-                user_id: uuid(get_s(item, "user_id")?)?,
-                state: from_json(state)?,
-            },
+            "authentication" => {
+                Ceremony::Authentication { username, user_id: uuid(get_s(item, "user_id")?)?, state: from_json(state)? }
+            }
             other => return Err(Error(format!("ceremony {id}: unknown kind {other:?}"))),
         }))
     }
@@ -142,7 +140,9 @@ impl Store {
 
     pub async fn remove_key(&self, username: &str, user_id: Uuid, credential: &str) -> Result<RemoveKey> {
         for _ in 0..ATTEMPTS {
-            let Some((mut account, version)) = self.load_account(username).await? else { return Ok(RemoveKey::NotFound) };
+            let Some((mut account, version)) = self.load_account(username).await? else {
+                return Ok(RemoveKey::NotFound);
+            };
             if account.user_id != user_id || without_key(&mut account, credential).is_none() {
                 return Ok(RemoveKey::NotFound);
             }
@@ -221,7 +221,13 @@ impl Store {
         Err(Error(format!("record_sign_in: account {username:?} kept changing")))
     }
 
-    pub async fn start_session(&self, hash: &TokenHash, username: &str, user_id: Uuid, expires: SystemTime) -> Result<()> {
+    pub async fn start_session(
+        &self,
+        hash: &TokenHash,
+        username: &str,
+        user_id: Uuid,
+        expires: SystemTime,
+    ) -> Result<()> {
         self.client
             .put_item()
             .table_name(&self.table)

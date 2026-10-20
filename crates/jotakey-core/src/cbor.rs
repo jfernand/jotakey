@@ -125,11 +125,7 @@ impl<'a> Decoder<'a> {
     /// # Errors
     /// [`CborError::TrailingBytes`] if bytes remain.
     pub const fn finish(&self) -> Result<(), CborError> {
-        if self.pos == self.input.len() {
-            Ok(())
-        } else {
-            Err(CborError::TrailingBytes)
-        }
+        if self.pos == self.input.len() { Ok(()) } else { Err(CborError::TrailingBytes) }
     }
 
     fn read_u8(&mut self) -> Result<u8, CborError> {
@@ -216,9 +212,7 @@ impl<'a> Decoder<'a> {
             major::BYTES => Ok(Item::Bytes(self.read_slice(arg)?)),
             major::TEXT => {
                 let raw = self.read_slice(arg)?;
-                core::str::from_utf8(raw)
-                    .map(Item::Text)
-                    .map_err(|_| CborError::InvalidUtf8)
+                core::str::from_utf8(raw).map(Item::Text).map_err(|_| CborError::InvalidUtf8)
             }
             major::ARRAY => Ok(Item::Array(arg)),
             major::MAP => Ok(Item::Map(arg)),
@@ -558,7 +552,12 @@ mod tests {
 
     #[test]
     fn rejects_non_minimal_heads() {
-        for bad in [&[0x18, 0x17][..], &[0x19, 0x00, 0xff], &[0x1a, 0, 0, 0xff, 0xff], &[0x1b, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]] {
+        for bad in [
+            &[0x18, 0x17][..],
+            &[0x19, 0x00, 0xff],
+            &[0x1a, 0, 0, 0xff, 0xff],
+            &[0x1b, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff],
+        ] {
             assert_eq!(Decoder::new(bad).item(), Err(CborError::NonMinimal), "{bad:x?}");
         }
     }

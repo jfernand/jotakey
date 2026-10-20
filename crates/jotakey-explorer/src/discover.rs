@@ -175,9 +175,7 @@ pub fn scan_in(class_dir: &Path, dev_dir: &Path) -> io::Result<Vec<Device>> {
             continue;
         }
         let uevent = fs::read_to_string(hid.join("uevent")).unwrap_or_default();
-        let field = |key: &str| {
-            uevent.lines().find_map(|l| l.strip_prefix(key)).map(str::to_owned).unwrap_or_default()
-        };
+        let field = |key: &str| uevent.lines().find_map(|l| l.strip_prefix(key)).map(str::to_owned).unwrap_or_default();
         let (bus, vendor_id, product_id) = parse_hid_id(&field("HID_ID=")).unwrap_or((Bus::Other(0), 0, 0));
         let real = fs::canonicalize(&hid).unwrap_or_else(|_| hid.clone());
         found.push(Device {
@@ -225,7 +223,8 @@ fn read_attr(dir: &Path, name: &str) -> Option<String> {
 fn usb_info(hid: &Path) -> Option<UsbInfo> {
     let usb = hid.ancestors().skip(1).take(4).find(|p| p.join("idVendor").is_file())?;
     let read = |f: &str| read_attr(usb, f);
-    let triple = |dir: &Path, a: &str, b: &str, c: &str| Some((read_attr(dir, a)?, read_attr(dir, b)?, read_attr(dir, c)?));
+    let triple =
+        |dir: &Path, a: &str, b: &str, c: &str| Some((read_attr(dir, a)?, read_attr(dir, b)?, read_attr(dir, c)?));
     let interface = hid.parent().filter(|p| p.join("bInterfaceClass").is_file()).map(|dir| UsbInterface {
         number: read_attr(dir, "bInterfaceNumber"),
         class: triple(dir, "bInterfaceClass", "bInterfaceSubClass", "bInterfaceProtocol"),
@@ -337,9 +336,8 @@ mod tests {
     /// The descriptor jotakey-bridge registers (and most FIDO keys use): usage page F1D0,
     /// usage 01, application collection, 64-byte input and output reports.
     const FIDO: &[u8] = &[
-        0x06, 0xD0, 0xF1, 0x09, 0x01, 0xA1, 0x01, 0x09, 0x20, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08,
-        0x95, 0x40, 0x81, 0x02, 0x09, 0x21, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08, 0x95, 0x40, 0x91,
-        0x02, 0xC0,
+        0x06, 0xD0, 0xF1, 0x09, 0x01, 0xA1, 0x01, 0x09, 0x20, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08, 0x95, 0x40,
+        0x81, 0x02, 0x09, 0x21, 0x15, 0x00, 0x26, 0xFF, 0x00, 0x75, 0x08, 0x95, 0x40, 0x91, 0x02, 0xC0,
     ];
     /// A boot keyboard's first items: generic desktop page, keyboard usage.
     const KEYBOARD: &[u8] = &[0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x05, 0x07, 0xC0];
@@ -374,7 +372,8 @@ mod tests {
             let dev = root.join("class").join(node).join("device");
             fs::create_dir_all(&dev).unwrap();
             fs::write(dev.join("report_descriptor"), descriptor).unwrap();
-            fs::write(dev.join("uevent"), format!("HID_ID={hid_id}\nHID_NAME={name}\nHID_PHYS=usb-1/input1\n")).unwrap();
+            fs::write(dev.join("uevent"), format!("HID_ID={hid_id}\nHID_NAME={name}\nHID_PHYS=usb-1/input1\n"))
+                .unwrap();
         };
         add("hidraw10", FIDO, "0003:00001209:00000001", "Jotakey");
         add("hidraw2", KEYBOARD, "0003:0000046D:0000C31C", "Keyboard");
@@ -402,16 +401,31 @@ mod tests {
         fs::create_dir_all(&hid).unwrap();
         let write = |dir: &Path, name: &str, value: &str| fs::write(dir.join(name), format!("{value}\n")).unwrap();
         for (name, value) in [
-            ("idVendor", "1050"), ("manufacturer", "Yubico"), ("product", "YubiKey OTP+FIDO+CCID"),
-            ("bcdDevice", "0543"), ("speed", "12"), ("version", " 2.00"), ("busnum", "3"), ("devnum", "9"),
-            ("bDeviceClass", "00"), ("bDeviceSubClass", "00"), ("bDeviceProtocol", "00"),
-            ("bMaxPacketSize0", "64"), ("bNumConfigurations", "1"), ("bConfigurationValue", "1"),
-            ("bMaxPower", "30mA"), ("bmAttributes", "80"), ("bNumInterfaces", " 3"), ("removable", "removable"),
+            ("idVendor", "1050"),
+            ("manufacturer", "Yubico"),
+            ("product", "YubiKey OTP+FIDO+CCID"),
+            ("bcdDevice", "0543"),
+            ("speed", "12"),
+            ("version", " 2.00"),
+            ("busnum", "3"),
+            ("devnum", "9"),
+            ("bDeviceClass", "00"),
+            ("bDeviceSubClass", "00"),
+            ("bDeviceProtocol", "00"),
+            ("bMaxPacketSize0", "64"),
+            ("bNumConfigurations", "1"),
+            ("bConfigurationValue", "1"),
+            ("bMaxPower", "30mA"),
+            ("bmAttributes", "80"),
+            ("bNumInterfaces", " 3"),
+            ("removable", "removable"),
         ] {
             write(&usb, name, value);
         }
         for (name, value) in [
-            ("bInterfaceNumber", "01"), ("bInterfaceClass", "03"), ("bInterfaceSubClass", "00"),
+            ("bInterfaceNumber", "01"),
+            ("bInterfaceClass", "03"),
+            ("bInterfaceSubClass", "00"),
             ("bInterfaceProtocol", "00"),
         ] {
             write(&interface, name, value);
@@ -436,7 +450,8 @@ mod tests {
         let i = info.interface.unwrap();
         assert_eq!(i.class, Some(("03".into(), "00".into(), "00".into())));
         assert_eq!(i.driver, None);
-        let eps: Vec<(&str, Option<u16>)> = i.endpoints.iter().map(|e| (e.address.as_str(), e.max_packet_size)).collect();
+        let eps: Vec<(&str, Option<u16>)> =
+            i.endpoints.iter().map(|e| (e.address.as_str(), e.max_packet_size)).collect();
         assert_eq!(eps, [("02", Some(64)), ("81", Some(64))]);
         assert_eq!(bcd("0100"), "1.00");
         assert_eq!(bcd("0001"), "0.01");

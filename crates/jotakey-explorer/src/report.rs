@@ -141,7 +141,11 @@ pub fn usb_section(d: &Device) -> Section {
         rows.push(row_note("Control endpoint", format!("{m} bytes"), "bMaxPacketSize0 of endpoint 0"));
     }
     if let (Some(active), Some(count)) = (&u.configuration, &u.configurations) {
-        rows.push(row_note("Configuration", format!("{active} of {count}"), "bConfigurationValue of bNumConfigurations"));
+        rows.push(row_note(
+            "Configuration",
+            format!("{active} of {count}"),
+            "bConfigurationValue of bNumConfigurations",
+        ));
     }
     if let Some(p) = &u.max_power {
         let note = u.attributes.map(power_note).unwrap_or_default();
@@ -275,7 +279,13 @@ pub fn query<T: Transport>(device: &Device, io: T) -> Report {
             rows.push(retries(&mut client, 0x01, 3, "PIN retries", "wrong PINs left before the key locks"));
         }
         if opts.get(&Value::Text("uv".into())) == Some(&Value::Bool(true)) {
-            rows.push(retries(&mut client, 0x07, 5, "UV retries", "failed fingerprints left before falling back to the PIN"));
+            rows.push(retries(
+                &mut client,
+                0x07,
+                5,
+                "UV retries",
+                "failed fingerprints left before falling back to the PIN",
+            ));
         }
         if !rows.is_empty() {
             report.sections.push(Section { title: "Verification".into(), rows });
@@ -304,10 +314,12 @@ fn retries<T: Transport>(client: &mut Client<T>, sub: u8, answer_key: i128, labe
     // {1: pinUvAuthProtocol 1, 2: subCommand}
     let params = [0xA2, 0x01, 0x01, 0x02, sub];
     match client.cbor(CLIENT_PIN, &params) {
-        Ok((0, body)) => match Value::decode(&body).as_ref().and_then(|v| v.get_int(answer_key)).and_then(Value::as_int) {
-            Some(n) => row_note(label, n.to_string(), note),
-            None => row(label, "reply without a count"),
-        },
+        Ok((0, body)) => {
+            match Value::decode(&body).as_ref().and_then(|v| v.get_int(answer_key)).and_then(Value::as_int) {
+                Some(n) => row_note(label, n.to_string(), note),
+                None => row(label, "reply without a count"),
+            }
+        }
         Ok((status, _)) => row(label, ctap_status(status)),
         Err(e) => row(label, format!("failed: {e}")),
     }
@@ -548,7 +560,9 @@ mod tests {
                 ..UsbInfo::default()
             }),
             virtual_device: false,
-            report_descriptor: vec![0x06, 0xD0, 0xF1, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x03, 0x75, 0x08, 0x95, 0x3F, 0x81, 0x02, 0xC0],
+            report_descriptor: vec![
+                0x06, 0xD0, 0xF1, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x03, 0x75, 0x08, 0x95, 0x3F, 0x81, 0x02, 0xC0,
+            ],
         }
     }
 

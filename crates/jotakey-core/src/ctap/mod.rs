@@ -22,9 +22,9 @@ use zeroize::Zeroizing;
 use crate::MAX_MSG_SIZE;
 use crate::cbor::{CborError, Encoder};
 use crate::credential::{self, CRED_ID_LEN, NONCE_LEN};
-use crate::platform::{Platform, PinRecord, PresenceResult, SecretLabel};
-pub use client_pin::PinSession;
+use crate::platform::{PinRecord, Platform, PresenceResult, SecretLabel};
 use crate::status::Status;
+pub use client_pin::PinSession;
 
 /// CTAP2 command bytes.
 pub mod command {
@@ -186,7 +186,8 @@ impl Authenticator {
                 })) => {
                     // A silent assertion: signed now, with the UP flag clear (invariant 1).
                     let flags = get_assertion::Flags { user_present: false, user_verified };
-                    let result = get_assertion::sign(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, flags, out);
+                    let result =
+                        get_assertion::sign(platform, &rp_id_hash, &client_data_hash, &cred_id, &nonce, flags, out);
                     return Outcome::Response(result.unwrap_or_else(|s| write_status(out, s)));
                 }
                 Ok(PendingOrSilent::Silent(_)) => Err(Status::Other),

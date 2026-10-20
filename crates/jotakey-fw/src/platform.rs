@@ -8,7 +8,7 @@ use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
 use esp_hal::hmac::{Hmac, HmacPurpose, KeyId};
 use esp_hal::rng::Trng;
 use esp_storage::FlashStorage;
-use jotakey_core::platform::{PIN_RECORD_LEN, Platform, PinRecord, PlatformError, SecretLabel};
+use jotakey_core::platform::{PIN_RECORD_LEN, PinRecord, Platform, PlatformError, SecretLabel};
 use jotakey_core::selftest::RngHealth;
 use jotakey_core::storage::{Flash, RecordLog, SECTOR_SIZE};
 use zeroize::Zeroizing;

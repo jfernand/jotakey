@@ -4,7 +4,7 @@
 //! **Never use in firmware.** Its "random" bytes are a hash chain and its root key is in RAM.
 
 use crate::crypto::{hmac_sha256, sha256};
-use crate::platform::{PIN_RECORD_LEN, Platform, PinRecord, PlatformError, SecretLabel};
+use crate::platform::{PIN_RECORD_LEN, PinRecord, Platform, PlatformError, SecretLabel};
 
 /// A software platform with fault-injection switches.
 #[derive(Clone, Debug)]

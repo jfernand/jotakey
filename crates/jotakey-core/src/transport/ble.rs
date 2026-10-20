@@ -124,7 +124,11 @@ impl BleFramer {
     /// The complete request announced by [`BleEvent::Request`].
     #[must_use]
     pub fn request(&self) -> &[u8] {
-        if self.receive_state == ReceiveState::Busy { self.receive_buffer.get(..self.request_length).unwrap_or(&[]) } else { &[] }
+        if self.receive_state == ReceiveState::Busy {
+            self.receive_buffer.get(..self.request_length).unwrap_or(&[])
+        } else {
+            &[]
+        }
     }
 
     fn error(&mut self, code: u8) {
@@ -147,7 +151,8 @@ impl BleFramer {
         self.receive_state = ReceiveState::Idle;
         if let Some(dst) = self.transmit_buffer.get_mut(..data.len()) {
             dst.copy_from_slice(data);
-            self.transmit_state = TransmitState { command: cmd::MSG, length: data.len(), sent: 0, next_sequence: 0, active: true };
+            self.transmit_state =
+                TransmitState { command: cmd::MSG, length: data.len(), sent: 0, next_sequence: 0, active: true };
         } else {
             self.error(err::INVALID_LEN);
         }
@@ -206,7 +211,13 @@ impl BleFramer {
         if let Some(dst) = self.receive_buffer.get_mut(..payload.len()) {
             dst.copy_from_slice(payload);
         }
-        self.receive_state = ReceiveState::Receiving { command: b0, total, received: payload.len(), next_sequence: 0, last_packet_ms: now_ms };
+        self.receive_state = ReceiveState::Receiving {
+            command: b0,
+            total,
+            received: payload.len(),
+            next_sequence: 0,
+            last_packet_ms: now_ms,
+        };
         self.maybe_dispatch()
     }
 
@@ -231,7 +242,8 @@ impl BleFramer {
         }
         // Sequence numbers wrap 0x7F → 0x00 (CTAP 2.0 §8.3.4).
         let next = if next_sequence >= 0x7F { 0 } else { next_sequence.saturating_add(1) };
-        self.receive_state = ReceiveState::Receiving { command, total, received: end, next_sequence: next, last_packet_ms: now_ms };
+        self.receive_state =
+            ReceiveState::Receiving { command, total, received: end, next_sequence: next, last_packet_ms: now_ms };
         self.maybe_dispatch()
     }
 
@@ -246,7 +258,8 @@ impl BleFramer {
             self.receive_state = ReceiveState::Idle;
             if let (Some(d), Some(s)) = (self.transmit_buffer.get_mut(..total), self.receive_buffer.get(..total)) {
                 d.copy_from_slice(s);
-                self.transmit_state = TransmitState { command: cmd::PING, length: total, sent: 0, next_sequence: 0, active: true };
+                self.transmit_state =
+                    TransmitState { command: cmd::PING, length: total, sent: 0, next_sequence: 0, active: true };
             }
             return BleEvent::None;
         }
@@ -280,11 +293,13 @@ impl BleFramer {
             out[..3].copy_from_slice(&[t.command, h, l]);
         } else {
             out[0] = t.next_sequence;
-            self.transmit_state.next_sequence = if t.next_sequence >= 0x7F { 0 } else { t.next_sequence.saturating_add(1) };
+            self.transmit_state.next_sequence =
+                if t.next_sequence >= 0x7F { 0 } else { t.next_sequence.saturating_add(1) };
         }
         let n = t.length.saturating_sub(t.sent).min(room);
         let end = t.sent.saturating_add(n);
-        if let (Some(dst), Some(src)) = (out.get_mut(hdr..hdr.saturating_add(n)), self.transmit_buffer.get(t.sent..end)) {
+        if let (Some(dst), Some(src)) = (out.get_mut(hdr..hdr.saturating_add(n)), self.transmit_buffer.get(t.sent..end))
+        {
             dst.copy_from_slice(src);
         }
         self.transmit_state.sent = end;

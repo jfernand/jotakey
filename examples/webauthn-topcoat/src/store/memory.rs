@@ -54,10 +54,12 @@ impl Store {
         if inner.accounts.values().flat_map(|a| &a.keys).any(|k| k.key.cred_id() == key.key.cred_id()) {
             return AddKey::Duplicate;
         }
-        let account = inner
-            .accounts
-            .entry(username.to_owned())
-            .or_insert_with(|| Account { user_id, created: now(), keys: Vec::new(), last_sign_in: None });
+        let account = inner.accounts.entry(username.to_owned()).or_insert_with(|| Account {
+            user_id,
+            created: now(),
+            keys: Vec::new(),
+            last_sign_in: None,
+        });
         if account.user_id != user_id {
             return AddKey::Taken;
         }

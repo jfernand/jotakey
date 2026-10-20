@@ -80,7 +80,11 @@ fn tag<T: Tagger>(tagger: &mut T, rp_id_hash: &[u8; 32], nonce: &[u8; NONCE_LEN]
 ///
 /// # Errors
 /// [`TagError`] if the tagger fails.
-pub fn wrap<T: Tagger>(tagger: &mut T, rp_id_hash: &[u8; 32], nonce: &[u8; NONCE_LEN]) -> Result<[u8; CRED_ID_LEN], TagError> {
+pub fn wrap<T: Tagger>(
+    tagger: &mut T,
+    rp_id_hash: &[u8; 32],
+    nonce: &[u8; NONCE_LEN],
+) -> Result<[u8; CRED_ID_LEN], TagError> {
     let t = tag(tagger, rp_id_hash, nonce)?;
     let mut id = [0u8; CRED_ID_LEN];
     let (v, rest) = id.split_at_mut(1);
@@ -100,7 +104,11 @@ pub fn wrap<T: Tagger>(tagger: &mut T, rp_id_hash: &[u8; 32], nonce: &[u8; NONCE
 ///
 /// # Errors
 /// [`TagError`] if the tagger fails.
-pub fn unwrap<T: Tagger>(tagger: &mut T, rp_id_hash: &[u8; 32], id: &[u8]) -> Result<Option<[u8; NONCE_LEN]>, TagError> {
+pub fn unwrap<T: Tagger>(
+    tagger: &mut T,
+    rp_id_hash: &[u8; 32],
+    id: &[u8],
+) -> Result<Option<[u8; NONCE_LEN]>, TagError> {
     let Ok(id): Result<&[u8; CRED_ID_LEN], _> = id.try_into() else {
         return Ok(None);
     };

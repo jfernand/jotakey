@@ -10,14 +10,14 @@
 //! A `pinUvAuthParam` made from a pinUvAuthToken with the `ga` permission sets the UV flag,
 //! with or without the touch.
 
-use super::parse::{self, PARAM_DEPTH};
 use super::client_pin::permission;
+use super::parse::{self, PARAM_DEPTH};
 use super::{Pending, PinSession, PlatformTagger, Response, credential_seed, write_success};
 use crate::authdata::{self, FLAG_UP, FLAG_UV};
-use crate::ctap::PendingOrSilent;
 use crate::cbor::{Decoder, Key};
 use crate::credential::{self, CRED_ID_LEN, NONCE_LEN};
 use crate::crypto;
+use crate::ctap::PendingOrSilent;
 use crate::pin_protocol;
 use crate::platform::Platform;
 use crate::status::Status;
@@ -61,7 +61,11 @@ fn parse(params: &[u8]) -> Result<Request<'_>, Status> {
 
 /// Validate the request and find our credential in the allow list. With `up: false` it is
 /// signed at once without the UP flag; otherwise it is parked for a touch.
-pub fn process<P: Platform>(platform: &mut P, session: &mut PinSession, params: &[u8]) -> Result<PendingOrSilent, Status> {
+pub fn process<P: Platform>(
+    platform: &mut P,
+    session: &mut PinSession,
+    params: &[u8],
+) -> Result<PendingOrSilent, Status> {
     let req = parse(params)?;
 
     if req.pin_auth.is_some_and(<[u8]>::is_empty) {
@@ -77,7 +81,13 @@ pub fn process<P: Platform>(platform: &mut P, session: &mut PinSession, params: 
     let user_verified = match req.pin_auth {
         Some(param) => {
             pin_protocol::check_version(req.pin_protocol)?;
-            session.authorize(platform.uptime_ms(), permission::GET_ASSERTION, &req.rp_id_hash, &req.client_data_hash, param)?;
+            session.authorize(
+                platform.uptime_ms(),
+                permission::GET_ASSERTION,
+                &req.rp_id_hash,
+                &req.client_data_hash,
+                param,
+            )?;
             true
         }
         None => false,
@@ -106,9 +116,18 @@ pub fn process<P: Platform>(platform: &mut P, session: &mut PinSession, params: 
     let Some((cred_id, nonce)) = found.transpose()? else {
         return Err(Status::NoCredentials);
     };
-    let assertion =
-        Pending::GetAssertion { rp_id_hash: req.rp_id_hash, client_data_hash: req.client_data_hash, cred_id, nonce, user_verified };
-    Ok(if req.options.up == Some(false) { PendingOrSilent::Silent(assertion) } else { PendingOrSilent::Pending(assertion) })
+    let assertion = Pending::GetAssertion {
+        rp_id_hash: req.rp_id_hash,
+        client_data_hash: req.client_data_hash,
+        cred_id,
+        nonce,
+        user_verified,
+    };
+    Ok(if req.options.up == Some(false) {
+        PendingOrSilent::Silent(assertion)
+    } else {
+        PendingOrSilent::Pending(assertion)
+    })
 }
 
 /// The flags an assertion signs.

@@ -32,7 +32,7 @@ use super::{Response, write_status, write_success};
 use crate::cbor::{Decoder, Key};
 use crate::crypto;
 use crate::pin_protocol::{self, BLOCK_LEN, KeyAgreementKey, SharedSecret, TAG_LEN};
-use crate::platform::{PIN_RETRIES_MAX, Platform, PinRecord, SecretLabel};
+use crate::platform::{PIN_RETRIES_MAX, PinRecord, Platform, SecretLabel};
 use crate::status::Status;
 
 /// clientPIN sub-command numbers (CTAP 2.1 §6.5.5).
@@ -253,7 +253,11 @@ pub fn process<P: Platform>(
     }
 }
 
-fn get_key_agreement<P: Platform>(platform: &mut P, session: &mut PinSession, out: &mut Response) -> Result<usize, Status> {
+fn get_key_agreement<P: Platform>(
+    platform: &mut P,
+    session: &mut PinSession,
+    out: &mut Response,
+) -> Result<usize, Status> {
     let key = match &session.key_agreement {
         Some(k) => k,
         None => session.key_agreement.insert(KeyAgreementKey::generate(platform).map_err(|_| Status::Other)?),
@@ -338,7 +342,9 @@ fn check_pin<P: Platform>(
     let candidate = Zeroizing::new(verifier(platform, &pin_hash)?);
     if bool::from(candidate.ct_eq(stored)) {
         session.mismatches = 0;
-        platform.store_pin(&PinRecord { verifier: Some(*stored), retries: PIN_RETRIES_MAX }).map_err(|_| Status::Other)?;
+        platform
+            .store_pin(&PinRecord { verifier: Some(*stored), retries: PIN_RETRIES_MAX })
+            .map_err(|_| Status::Other)?;
         return Ok(());
     }
     session.key_agreement = KeyAgreementKey::generate(platform).ok();

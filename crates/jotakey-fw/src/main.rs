@@ -72,9 +72,10 @@ async fn main(spawner: Spawner) {
         .and_then(|rmt| rmt.channel0.configure_tx(&TxChannelConfig::default().with_clk_divider(1)).ok())
         .map(|ch| ch.with_pin(p.GPIO8));
     if let Some(ch) = led_ch
-        && let Ok(t) = led::led_task(ch) {
-            spawner.spawn(t);
-        }
+        && let Ok(t) = led::led_task(ch)
+    {
+        spawner.spawn(t);
+    }
 
     let mut auth = Authenticator::new(AAGUID);
     let out = OUT.init([0u8; MAX_MSG_SIZE]);
@@ -217,7 +218,9 @@ async fn fault_forever(auth: &mut Authenticator, out: &mut Response) -> ! {
         // `process` in the fault state touches no hardware; any platform type works.
         let n = match auth.process(&mut NoPlatform, &req.data, out) {
             Outcome::Response(n) => n,
-            Outcome::NeedsUserPresence => auth.complete(&mut NoPlatform, jotakey_core::platform::PresenceResult::Timeout, out),
+            Outcome::NeedsUserPresence => {
+                auth.complete(&mut NoPlatform, jotakey_core::platform::PresenceResult::Timeout, out)
+            }
         };
         link::reply(req.transport, out.get(..n).unwrap_or(&[]));
     }
@@ -247,7 +250,10 @@ impl Platform for NoPlatform {
     fn load_pin(&mut self) -> Result<jotakey_core::platform::PinRecord, jotakey_core::platform::PlatformError> {
         Err(jotakey_core::platform::PlatformError)
     }
-    fn store_pin(&mut self, _: &jotakey_core::platform::PinRecord) -> Result<(), jotakey_core::platform::PlatformError> {
+    fn store_pin(
+        &mut self,
+        _: &jotakey_core::platform::PinRecord,
+    ) -> Result<(), jotakey_core::platform::PlatformError> {
         Err(jotakey_core::platform::PlatformError)
     }
     fn uptime_ms(&self) -> u64 {

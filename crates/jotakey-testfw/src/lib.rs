@@ -8,7 +8,7 @@
 use defmt_rtt as _;
 use esp_hal::rng::Trng;
 use jotakey_core::crypto::hmac_sha256;
-use jotakey_core::platform::{Platform, PinRecord, PlatformError, SecretLabel};
+use jotakey_core::platform::{PinRecord, Platform, PlatformError, SecretLabel};
 use jotakey_core::selftest::RngHealth;
 use jotakey_core::storage::{Flash, SECTOR_SIZE};
 

@@ -198,8 +198,9 @@ mod tests {
 
     #[test]
     fn create2_layout() {
-        let ev = create2(&Identity { name: "x", vendor: 0x1209, product: 1, version: 2, report_descriptor: &[9, 8, 7] })
-            .unwrap();
+        let ev =
+            create2(&Identity { name: "x", vendor: 0x1209, product: 1, version: 2, report_descriptor: &[9, 8, 7] })
+                .unwrap();
         assert_eq!(u32::from_ne_bytes(ev[0..4].try_into().unwrap()), UHID_CREATE2);
         assert_eq!(ev[4], b'x');
         assert_eq!(ev[5], 0);
