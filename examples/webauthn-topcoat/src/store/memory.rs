@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use topcoat::session::TokenHash;
 use webauthn_rs::prelude::*;
 
-use super::{Account, AddKey, Ceremony, apply_sign_in};
+use super::{Account, AddKey, Ceremony, Key, apply_sign_in, now};
 
 #[derive(Default)]
 pub struct Store(Mutex<Inner>);
@@ -30,8 +30,9 @@ impl Store {
     pub fn account(&self, username: &str) -> Option<Account> {
         self.lock().accounts.get(username).map(|a| Account {
             user_id: a.user_id,
+            created: a.created,
             keys: a.keys.clone(),
-            last_sign_in: a.last_sign_in,
+            last_sign_in: a.last_sign_in.clone(),
         })
     }
 
@@ -50,17 +51,17 @@ impl Store {
 
     pub fn add_key(&self, username: &str, user_id: Uuid, key: SecurityKey) -> AddKey {
         let mut inner = self.lock();
-        if inner.accounts.values().flat_map(|a| &a.keys).any(|k| k.cred_id() == key.cred_id()) {
+        if inner.accounts.values().flat_map(|a| &a.keys).any(|k| k.key.cred_id() == key.cred_id()) {
             return AddKey::Duplicate;
         }
         let account = inner
             .accounts
             .entry(username.to_owned())
-            .or_insert_with(|| Account { user_id, keys: Vec::new(), last_sign_in: None });
+            .or_insert_with(|| Account { user_id, created: now(), keys: Vec::new(), last_sign_in: None });
         if account.user_id != user_id {
             return AddKey::Taken;
         }
-        account.keys.push(key);
+        account.keys.push(Key::new(key));
         AddKey::Added(account.keys.len())
     }
 

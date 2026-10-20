@@ -118,6 +118,16 @@ flow, which matches that:
 - No `hints`. The security-key flow sends `hints: ["security-key"]`, and Safari then offers
   only an NFC or USB key, so an iPhone's own passkeys fail with `NotAllowedError`. The server
   drops the hint, and browsers offer every kind of authenticator, Jotakey included.
+- Transports kept. At registration the browser reports how it reached the authenticator
+  (`usb`, `nfc`, `internal`, `hybrid`). webauthn-rs drops that for `attestation: "none"`, and
+  without it in `allowCredentials` Safari looks for an NFC or USB key and reports "a security
+  key that is not registered". The server stores the transports and sends them back. They
+  only steer the browser's prompt; no check depends on them.
+
+After signing in, the page lists everything the server stores about the account: the user
+handle, and per key the credential ID, whether it is a synced passkey or device-bound,
+transports, algorithm, attestation format, when it was registered and last used, and the
+counter, with what the authenticator reported at this sign-in.
 
 ## Before you put this in front of users
 
