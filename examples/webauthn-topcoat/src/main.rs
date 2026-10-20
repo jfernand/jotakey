@@ -42,6 +42,10 @@ use webauthn_rs::prelude::*;
 
 use store::{AddKey, Ceremony, Store};
 
+/// The commit this binary was built from, set by infra/build.sh; unset for a local build.
+const COMMIT: Option<&str> = option_env!("JOTAKEY_COMMIT");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// How long a sign-in lasts.
 const SESSION_LIFETIME: Duration = Duration::from_secs(60 * 60);
 
@@ -156,6 +160,7 @@ async fn home(cx: &Cx) -> Result<impl View> {
         last.is_some_and(|s| s.user_verified),
     );
     let in_memory = !store.persistent();
+    let commit_url = COMMIT.map(|c| format!("https://github.com/jfernand/jotakey/commit/{c}"));
     Ok(view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -197,6 +202,14 @@ async fn home(cx: &Cx) -> Result<impl View> {
                     <p class="note">"Touch the key when it blinks."
                         if in_memory { " Accounts live in memory until the server stops." }
                     </p>
+                    <footer class="note">
+                        "webauthn-topcoat " (VERSION) " · "
+                        if let (Some(commit), Some(url)) = (COMMIT, commit_url.as_deref()) {
+                            <a href=(url)>(commit.get(..7).unwrap_or(commit))</a>
+                        } else {
+                            "local build"
+                        }
+                    </footer>
                 </main>
             </body>
         </html>
