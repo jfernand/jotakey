@@ -17,7 +17,8 @@
 //!
 //! The options match what the Jotakey firmware supports today: non-discoverable
 //! credentials (the browser is told which credential IDs to use), ES256, and a touch
-//! without the PIN.
+//! without the PIN, or with it: "Register with PIN" makes a key that must verify the user
+//! at registration and at every sign-in after.
 
 mod model;
 mod profile;
@@ -41,6 +42,7 @@ use topcoat::{
     view::{View, view},
 };
 use webauthn_rs::prelude::*;
+use webauthn_rs_proto::UserVerificationPolicy;
 
 use store::{AddKey, Ceremony, Key, Store};
 
@@ -193,6 +195,7 @@ async fn home(cx: &Cx) -> Result<impl View> {
                             }
                             <div class="row">
                                 <button id="register" data-username=(name.as_str())>"Add another key"</button>
+                                <button id="register-pin" data-username=(name.as_str()) data-pin="">"Add a key with PIN"</button>
                                 <form method="post" action="/logout"><button class="quiet">"Sign out"</button></form>
                             </div>
                         </section>
@@ -202,12 +205,13 @@ async fn home(cx: &Cx) -> Result<impl View> {
                             <input id="username" autocomplete="username" placeholder="alice" required="">
                             <div class="row">
                                 <button id="register">"Register a key"</button>
+                                <button id="register-pin" data-pin="">"Register with PIN"</button>
                                 <button id="login">"Sign in"</button>
                             </div>
                         </section>
                     }
                     <p id="status" role="status"></p>
-                    <p class="note">"Touch the key when it blinks."
+                    <p class="note">"Touch the key when it blinks. With PIN, the browser first asks for the key's PIN, and offers to set one if it has none."
                         if in_memory { " Accounts live in memory until the server stops." }
                     </p>
                     <footer class="note">
@@ -237,6 +241,9 @@ async fn app_css() -> Result<Css<&'static str>> {
 #[derive(Deserialize)]
 struct Start {
     username: String,
+    /// Registration only: require user verification for this key (PIN, fingerprint or face).
+    #[serde(default)]
+    pin: bool,
 }
 
 #[derive(Deserialize)]
@@ -284,6 +291,45 @@ fn ask_for_model(mut options: CreationChallengeResponse) -> CreationChallengeRes
     options
 }
 
+/// Ask the authenticator to verify the user: `userVerification: "required"`, so the browser
+/// asks for the key's PIN (or offers to set one). Only the request changes: webauthn-rs's
+/// security-key flow still asks for no `credProtect` (Chrome refuses Jotakey's registration
+/// with it), so the server checks the UV flag itself, in [`require_pin`].
+fn ask_for_pin(mut options: CreationChallengeResponse) -> CreationChallengeResponse {
+    options.public_key.authenticator_selection.get_or_insert_with(Default::default).user_verification =
+        UserVerificationPolicy::Required;
+    options
+}
+
+/// A key registered with PIN: refuse it unless the authenticator verified the user, and
+/// record its policy as "required", so webauthn-rs refuses every later sign-in with it that
+/// is not verified (`finish_securitykey_authentication` checks the policy each credential
+/// was registered with).
+fn require_pin(key: SecurityKey) -> std::result::Result<SecurityKey, &'static str> {
+    let mut credential = Credential::from(key);
+    if !credential.user_verified {
+        return Err("the key did not verify you (no PIN was entered), so it was not registered");
+    }
+    credential.registration_policy = UserVerificationPolicy::Required;
+    Ok(SecurityKey::from(credential))
+}
+
+/// Whether every sign-in with this key must verify the user.
+pub fn pin_required(key: &SecurityKey) -> bool {
+    Credential::from(key.clone()).registration_policy == UserVerificationPolicy::Required
+}
+
+/// What a sign-in asks the browser for: verification if every key needs it, verification
+/// when the key can do it if some do (so a key registered with PIN gets the PIN prompt),
+/// otherwise a touch only. A hint for the browser: webauthn-rs enforces each key's policy.
+fn sign_in_verification(keys: &[SecurityKey]) -> UserVerificationPolicy {
+    match keys.iter().filter(|k| pin_required(k)).count() {
+        0 => UserVerificationPolicy::Discouraged_DO_NOT_USE,
+        n if n == keys.len() => UserVerificationPolicy::Required,
+        _ => UserVerificationPolicy::Preferred,
+    }
+}
+
 /// Keep the transports the browser reported at registration (`getTransports()`: usb, nfc,
 /// internal, hybrid...). webauthn-rs drops them unless the attestation is packed or tpm, and
 /// without them in `allowCredentials` Safari looks for an NFC or USB key instead of the
@@ -324,8 +370,10 @@ async fn register_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> 
             Err(e) => return Ok(failed(e)),
         };
     let options = ask_for_model(any_authenticator(options));
+    let options = if req.pin { ask_for_pin(options) } else { options };
     let ceremony = Uuid::new_v4();
-    stored!(app.store.begin(ceremony, Ceremony::Registration { username, user_id, state }).await);
+    let pin = req.pin;
+    stored!(app.store.begin(ceremony, Ceremony::Registration { username, user_id, pin, state }).await);
     Ok(Json(json!({ "ok": true, "ceremony": ceremony, "options": options })))
 }
 
@@ -333,12 +381,21 @@ async fn register_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> 
 async fn register_finish(cx: &Cx, Json(req): Json<Finish<RegisterPublicKeyCredential>>) -> Result<Json<Value>> {
     let app = app(cx);
     // Each ceremony's state is used once, whatever the outcome.
-    let Some(Ceremony::Registration { username, user_id, state }) = stored!(app.store.take(req.ceremony).await) else {
+    let Some(Ceremony::Registration { username, user_id, pin, state }) = stored!(app.store.take(req.ceremony).await)
+    else {
         return Ok(failed("unknown or expired registration; start again"));
     };
     let key = match app.webauthn.finish_securitykey_registration(&req.credential, &state) {
         Ok(k) => with_transports(k, &req.credential),
         Err(e) => return Ok(failed(e)),
+    };
+    let key = if pin {
+        match require_pin(key) {
+            Ok(k) => k,
+            Err(e) => return Ok(failed(e)),
+        }
+    } else {
+        key
     };
     // The model is a label: if Jotakey's strict decoder rejects the browser's CBOR, the key
     // still registers (webauthn-rs accepted it), and the page says what was wrong.
@@ -373,7 +430,8 @@ async fn login_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> {
         Ok(r) => r,
         Err(e) => return Ok(failed(e)),
     };
-    let options = any_authenticator(options);
+    let mut options = any_authenticator(options);
+    options.public_key.user_verification = sign_in_verification(&keys);
     let ceremony = Uuid::new_v4();
     stored!(app.store.begin(ceremony, Ceremony::Authentication { username, state }).await);
     Ok(Json(json!({ "ok": true, "ceremony": ceremony, "options": options })))
@@ -385,7 +443,8 @@ async fn login_finish(cx: &Cx, Json(req): Json<Finish<PublicKeyCredential>>) -> 
     let Some(Ceremony::Authentication { username, state }) = stored!(app.store.take(req.ceremony).await) else {
         return Ok(failed("unknown or expired sign-in; start again"));
     };
-    // Checks the challenge, origin, RP ID hash, UP flag, signature and counter.
+    // Checks the challenge, origin, RP ID hash, UP flag, signature and counter, and the UV
+    // flag for a key registered with PIN.
     let result = match app.webauthn.finish_securitykey_authentication(&req.credential, &state) {
         Ok(r) => r,
         Err(e) => return Ok(failed(e)),
@@ -407,4 +466,56 @@ async fn logout(cx: &Cx) -> Result<SeeOther> {
         eprintln!("store: {e}");
     }
     Ok(see_other("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stored ES256 key, registered with or without user verification.
+    fn key(user_verified: bool) -> SecurityKey {
+        let (x, y) = ([1u8; 32], [2u8; 32]);
+        let credential = json!({
+            "cred_id": "AQID",
+            "cred": { "type_": "ES256", "key": { "EC_EC2": { "curve": "SECP256R1", "x": x, "y": y } } },
+            "counter": 0,
+            "transports": null,
+            "user_verified": user_verified,
+            "backup_eligible": false,
+            "backup_state": false,
+            "registration_policy": "discouraged",
+            "extensions": { "cred_protect": "NotRequested", "hmac_create_secret": "NotRequested" },
+            "attestation": { "data": "None", "metadata": "None" },
+            "attestation_format": "none",
+        });
+        SecurityKey::from(serde_json::from_value::<Credential>(credential).expect("credential JSON"))
+    }
+
+    #[test]
+    fn a_pin_key_must_be_verified() {
+        assert!(require_pin(key(false)).is_err(), "no UV at registration");
+        let with_pin = require_pin(key(true)).expect("verified");
+        assert!(pin_required(&with_pin));
+        assert!(!pin_required(&key(true)), "verified, but registered without PIN");
+    }
+
+    #[test]
+    fn sign_in_asks_for_the_pin_when_a_key_needs_it() {
+        let with_pin = require_pin(key(true)).expect("verified");
+        assert_eq!(sign_in_verification(&[key(false)]), UserVerificationPolicy::Discouraged_DO_NOT_USE);
+        assert_eq!(sign_in_verification(std::slice::from_ref(&with_pin)), UserVerificationPolicy::Required);
+        assert_eq!(sign_in_verification(&[key(false), with_pin]), UserVerificationPolicy::Preferred);
+    }
+
+    #[test]
+    fn registration_with_pin_requires_uv() {
+        let origin = Url::parse("http://localhost:3000").unwrap();
+        let builder = WebauthnBuilder::new("localhost", &origin).unwrap();
+        let webauthn = builder.danger_set_user_presence_only_security_keys(true).build().unwrap();
+        let (options, _) =
+            webauthn.start_securitykey_registration(Uuid::new_v4(), "a", "a", None, None, None).unwrap();
+        let options = serde_json::to_value(ask_for_pin(options)).unwrap();
+        assert_eq!(options["publicKey"]["authenticatorSelection"]["userVerification"], "required");
+        assert!(options["publicKey"].get("extensions").is_none_or(|e| e.get("credentialProtectionPolicy").is_none()));
+    }
 }

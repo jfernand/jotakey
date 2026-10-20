@@ -8,7 +8,7 @@
 //! |---|---|
 //! | `account#<username>` | `user_id`, `created`, `keys` (JSON), `last_sign_in` (JSON), `version` |
 //! | `credential#<credential ID>` | `username`: makes a credential ID belong to one account |
-//! | `ceremony#<id>` | `kind`, `username`, `user_id`, `state` (JSON), `ttl` |
+//! | `ceremony#<id>` | `kind`, `username`, `user_id`, `pin`, `state` (JSON), `ttl` |
 //! | `session#<token hash>` | `username`, `ttl` |
 //!
 //! DynamoDB deletes expired items only eventually, so every read checks `ttl` itself.
@@ -53,10 +53,11 @@ impl Store {
         item.insert("pk".into(), s(format!("ceremony#{id}")));
         item.insert("ttl".into(), n(epoch(expires)));
         match ceremony {
-            Ceremony::Registration { username, user_id, state } => {
+            Ceremony::Registration { username, user_id, pin, state } => {
                 item.insert("kind".into(), s("registration"));
                 item.insert("username".into(), s(username));
                 item.insert("user_id".into(), s(user_id.to_string()));
+                item.insert("pin".into(), AttributeValue::Bool(pin));
                 item.insert("state".into(), s(json(&state)?));
             }
             Ceremony::Authentication { username, state } => {
@@ -98,6 +99,7 @@ impl Store {
             "registration" => Ceremony::Registration {
                 username,
                 user_id: uuid(get_s(item, "user_id")?)?,
+                pin: matches!(item.get("pin"), Some(AttributeValue::Bool(true))),
                 state: from_json(state)?,
             },
             "authentication" => Ceremony::Authentication { username, state: from_json(state)? },
