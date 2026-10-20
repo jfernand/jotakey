@@ -115,6 +115,9 @@ flow, which matches that:
   registration: "Requested protection policy is inconsistent or incongruent with other
   requested parameters". A relying party that *requires* UV cannot use a Jotakey yet.
 - `attestation: "none"` and ES256 (`-7`), the only algorithm Jotakey implements.
+- No `hints`. The security-key flow sends `hints: ["security-key"]`, and Safari then offers
+  only an NFC or USB key, so an iPhone's own passkeys fail with `NotAllowedError`. The server
+  drops the hint, and browsers offer every kind of authenticator, Jotakey included.
 
 ## Before you put this in front of users
 
