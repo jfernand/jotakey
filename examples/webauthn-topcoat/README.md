@@ -19,6 +19,7 @@ Open **http://localhost:3000**. Use `localhost`, not `127.0.0.1`: WebAuthn needs
 name as the RP ID, and browsers allow plain HTTP only on `localhost`. Pick a username, click
 **Register a key**, and touch the key when it blinks. Then click **Sign in** and touch it
 again. The page shows the signature counter, which goes up by one with every sign-in.
+Signed out, the page also lists the registered users: click a name to sign in with its key.
 
 `PORT=8080 cargo run` serves on another port.
 
@@ -58,7 +59,7 @@ The table has one string partition key, `pk`, and time-to-live on the `ttl` attr
 | `account#<username>` | user handle, keys (JSON), last counter, a `version` for conditional updates |
 | `credential#<credential ID>` | the owning username: a credential belongs to one account |
 | `ceremony#<id>` | a registration or sign-in in progress (its challenge), for 5 minutes |
-| `session#<token hash>` | a signed-in session, for an hour |
+| `session#<token hash>` | a signed-in session (username and user handle), for an hour |
 
 A ceremony is deleted as it is read, so of two finish requests only one gets its state.
 Account updates are conditional on `version` and retried, so concurrent sign-ins never lose
@@ -99,6 +100,14 @@ Each ceremony is two round trips:
 The server keeps each ceremony's state (the challenge) and uses it once. The browser only
 carries an opaque ceremony ID. After a sign-in, Topcoat issues a session cookie (`__Host-`,
 `Secure`, `HttpOnly`). The server stores only the token's hash.
+
+A signed-in user can remove any of their keys (`POST /api/keys/remove`). The server forgets
+the credential and frees its ID; the key itself stored nothing, since its credentials are
+not discoverable. Removing the last key deletes the account, frees the username, and ends
+the session. A session and a sign-in ceremony record the account's user handle as well as
+its username, and count only while the account still has that handle: if someone registers
+the freed username, a session left open elsewhere for the old account does not sign in to
+the new one.
 
 ## Options that matter for a Jotakey
 
@@ -180,7 +189,9 @@ This is a demo. A real deployment also needs:
 - **HTTPS** in front of it, and `ORIGIN` set to your `https://` URL (see Configuration).
 - **Persistent storage:** the `dynamodb` feature, or another backend in `src/store/`.
   Ceremonies expire after 5 minutes and sessions after an hour in either backend.
-- **Rate limiting** on the four `/api` routes. The server has none; the AWS deployment
+- **No list of users.** The sign-in page lists every username, so anyone can see who has
+  an account. That suits a demo; a real site keeps it private (`Store::usernames`).
+- **Rate limiting** on the five `/api` routes. The server has none; the AWS deployment
   throttles the whole API at API Gateway.
 - **Two keys per user**, or another recovery path: a credential cannot be copied off a
   Jotakey, so a lost key is a lost login.

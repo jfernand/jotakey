@@ -9,11 +9,11 @@
 //! | `account#<username>` | `user_id`, `created`, `keys` (JSON), `last_sign_in` (JSON), `version` |
 //! | `credential#<credential ID>` | `username`: makes a credential ID belong to one account |
 //! | `ceremony#<id>` | `kind`, `username`, `user_id`, `pin`, `state` (JSON), `ttl` |
-//! | `session#<token hash>` | `username`, `ttl` |
+//! | `session#<token hash>` | `username`, `user_id`, `ttl` |
 //!
 //! DynamoDB deletes expired items only eventually, so every read checks `ttl` itself.
 //! Account updates are conditional on `version` and retried, so concurrent sign-ins never
-//! lose a counter.
+//! lose a counter. The list of usernames is a scan, fine for a demo's few hundred items.
 
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -21,11 +21,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::error::DisplayErrorContext;
 use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsError;
-use aws_sdk_dynamodb::types::{AttributeValue, Put, ReturnValue, TransactWriteItem};
+use aws_sdk_dynamodb::types::{AttributeValue, Delete, Put, ReturnValue, TransactWriteItem};
 use topcoat::session::TokenHash;
 use webauthn_rs::prelude::*;
 
-use super::{Account, AddKey, Ceremony, Error, Key, Result, apply_sign_in, now};
+use super::{Account, AddKey, Ceremony, Error, Key, RemoveKey, Result, apply_sign_in, now, without_key};
 
 /// Attempts at an optimistic account update before giving up.
 const ATTEMPTS: usize = 5;
@@ -60,9 +60,10 @@ impl Store {
                 item.insert("pin".into(), AttributeValue::Bool(pin));
                 item.insert("state".into(), s(json(&state)?));
             }
-            Ceremony::Authentication { username, state } => {
+            Ceremony::Authentication { username, user_id, state } => {
                 item.insert("kind".into(), s("authentication"));
                 item.insert("username".into(), s(username));
+                item.insert("user_id".into(), s(user_id.to_string()));
                 item.insert("state".into(), s(json(&state)?));
             }
         }
@@ -102,7 +103,11 @@ impl Store {
                 pin: matches!(item.get("pin"), Some(AttributeValue::Bool(true))),
                 state: from_json(state)?,
             },
-            "authentication" => Ceremony::Authentication { username, state: from_json(state)? },
+            "authentication" => Ceremony::Authentication {
+                username,
+                user_id: uuid(get_s(item, "user_id")?)?,
+                state: from_json(state)?,
+            },
             other => return Err(Error(format!("ceremony {id}: unknown kind {other:?}"))),
         }))
     }
@@ -125,7 +130,7 @@ impl Store {
                 .condition_expression("attribute_not_exists(pk)")
                 .build()
                 .map_err(failed)?;
-            match self.transact(vec![claim, self.account_put(username, &account, version)?]).await? {
+            match self.transact(vec![put(claim), put(self.account_put(username, &account, version)?)]).await? {
                 None => return Ok(AddKey::Added(account.keys.len())),
                 Some(checks) if checks.first() == Some(&true) => return Ok(AddKey::Duplicate),
                 // The account changed since we read it: read it again.
@@ -135,12 +140,80 @@ impl Store {
         Err(Error(format!("add_key: account {username:?} kept changing")))
     }
 
-    pub async fn record_sign_in(&self, username: &str, result: &AuthenticationResult) -> Result<bool> {
+    pub async fn remove_key(&self, username: &str, user_id: Uuid, credential: &str) -> Result<RemoveKey> {
+        for _ in 0..ATTEMPTS {
+            let Some((mut account, version)) = self.load_account(username).await? else { return Ok(RemoveKey::NotFound) };
+            if account.user_id != user_id || without_key(&mut account, credential).is_none() {
+                return Ok(RemoveKey::NotFound);
+            }
+            // Free the credential ID for registering again. Accounts from before credential
+            // records existed have none to delete.
+            let release = Delete::builder()
+                .table_name(&self.table)
+                .key("pk", s(format!("credential#{credential}")))
+                .condition_expression("attribute_not_exists(pk) OR username = :u")
+                .expression_attribute_values(":u", s(username))
+                .build()
+                .map_err(failed)?;
+            let (write, outcome) = if account.keys.is_empty() {
+                let delete = Delete::builder()
+                    .table_name(&self.table)
+                    .key("pk", s(account_pk(username)))
+                    .condition_expression("version = :v")
+                    .expression_attribute_values(":v", n(version))
+                    .build()
+                    .map_err(failed)?;
+                (TransactWriteItem::builder().delete(delete).build(), RemoveKey::AccountDeleted)
+            } else {
+                (put(self.account_put(username, &account, Some(version))?), RemoveKey::Removed(account.keys.len()))
+            };
+            let release = TransactWriteItem::builder().delete(release).build();
+            match self.transact(vec![release, write]).await? {
+                None => return Ok(outcome),
+                Some(checks) if checks.first() == Some(&true) => {
+                    return Err(Error(format!("remove_key: credential {credential} belongs to another account")));
+                }
+                // The account changed since we read it: read it again.
+                Some(_) => {}
+            }
+        }
+        Err(Error(format!("remove_key: account {username:?} kept changing")))
+    }
+
+    pub async fn usernames(&self) -> Result<Vec<String>> {
+        let mut names = Vec::new();
+        let mut start = None;
+        loop {
+            let out = self
+                .client
+                .scan()
+                .table_name(&self.table)
+                .projection_expression("pk")
+                .filter_expression("begins_with(pk, :p)")
+                .expression_attribute_values(":p", s("account#"))
+                .set_exclusive_start_key(start)
+                .send()
+                .await
+                .map_err(failed)?;
+            names.extend(out.items().iter().filter_map(|item| match item.get("pk") {
+                Some(AttributeValue::S(pk)) => pk.strip_prefix("account#").map(str::to_owned),
+                _ => None,
+            }));
+            start = out.last_evaluated_key;
+            if start.is_none() {
+                return Ok(names);
+            }
+        }
+    }
+
+    pub async fn record_sign_in(&self, username: &str, user_id: Uuid, result: &AuthenticationResult) -> Result<bool> {
         for _ in 0..ATTEMPTS {
             let Some((mut account, version)) = self.load_account(username).await? else { return Ok(false) };
-            apply_sign_in(&mut account, result);
-            let put = self.account_put(username, &account, Some(version))?;
-            if self.transact(vec![put]).await?.is_none() {
+            if account.user_id != user_id || !apply_sign_in(&mut account, result) {
+                return Ok(false);
+            }
+            let write = put(self.account_put(username, &account, Some(version))?);
+            if self.transact(vec![write]).await?.is_none() {
                 return Ok(true);
             }
             // The account changed since we read it: read it again.
@@ -148,12 +221,13 @@ impl Store {
         Err(Error(format!("record_sign_in: account {username:?} kept changing")))
     }
 
-    pub async fn start_session(&self, hash: &TokenHash, username: &str, expires: SystemTime) -> Result<()> {
+    pub async fn start_session(&self, hash: &TokenHash, username: &str, user_id: Uuid, expires: SystemTime) -> Result<()> {
         self.client
             .put_item()
             .table_name(&self.table)
             .item("pk", s(session_pk(hash)))
             .item("username", s(username))
+            .item("user_id", s(user_id.to_string()))
             .item("ttl", n(epoch(expires)))
             .send()
             .await
@@ -161,12 +235,13 @@ impl Store {
         Ok(())
     }
 
-    pub async fn session_user(&self, hash: &TokenHash) -> Result<Option<String>> {
+    pub async fn session_user(&self, hash: &TokenHash) -> Result<Option<(String, Uuid)>> {
         let Some(item) = self.get(session_pk(hash)).await? else { return Ok(None) };
-        if !live(&item)? {
+        // Sessions from before 0.4.0 have no user handle: signed out.
+        if !live(&item)? || !item.contains_key("user_id") {
             return Ok(None);
         }
-        Ok(Some(get_s(&item, "username")?.to_owned()))
+        Ok(Some((get_s(&item, "username")?.to_owned(), uuid(get_s(&item, "user_id")?)?)))
     }
 
     pub async fn end_session(&self, hash: &TokenHash) -> Result<()> {
@@ -193,11 +268,10 @@ impl Store {
         Ok(out.item)
     }
 
-    /// Write `puts` all or none. `None` if they were written; otherwise which of them failed
+    /// Write `items` all or none. `None` if they were written; otherwise which of them failed
     /// their condition.
-    async fn transact(&self, puts: Vec<Put>) -> Result<Option<Vec<bool>>> {
-        let count = puts.len();
-        let items = puts.into_iter().map(|p| TransactWriteItem::builder().put(p).build()).collect();
+    async fn transact(&self, items: Vec<TransactWriteItem>) -> Result<Option<Vec<bool>>> {
+        let count = items.len();
         let Err(e) = self.client.transact_write_items().set_transact_items(Some(items)).send().await else {
             return Ok(None);
         };
@@ -264,6 +338,10 @@ impl Store {
         };
         put.build().map_err(failed)
     }
+}
+
+fn put(p: Put) -> TransactWriteItem {
+    TransactWriteItem::builder().put(p).build()
 }
 
 fn account_pk(username: &str) -> String {

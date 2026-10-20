@@ -1,8 +1,8 @@
 // (c) Javier Fernandez @ JotaSoft 2026
 //! A minimal WebAuthn relying party for trying a Jotakey in a real browser.
 //!
-//! One page: choose a username, register a security key, sign in with it. Topcoat serves
-//! the page and four JSON routes; webauthn-rs does every check a relying party must make
+//! One page: choose a username (or pick one from the list), register a security key, sign
+//! in with it, remove it again. Topcoat serves the page and five JSON routes; webauthn-rs does every check a relying party must make
 //! (challenge, origin, RP ID hash, user presence, signature, counter). Accounts, keys,
 //! ceremonies and sessions live in a [`store::Store`]: in memory by default, in DynamoDB
 //! when `DYNAMODB_TABLE` is set (the `dynamodb` feature, for AWS Lambda).
@@ -44,7 +44,7 @@ use topcoat::{
 use webauthn_rs::prelude::*;
 use webauthn_rs_proto::UserVerificationPolicy;
 
-use store::{AddKey, Ceremony, Key, Store};
+use store::{Account, AddKey, Ceremony, Key, RemoveKey, Store};
 
 /// The commit this binary was built from, set by infra/build.sh; unset for a local build.
 const COMMIT: Option<&str> = option_env!("JOTAKEY_COMMIT");
@@ -90,6 +90,7 @@ async fn main() {
         .route(register_finish)
         .route(login_start)
         .route(login_finish)
+        .route(remove_key)
         .route(logout)
         .cookies()
         .sessions(SessionConfig::builder().lifetime(SESSION_LIFETIME).build())
@@ -134,34 +135,47 @@ macro_rules! stored {
     };
 }
 
-/// The signed-in username, if the request carries an unexpired session. A storage failure
-/// counts as signed out.
-async fn current_user(cx: &Cx) -> Result<Option<String>> {
+/// The signed-in username and account, if the request carries an unexpired session for an
+/// account that still exists (`Store::signed_in`). A storage failure counts as signed out.
+async fn current_user(cx: &Cx) -> Result<Option<(String, Account)>> {
     let Some(hash) = session::token_hash(cx).await? else { return Ok(None) };
-    Ok(app(cx).store.session_user(&hash).await.unwrap_or_else(|e| {
+    Ok(app(cx).store.signed_in(&hash).await.unwrap_or_else(|e| {
         eprintln!("store: {e}");
         None
     }))
+}
+
+/// End the request's session, if any.
+async fn end_session(cx: &Cx) -> Result<()> {
+    if let Some(hash) = session::stop(cx).await?
+        && let Err(e) = app(cx).store.end_session(&hash).await
+    {
+        eprintln!("store: {e}");
+    }
+    Ok(())
 }
 
 #[page("/")]
 async fn home(cx: &Cx) -> Result<impl View> {
     let user = current_user(cx).await?;
     let store = &app(cx).store;
-    let account = match &user {
-        Some(u) => store.account(u).await.unwrap_or_else(|e| {
-            eprintln!("store: {e}");
-            None
-        }),
-        None => None,
-    };
     let signed_in = user.is_some();
-    let name = user.clone().unwrap_or_default();
-    let sections = match &account {
-        Some(account) => profile::sections(&name, account),
+    let name = user.as_ref().map(|(name, _)| name.clone()).unwrap_or_default();
+    let sections = match &user {
+        Some((name, account)) => profile::sections(name, account),
         None => Vec::new(),
     };
-    let jotakey = account.as_ref().and_then(profile::signed_in_with_jotakey);
+    let jotakey = user.as_ref().and_then(|(_, account)| profile::signed_in_with_jotakey(account));
+    let last_key = if user.as_ref().is_some_and(|(_, account)| account.keys.len() == 1) { "yes" } else { "no" };
+    // Signed out: everyone who can sign in, to pick from.
+    let usernames = if signed_in {
+        Vec::new()
+    } else {
+        store.usernames().await.unwrap_or_else(|e| {
+            eprintln!("store: {e}");
+            Vec::new()
+        })
+    };
     let in_memory = !store.persistent();
     let commit_url = COMMIT.map(|c| format!("https://github.com/jfernand/jotakey/commit/{c}"));
     Ok(view! {
@@ -192,6 +206,9 @@ async fn home(cx: &Cx) -> Result<impl View> {
                                         <dt>(*label)</dt><dd>(value.as_str())</dd>
                                     }
                                 </dl>
+                                if let Some(credential) = &section.credential {
+                                    <button class="quiet remove" data-credential=(credential.as_str()) data-last=(last_key)>"Remove this key"</button>
+                                }
                             }
                             <div class="row">
                                 <button id="register" data-username=(name.as_str())>"Add another key"</button>
@@ -209,6 +226,17 @@ async fn home(cx: &Cx) -> Result<impl View> {
                                 <button id="login">"Sign in"</button>
                             </div>
                         </section>
+                        if !usernames.is_empty() {
+                            <section class="card">
+                                <h2>"Registered users"</h2>
+                                <p class="note">"Click a name to sign in with its key."</p>
+                                <div class="row">
+                                    for user in &usernames {
+                                        <button class="quiet user" data-username=(user.as_str())>(user.as_str())</button>
+                                    }
+                                </div>
+                            </section>
+                        }
                     }
                     <p id="status" role="status"></p>
                     <p class="note">"Touch the key when it blinks. With PIN, the browser first asks for the key's PIN, and offers to set one if it has none."
@@ -358,7 +386,7 @@ async fn register_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> 
     let app = app(cx);
     let (user_id, exclude) = match stored!(app.store.account(&username).await) {
         // Adding a key to an existing account needs that account's session.
-        Some(account) if signed_in.as_deref() == Some(username.as_str()) => {
+        Some(account) if signed_in.as_ref().map(|(name, _)| name.as_str()) == Some(username.as_str()) => {
             (account.user_id, Some(account.keys.iter().map(|k| k.key.cred_id().clone()).collect()))
         }
         Some(_) => return Ok(failed("that username is taken; sign in to add a key to it")),
@@ -433,14 +461,16 @@ async fn login_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> {
     let mut options = any_authenticator(options);
     options.public_key.user_verification = sign_in_verification(&keys);
     let ceremony = Uuid::new_v4();
-    stored!(app.store.begin(ceremony, Ceremony::Authentication { username, state }).await);
+    let user_id = account.user_id;
+    stored!(app.store.begin(ceremony, Ceremony::Authentication { username, user_id, state }).await);
     Ok(Json(json!({ "ok": true, "ceremony": ceremony, "options": options })))
 }
 
 #[route(POST "/api/login/finish")]
 async fn login_finish(cx: &Cx, Json(req): Json<Finish<PublicKeyCredential>>) -> Result<Json<Value>> {
     let app = app(cx);
-    let Some(Ceremony::Authentication { username, state }) = stored!(app.store.take(req.ceremony).await) else {
+    let Some(Ceremony::Authentication { username, user_id, state }) = stored!(app.store.take(req.ceremony).await)
+    else {
         return Ok(failed("unknown or expired sign-in; start again"));
     };
     // Checks the challenge, origin, RP ID hash, UP flag, signature and counter, and the UV
@@ -450,21 +480,40 @@ async fn login_finish(cx: &Cx, Json(req): Json<Finish<PublicKeyCredential>>) -> 
         Err(e) => return Ok(failed(e)),
     };
     // Store the new counter before the session starts.
-    if !stored!(app.store.record_sign_in(&username, &result).await) {
-        return Ok(failed("account removed during sign-in"));
+    if !stored!(app.store.record_sign_in(&username, user_id, &result).await) {
+        return Ok(failed("this key or account was removed during sign-in"));
     }
     let new_session = session::start(cx).await?;
-    stored!(app.store.start_session(&new_session.token_hash, &username, new_session.expires_at).await);
+    stored!(app.store.start_session(&new_session.token_hash, &username, user_id, new_session.expires_at).await);
     Ok(Json(json!({ "ok": true, "username": username, "counter": result.counter() })))
+}
+
+#[derive(Deserialize)]
+struct Remove {
+    /// The key's credential ID, base64url.
+    credential: String,
+}
+
+/// Unregister one of the signed-in user's keys. Removing the last one deletes the account,
+/// frees the username, and ends the session.
+#[route(POST "/api/keys/remove")]
+async fn remove_key(cx: &Cx, Json(req): Json<Remove>) -> Result<Json<Value>> {
+    let Some((username, account)) = current_user(cx).await? else {
+        return Ok(failed("sign in to remove a key"));
+    };
+    match stored!(app(cx).store.remove_key(&username, account.user_id, &req.credential).await) {
+        RemoveKey::Removed(keys) => Ok(Json(json!({ "ok": true, "keys": keys }))),
+        RemoveKey::AccountDeleted => {
+            end_session(cx).await?;
+            Ok(Json(json!({ "ok": true, "keys": 0 })))
+        }
+        RemoveKey::NotFound => Ok(failed("this account has no such key")),
+    }
 }
 
 #[route(POST "/logout")]
 async fn logout(cx: &Cx) -> Result<SeeOther> {
-    if let Some(hash) = session::stop(cx).await?
-        && let Err(e) = app(cx).store.end_session(&hash).await
-    {
-        eprintln!("store: {e}");
-    }
+    end_session(cx).await?;
     Ok(see_other("/"))
 }
 

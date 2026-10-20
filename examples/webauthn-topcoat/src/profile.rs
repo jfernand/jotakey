@@ -6,10 +6,11 @@ use webauthn_rs::prelude::*;
 use crate::model;
 use crate::store::{Account, Key, credential_id};
 
-/// A titled list of (label, value) rows.
+/// A titled list of (label, value) rows; for a key, its credential ID (base64url), to remove it.
 pub struct Section {
     pub title: String,
     pub rows: Vec<(&'static str, String)>,
+    pub credential: Option<String>,
 }
 
 pub fn sections(username: &str, account: &Account) -> Vec<Section> {
@@ -21,6 +22,7 @@ pub fn sections(username: &str, account: &Account) -> Vec<Section> {
             ("Created", when(account.created)),
             ("Registered keys", account.keys.len().to_string()),
         ],
+        credential: None,
     }];
     if let Some(last) = &account.last_sign_in {
         let used = account.keys.iter().position(|k| credential_id(k.key.cred_id()) == last.credential);
@@ -37,10 +39,15 @@ pub fn sections(username: &str, account: &Account) -> Vec<Section> {
                 ("User verified", verified(last.user_verified)),
                 ("Backed up", yes_no(last.backup_state).into()),
             ],
+            credential: None,
         });
     }
     for (i, key) in account.keys.iter().enumerate() {
-        out.push(Section { title: format!("Key {}", i + 1), rows: key_rows(key) });
+        out.push(Section {
+            title: format!("Key {}", i + 1),
+            rows: key_rows(key),
+            credential: Some(credential_id(key.key.cred_id())),
+        });
     }
     out
 }
