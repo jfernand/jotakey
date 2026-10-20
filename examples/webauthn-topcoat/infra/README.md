@@ -48,7 +48,11 @@ npx cdk deploy --all
 The first deploy waits for the certificate to validate (a few minutes). Then open
 https://jotakey.casaroja.es.
 
-After a code change: `infra/build.sh`, then `npx cdk deploy JotakeyRp`.
+After a code change: commit it, then `infra/build.sh` and `npx cdk deploy JotakeyRp`.
+
+The page's footer names the commit the server was built from, linked to GitHub, so push
+before deploying. `build.sh` refuses uncommitted changes to the demo; `ALLOW_DIRTY=1` builds
+anyway, and the footer then says "local build".
 
 The settings are in `cdk.json`'s context (`domainName`, `zoneName`, `hostedZoneId`); override
 one with `-c key=value`.
