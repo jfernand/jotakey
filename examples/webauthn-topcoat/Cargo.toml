@@ -11,12 +11,23 @@ publish = false
 [dependencies]
 topcoat = "0.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-# Jotakey checks user presence (a touch) but has no PIN, so it is a "user presence only"
-# security key in webauthn-rs terms; without this feature webauthn-rs asks for credProtect
+# The demo asks for a touch and not the PIN, a "user presence only" security key in
+# webauthn-rs terms; without this feature webauthn-rs asks for credProtect
 # "userVerificationRequired", which browsers reject for non-discoverable credentials.
 webauthn-rs = { version = "0.5.5", features = ["danger-user-presence-only-security-keys"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The `dynamodb` feature: state shared by every AWS Lambda instance (src/store/dynamo.rs).
+# Default features off: they add the SDK's legacy TLS stack (rustls 0.21), which has open
+# advisories. The current client (rustls 0.23) is "default-https-client".
+aws-config = { version = "1.12", optional = true, default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-dynamodb = { version = "1.131", optional = true, default-features = false, features = ["default-https-client", "rt-tokio"] }
+
+[features]
+# Keep accounts, ceremonies and sessions in DynamoDB when DYNAMODB_TABLE is set. A ceremony's
+# state (its challenge) is then serialised into the table between the start and finish
+# requests; it never goes to the browser.
+dynamodb = ["dep:aws-config", "dep:aws-sdk-dynamodb", "webauthn-rs/danger-allow-state-serialisation"]
 
 # Standalone workspace: an example with server dependencies (tokio, OpenSSL through
 # webauthn-rs) that the device code never links.
