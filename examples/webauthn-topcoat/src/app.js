@@ -83,7 +83,10 @@ async function register(button) {
   status("Touch your key to register it…");
   const cred = await navigator.credentials.create({ publicKey: creationOptions(start.options) });
   const done = await post("/api/register/finish", { ceremony: start.ceremony, credential: registrationJson(cred) });
-  status(`Registered key ${done.keys} (${done.model}) for ${done.username}. Now sign in with it.`, "ok");
+  const registered = `Registered key ${done.keys} (${done.model}) for ${done.username}. Now sign in with it.`;
+  // The key registered, but Jotakey's strict CBOR decoder could not read the browser's
+  // attestation object: say so rather than hide it.
+  status(done.warning ? `${done.warning} ${registered}` : registered, done.warning ? "warning" : "ok");
 }
 
 async function login(button) {

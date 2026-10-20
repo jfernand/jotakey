@@ -44,11 +44,15 @@ pub struct Key {
     /// The authenticator's model, as it reported it at registration (None: not recorded).
     #[serde(default)]
     pub aaguid: Option<Uuid>,
+    /// Why the AAGUID could not be read at registration, e.g. the browser's CBOR failed
+    /// Jotakey's strict decoder (src/model.rs).
+    #[serde(default)]
+    pub unread: Option<String>,
 }
 
 impl Key {
-    pub fn new(key: SecurityKey, aaguid: Option<Uuid>) -> Self {
-        Key { key, registered: now(), sign_ins: 0, last_used: None, aaguid }
+    pub fn new(key: SecurityKey, aaguid: Option<Uuid>, unread: Option<String>) -> Self {
+        Key { key, registered: now(), sign_ins: 0, last_used: None, aaguid, unread }
     }
 }
 
