@@ -49,9 +49,9 @@ impl Store {
         (expires > SystemTime::now()).then_some(ceremony)
     }
 
-    pub fn add_key(&self, username: &str, user_id: Uuid, key: SecurityKey) -> AddKey {
+    pub fn add_key(&self, username: &str, user_id: Uuid, key: Key) -> AddKey {
         let mut inner = self.lock();
-        if inner.accounts.values().flat_map(|a| &a.keys).any(|k| k.key.cred_id() == key.cred_id()) {
+        if inner.accounts.values().flat_map(|a| &a.keys).any(|k| k.key.cred_id() == key.key.cred_id()) {
             return AddKey::Duplicate;
         }
         let account = inner
@@ -61,7 +61,7 @@ impl Store {
         if account.user_id != user_id {
             return AddKey::Taken;
         }
-        account.keys.push(Key::new(key));
+        account.keys.push(key);
         AddKey::Added(account.keys.len())
     }
 

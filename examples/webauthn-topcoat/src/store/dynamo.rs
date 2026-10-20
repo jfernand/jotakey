@@ -105,8 +105,8 @@ impl Store {
         }))
     }
 
-    pub async fn add_key(&self, username: &str, user_id: Uuid, key: SecurityKey) -> Result<AddKey> {
-        let credential = credential_pk(&key)?;
+    pub async fn add_key(&self, username: &str, user_id: Uuid, key: Key) -> Result<AddKey> {
+        let credential = credential_pk(&key.key)?;
         for _ in 0..ATTEMPTS {
             let (mut account, version) = match self.load_account(username).await? {
                 Some((account, version)) => (account, Some(version)),
@@ -115,7 +115,7 @@ impl Store {
             if account.user_id != user_id {
                 return Ok(AddKey::Taken);
             }
-            account.keys.push(Key::new(key.clone()));
+            account.keys.push(key.clone());
             let claim = Put::builder()
                 .table_name(&self.table)
                 .item("pk", s(credential.clone()))
@@ -223,7 +223,10 @@ impl Store {
         let keys = match from_json::<Vec<Key>>(keys) {
             Ok(keys) => keys,
             Err(e) => match from_json::<Vec<SecurityKey>>(keys) {
-                Ok(bare) => bare.into_iter().map(|key| Key { key, registered: 0, sign_ins: 0, last_used: None }).collect(),
+                Ok(bare) => bare
+                    .into_iter()
+                    .map(|key| Key { key, registered: 0, sign_ins: 0, last_used: None, aaguid: None })
+                    .collect(),
                 Err(_) => return Err(e),
             },
         };

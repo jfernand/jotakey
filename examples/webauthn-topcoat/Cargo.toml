@@ -2,7 +2,7 @@
 # A minimal relying party: register a security key and sign in with it. See README.md.
 [package]
 name = "webauthn-topcoat"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.98"
 authors = ["Javier Fernandez @ JotaSoft"]
@@ -19,6 +19,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 webauthn-rs = { version = "0.5.5", features = ["danger-user-presence-only-security-keys", "danger-credential-internals"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Reads the AAGUID from a registration's authenticator data (src/model.rs); already in the
+# tree through webauthn-rs.
+serde_cbor_2 = "0.13"
 # The `dynamodb` feature: state shared by every AWS Lambda instance (src/store/dynamo.rs).
 # Default features off: they add the SDK's legacy TLS stack (rustls 0.21), which has open
 # advisories. The current client (rustls 0.23) is "default-https-client".

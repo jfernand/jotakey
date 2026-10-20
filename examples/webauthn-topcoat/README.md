@@ -129,6 +129,20 @@ handle, and per key the credential ID, whether it is a synced passkey or device-
 transports, algorithm, attestation format, when it was registered and last used, and the
 counter, with what the authenticator reported at this sign-in.
 
+It also recognises a Jotakey (`src/model.rs`). At registration the server reads the AAGUID,
+the 16-byte model ID in the authenticator data. A Jotakey's is ASCII, `jotakey-` followed by
+the model (`jotakey_core::AAGUID`, e.g. `jotakey-v01-c6`). A sign-in does not carry the
+AAGUID, so the page looks up the key used: "You signed in with a Jotakey (v01-c6)". If the
+browser zeroed the AAGUID, a 49-byte credential ID starting with `0x01`, Jotakey's format,
+still marks it as probably a Jotakey. Neither is proof: with self-attestation, any
+authenticator could claim the AAGUID, so nothing relies on it.
+
+## Versions
+
+The demo has its own version (`Cargo.toml`), shown in the page's footer with the commit it
+was built from. Releases are tagged `webauthn-topcoat-vX.Y.Z`, apart from the board's
+`hw-v*` and the firmware's `fw-v*` tags.
+
 ## Before you put this in front of users
 
 This is a demo. A real deployment also needs:

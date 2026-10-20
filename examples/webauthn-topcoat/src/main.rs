@@ -19,6 +19,7 @@
 //! credentials (the browser is told which credential IDs to use), ES256, and a touch
 //! without the PIN.
 
+mod model;
 mod profile;
 mod store;
 
@@ -41,7 +42,7 @@ use topcoat::{
 };
 use webauthn_rs::prelude::*;
 
-use store::{AddKey, Ceremony, Store};
+use store::{AddKey, Ceremony, Key, Store};
 
 /// The commit this binary was built from, set by infra/build.sh; unset for a local build.
 const COMMIT: Option<&str> = option_env!("JOTAKEY_COMMIT");
@@ -158,6 +159,7 @@ async fn home(cx: &Cx) -> Result<impl View> {
         Some(account) => profile::sections(&name, account),
         None => Vec::new(),
     };
+    let jotakey = account.as_ref().and_then(profile::signed_in_with_jotakey);
     let in_memory = !store.persistent();
     let commit_url = COMMIT.map(|c| format!("https://github.com/jfernand/jotakey/commit/{c}"));
     Ok(view! {
@@ -171,12 +173,15 @@ async fn home(cx: &Cx) -> Result<impl View> {
                 <script type="module" src="/app.js"></script>
             </head>
             <body>
-                <main>
+                <main class=(if signed_in { "signed-in" } else { "" })>
                     <h1>"Jotakey demo"</h1>
                     <p class="lead">"A relying party demo. Register a security key, then sign in with it."</p>
                     if signed_in {
                         <section class="card ok">
                             <h2>"Signed in as " (name.as_str())</h2>
+                            if let Some(jotakey) = &jotakey {
+                                <p class="jotakey">(jotakey.as_str())</p>
+                            }
                             <p class="note">"This is everything the server stores about you. It keeps no name, email address, IP address or browser."</p>
                             for section in &sections {
                                 <h3>(section.title.as_str())</h3>
@@ -325,9 +330,11 @@ async fn register_finish(cx: &Cx, Json(req): Json<Finish<RegisterPublicKeyCreden
         Ok(k) => with_transports(k, &req.credential),
         Err(e) => return Ok(failed(e)),
     };
+    let aaguid = model::aaguid(req.credential.response.attestation_object.as_ref());
+    let model = model::describe(aaguid.as_ref(), key.cred_id().as_ref());
     // A credential ID belongs to one account only; a username to one user handle.
-    match stored!(app.store.add_key(&username, user_id, key).await) {
-        AddKey::Added(keys) => Ok(Json(json!({ "ok": true, "username": username, "keys": keys }))),
+    match stored!(app.store.add_key(&username, user_id, Key::new(key, aaguid)).await) {
+        AddKey::Added(keys) => Ok(Json(json!({ "ok": true, "username": username, "keys": keys, "model": model }))),
         AddKey::Taken => Ok(failed("that username was taken meanwhile; choose another")),
         AddKey::Duplicate => Ok(failed("this credential is already registered")),
     }
