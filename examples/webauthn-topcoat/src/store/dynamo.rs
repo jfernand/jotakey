@@ -6,7 +6,7 @@
 //!
 //! | `pk` | attributes |
 //! |---|---|
-//! | `account#<username>` | `user_id`, `keys` (JSON), `counter`, `user_verified`, `version` |
+//! | `account#<username>` | `user_id`, `created`, `keys` (JSON), `last_sign_in` (JSON), `version` |
 //! | `credential#<credential ID>` | `username`: makes a credential ID belong to one account |
 //! | `ceremony#<id>` | `kind`, `username`, `user_id`, `state` (JSON), `ttl` |
 //! | `session#<token hash>` | `username`, `ttl` |
@@ -25,7 +25,7 @@ use aws_sdk_dynamodb::types::{AttributeValue, Put, ReturnValue, TransactWriteIte
 use topcoat::session::TokenHash;
 use webauthn_rs::prelude::*;
 
-use super::{Account, AddKey, Ceremony, Error, Result, SignIn, apply_sign_in};
+use super::{Account, AddKey, Ceremony, Error, Key, Result, apply_sign_in, now};
 
 /// Attempts at an optimistic account update before giving up.
 const ATTEMPTS: usize = 5;
@@ -110,12 +110,12 @@ impl Store {
         for _ in 0..ATTEMPTS {
             let (mut account, version) = match self.load_account(username).await? {
                 Some((account, version)) => (account, Some(version)),
-                None => (Account { user_id, keys: Vec::new(), last_sign_in: None }, None),
+                None => (Account { user_id, created: now(), keys: Vec::new(), last_sign_in: None }, None),
             };
             if account.user_id != user_id {
                 return Ok(AddKey::Taken);
             }
-            account.keys.push(key.clone());
+            account.keys.push(Key::new(key.clone()));
             let claim = Put::builder()
                 .table_name(&self.table)
                 .item("pk", s(credential.clone()))
@@ -218,17 +218,23 @@ impl Store {
     /// The account and its version, for a conditional update.
     async fn load_account(&self, username: &str) -> Result<Option<(Account, u64)>> {
         let Some(item) = self.get(account_pk(username)).await? else { return Ok(None) };
-        let last_sign_in = match item.get("counter") {
-            Some(_) => Some(SignIn {
-                counter: get_n(&item, "counter")?,
-                user_verified: matches!(item.get("user_verified"), Some(AttributeValue::Bool(true))),
-            }),
-            None => None,
+        let keys = get_s(&item, "keys")?;
+        // Accounts written before keys had their own record hold bare SecurityKeys.
+        let keys = match from_json::<Vec<Key>>(keys) {
+            Ok(keys) => keys,
+            Err(e) => match from_json::<Vec<SecurityKey>>(keys) {
+                Ok(bare) => bare.into_iter().map(|key| Key { key, registered: 0, sign_ins: 0, last_used: None }).collect(),
+                Err(_) => return Err(e),
+            },
         };
         let account = Account {
             user_id: uuid(get_s(&item, "user_id")?)?,
-            keys: from_json(get_s(&item, "keys")?)?,
-            last_sign_in,
+            created: if item.contains_key("created") { get_n(&item, "created")? } else { 0 },
+            keys,
+            last_sign_in: match item.get("last_sign_in") {
+                Some(_) => Some(from_json(get_s(&item, "last_sign_in")?)?),
+                None => None,
+            },
         };
         Ok(Some((account, get_n(&item, "version")?)))
     }
@@ -241,10 +247,11 @@ impl Store {
             .table_name(&self.table)
             .item("pk", s(account_pk(username)))
             .item("user_id", s(account.user_id.to_string()))
+            .item("created", n(account.created))
             .item("keys", s(json(&account.keys)?))
             .item("version", n(next));
-        if let Some(last) = account.last_sign_in {
-            put = put.item("counter", n(last.counter)).item("user_verified", AttributeValue::Bool(last.user_verified));
+        if let Some(last) = &account.last_sign_in {
+            put = put.item("last_sign_in", s(json(last)?));
         }
         put = match version {
             Some(v) => put.condition_expression("version = :v").expression_attribute_values(":v", n(v)),

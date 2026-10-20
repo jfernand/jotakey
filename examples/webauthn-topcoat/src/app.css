@@ -32,6 +32,7 @@ button.quiet { background: transparent; color: var(--ink); border: 1px solid var
 button:disabled { opacity: 0.5; cursor: wait; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; margin: 0; }
 dt { color: var(--muted); }
-dd { margin: 0; font-variant-numeric: tabular-nums; }
+dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+h3 { font-size: 1rem; margin: 1.25rem 0 0.5rem; }
 #status.ok { color: var(--ok); }
 #status.error { color: var(--error); }

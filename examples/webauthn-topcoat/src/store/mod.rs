@@ -8,8 +8,9 @@
 //! a lock across two of them.
 
 use std::fmt;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
 use topcoat::session::TokenHash;
 use webauthn_rs::prelude::*;
 
@@ -23,14 +24,55 @@ pub const CEREMONY_LIFETIME: Duration = Duration::from_secs(5 * 60);
 pub struct Account {
     /// The WebAuthn user handle: random, never the username.
     pub user_id: Uuid,
-    pub keys: Vec<SecurityKey>,
+    /// When the account was created, in seconds since 1970 (0: before this was recorded).
+    pub created: u64,
+    pub keys: Vec<Key>,
     pub last_sign_in: Option<SignIn>,
 }
 
-#[derive(Clone, Copy)]
+/// A registered key and what the server has seen of it.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Key {
+    pub key: SecurityKey,
+    /// Seconds since 1970 (0: before this was recorded).
+    #[serde(default)]
+    pub registered: u64,
+    #[serde(default)]
+    pub sign_ins: u64,
+    #[serde(default)]
+    pub last_used: Option<u64>,
+}
+
+impl Key {
+    pub fn new(key: SecurityKey) -> Self {
+        Key { key, registered: now(), sign_ins: 0, last_used: None }
+    }
+}
+
+/// What the authenticator reported at the latest sign-in.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SignIn {
+    /// Seconds since 1970.
+    pub at: u64,
+    /// The credential used, base64url.
+    pub credential: String,
     pub counter: u32,
     pub user_verified: bool,
+    /// The authenticator says the credential is backed up (synced) now.
+    pub backup_state: bool,
+}
+
+/// The time now, in seconds since 1970.
+pub fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// A credential ID as base64url, the form browsers and webauthn-rs use.
+pub fn credential_id(id: &CredentialID) -> String {
+    match serde_json::to_value(id) {
+        Ok(serde_json::Value::String(id)) => id,
+        _ => String::new(),
+    }
 }
 
 /// A ceremony between its start and finish requests: the server's half of the challenge.
@@ -158,8 +200,18 @@ impl Store {
 /// Apply a verified sign-in to an account's keys and last sign-in. Counters only go up
 /// (`update_credential` ignores a lower one), so applying it again after a lost race is safe.
 fn apply_sign_in(account: &mut Account, result: &AuthenticationResult) {
+    let at = now();
     for key in &mut account.keys {
-        key.update_credential(result);
+        if key.key.update_credential(result).is_some() {
+            key.sign_ins = key.sign_ins.saturating_add(1);
+            key.last_used = Some(at);
+        }
     }
-    account.last_sign_in = Some(SignIn { counter: result.counter(), user_verified: result.user_verified() });
+    account.last_sign_in = Some(SignIn {
+        at,
+        credential: credential_id(result.cred_id()),
+        counter: result.counter(),
+        user_verified: result.user_verified(),
+        backup_state: result.backup_state(),
+    });
 }

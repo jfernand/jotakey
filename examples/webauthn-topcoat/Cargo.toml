@@ -14,7 +14,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # The demo asks for a touch and not the PIN, a "user presence only" security key in
 # webauthn-rs terms; without this feature webauthn-rs asks for credProtect
 # "userVerificationRequired", which browsers reject for non-discoverable credentials.
-webauthn-rs = { version = "0.5.5", features = ["danger-user-presence-only-security-keys"] }
+# danger-credential-internals: the signed-in page shows what is stored per key, and
+# registration keeps the browser's transports (src/main.rs, with_transports).
+webauthn-rs = { version = "0.5.5", features = ["danger-user-presence-only-security-keys", "danger-credential-internals"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The `dynamodb` feature: state shared by every AWS Lambda instance (src/store/dynamo.rs).

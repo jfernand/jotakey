@@ -19,6 +19,7 @@
 //! credentials (the browser is told which credential IDs to use), ES256, and a touch
 //! without the PIN.
 
+mod profile;
 mod store;
 
 use std::time::Duration;
@@ -151,14 +152,12 @@ async fn home(cx: &Cx) -> Result<impl View> {
         }),
         None => None,
     };
-    let last = account.as_ref().and_then(|a| a.last_sign_in);
-    let (signed_in, name, keys, counter, uv) = (
-        user.is_some(),
-        user.clone().unwrap_or_default(),
-        account.as_ref().map_or(0, |a| a.keys.len()),
-        last.map_or(0, |s| s.counter),
-        last.is_some_and(|s| s.user_verified),
-    );
+    let signed_in = user.is_some();
+    let name = user.clone().unwrap_or_default();
+    let sections = match &account {
+        Some(account) => profile::sections(&name, account),
+        None => Vec::new(),
+    };
     let in_memory = !store.persistent();
     let commit_url = COMMIT.map(|c| format!("https://github.com/jfernand/jotakey/commit/{c}"));
     Ok(view! {
@@ -178,11 +177,15 @@ async fn home(cx: &Cx) -> Result<impl View> {
                     if signed_in {
                         <section class="card ok">
                             <h2>"Signed in as " (name.as_str())</h2>
-                            <dl>
-                                <dt>"Registered keys"</dt><dd>(keys)</dd>
-                                <dt>"Signature counter"</dt><dd>(counter)</dd>
-                                <dt>"User verified"</dt><dd>(if uv { "yes" } else { "no (touch only)" })</dd>
-                            </dl>
+                            <p class="note">"This is everything the server stores about you. It keeps no name, email address, IP address or browser."</p>
+                            for section in &sections {
+                                <h3>(section.title.as_str())</h3>
+                                <dl>
+                                    for (label, value) in &section.rows {
+                                        <dt>(*label)</dt><dd>(value.as_str())</dd>
+                                    }
+                                </dl>
+                            }
                             <div class="row">
                                 <button id="register" data-username=(name.as_str())>"Add another key"</button>
                                 <form method="post" action="/logout"><button class="quiet">"Sign out"</button></form>
@@ -266,6 +269,19 @@ fn any_authenticator<T: AnyAuthenticator>(mut options: T) -> T {
     options
 }
 
+/// Keep the transports the browser reported at registration (`getTransports()`: usb, nfc,
+/// internal, hybrid...). webauthn-rs drops them unless the attestation is packed or tpm, and
+/// without them in `allowCredentials` Safari looks for an NFC or USB key instead of the
+/// phone's own passkey: "a security key that is not registered". They are an unsigned hint
+/// for the browser's UI, which WebAuthn says to store and send back; no check relies on them.
+fn with_transports(key: SecurityKey, registration: &RegisterPublicKeyCredential) -> SecurityKey {
+    let mut credential = Credential::from(key);
+    if credential.transports.is_none() {
+        credential.transports = registration.response.transports.clone();
+    }
+    SecurityKey::from(credential)
+}
+
 fn valid_username(name: &str) -> bool {
     (1..=64).contains(&name.len()) && name.chars().all(|c| c.is_alphanumeric() || "._-@".contains(c))
 }
@@ -282,7 +298,7 @@ async fn register_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> 
     let (user_id, exclude) = match stored!(app.store.account(&username).await) {
         // Adding a key to an existing account needs that account's session.
         Some(account) if signed_in.as_deref() == Some(username.as_str()) => {
-            (account.user_id, Some(account.keys.iter().map(|k| k.cred_id().clone()).collect()))
+            (account.user_id, Some(account.keys.iter().map(|k| k.key.cred_id().clone()).collect()))
         }
         Some(_) => return Ok(failed("that username is taken; sign in to add a key to it")),
         None => (Uuid::new_v4(), None),
@@ -306,7 +322,7 @@ async fn register_finish(cx: &Cx, Json(req): Json<Finish<RegisterPublicKeyCreden
         return Ok(failed("unknown or expired registration; start again"));
     };
     let key = match app.webauthn.finish_securitykey_registration(&req.credential, &state) {
-        Ok(k) => k,
+        Ok(k) => with_transports(k, &req.credential),
         Err(e) => return Ok(failed(e)),
     };
     // A credential ID belongs to one account only; a username to one user handle.
@@ -325,7 +341,8 @@ async fn login_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> {
         return Ok(failed("no such user; register a key first"));
     };
     // allowCredentials lists this user's keys: Jotakey's credentials are not discoverable.
-    let (options, state) = match app.webauthn.start_securitykey_authentication(&account.keys) {
+    let keys: Vec<SecurityKey> = account.keys.iter().map(|k| k.key.clone()).collect();
+    let (options, state) = match app.webauthn.start_securitykey_authentication(&keys) {
         Ok(r) => r,
         Err(e) => return Ok(failed(e)),
     };
