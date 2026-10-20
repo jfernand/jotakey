@@ -4,14 +4,24 @@
 //! One page: choose a username, register a security key, sign in with it. Topcoat serves
 //! the page and four JSON routes; webauthn-rs does every check a relying party must make
 //! (challenge, origin, RP ID hash, user presence, signature, counter). Accounts, keys,
-//! ceremonies and sessions live in memory and vanish when the server stops.
+//! ceremonies and sessions live in a [`store::Store`]: in memory by default, in DynamoDB
+//! when `DYNAMODB_TABLE` is set (the `dynamodb` feature, for AWS Lambda).
+//!
+//! Configuration, all optional, from the environment:
+//! - `ORIGIN`: the URL the browser shows, such as `https://jotakey.casaroja.es`.
+//!   Default `http://localhost:PORT`.
+//! - `RP_ID`: the WebAuthn relying party ID. Default: the origin's host. Credentials are
+//!   bound to it, so changing it later strands every registered key.
+//! - `PORT`, `HOST`: where to listen (Topcoat's defaults are 3000 and 127.0.0.1).
+//! - `DYNAMODB_TABLE`: keep the state in this DynamoDB table instead of memory.
 //!
 //! The options match what the Jotakey firmware supports today: non-discoverable
-//! credentials (the browser is told which credential IDs to use), ES256, no PIN.
+//! credentials (the browser is told which credential IDs to use), ES256, and a touch
+//! without the PIN.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+mod store;
+
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -25,27 +35,44 @@ use topcoat::{
         error::{SeeOther, see_other},
         page, route,
     },
-    session::{self, RouterBuilderSessionExt, SessionConfig, TokenHash},
+    session::{self, RouterBuilderSessionExt, SessionConfig},
     view::{View, view},
 };
 use webauthn_rs::prelude::*;
+
+use store::{AddKey, Ceremony, Store};
 
 /// How long a sign-in lasts.
 const SESSION_LIFETIME: Duration = Duration::from_secs(60 * 60);
 
 #[tokio::main]
 async fn main() {
-    // WebAuthn needs a domain, not an IP address: browse to http://localhost:PORT.
-    // Browsers treat localhost as a secure context, so plain HTTP is allowed there.
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".into());
-    let origin = Url::parse(&format!("http://localhost:{port}")).expect("origin URL");
-    let webauthn = WebauthnBuilder::new("localhost", &origin)
-        .expect("RP ID matches the origin")
+    // WebAuthn needs a domain, not an IP address: locally, browse to http://localhost:PORT.
+    // Browsers treat localhost as a secure context, so plain HTTP is allowed there; anywhere
+    // else the origin must be https.
+    let origin = match std::env::var("ORIGIN") {
+        Ok(origin) => Url::parse(&origin).expect("ORIGIN must be a URL, such as https://jotakey.casaroja.es"),
+        Err(_) => {
+            let port = std::env::var("PORT").unwrap_or_else(|_| "3000".into());
+            Url::parse(&format!("http://localhost:{port}")).expect("origin URL")
+        }
+    };
+    let rp_id = match std::env::var("RP_ID") {
+        Ok(rp_id) => rp_id,
+        Err(_) => origin.host_str().expect("ORIGIN must have a host").to_owned(),
+    };
+    let webauthn = WebauthnBuilder::new(&rp_id, &origin)
+        .expect("RP_ID must be the origin's host or a parent domain of it")
         .rp_name("Jotakey demo")
         // Touch, no PIN: no credProtect extension, userVerification "discouraged".
         .danger_set_user_presence_only_security_keys(true)
         .build()
         .expect("WebAuthn configuration");
+    let store = match std::env::var("DYNAMODB_TABLE") {
+        Ok(table) => dynamo(table).await,
+        Err(_) => Store::Memory(Default::default()),
+    };
+    let persistence = if store.persistent() { "DynamoDB" } else { "memory" };
 
     let router = Router::builder()
         .page(home)
@@ -58,70 +85,77 @@ async fn main() {
         .route(logout)
         .cookies()
         .sessions(SessionConfig::builder().lifetime(SESSION_LIFETIME).build())
-        .app_context(App { webauthn, store: Mutex::new(Store::default()) })
+        .app_context(App { webauthn, store })
         .build();
-    println!("Jotakey demo relying party: {origin}");
+    println!("Jotakey demo relying party: {origin} (RP ID {rp_id}, state in {persistence})");
     topcoat::start(router).await.expect("server");
+}
+
+#[cfg(feature = "dynamodb")]
+async fn dynamo(table: String) -> Store {
+    Store::Dynamo(store::dynamo::Store::connect(table).await)
+}
+
+#[cfg(not(feature = "dynamodb"))]
+async fn dynamo(_table: String) -> Store {
+    panic!("DYNAMODB_TABLE is set, but this build lacks the dynamodb feature")
 }
 
 struct App {
     webauthn: Webauthn,
-    store: Mutex<Store>,
-}
-
-#[derive(Default)]
-struct Store {
-    accounts: HashMap<String, Account>,
-    /// Registrations in progress, by ceremony ID: (username, user handle, state).
-    registrations: HashMap<Uuid, (String, Uuid, SecurityKeyRegistration)>,
-    /// Sign-ins in progress, by ceremony ID: (username, state).
-    authentications: HashMap<Uuid, (String, SecurityKeyAuthentication)>,
-    /// Signed-in sessions: token hash -> (username, expiry).
-    sessions: HashMap<TokenHash, (String, SystemTime)>,
-}
-
-struct Account {
-    /// The WebAuthn user handle: random, never the username.
-    user_id: Uuid,
-    keys: Vec<SecurityKey>,
-    last_sign_in: Option<SignIn>,
-}
-
-struct SignIn {
-    counter: u32,
-    user_verified: bool,
+    store: Store,
 }
 
 fn app(cx: &Cx) -> &App {
     app_context(cx)
 }
 
-/// The signed-in username, if the request carries an unexpired session.
+/// Log a storage failure; the client learns only that storage is unavailable.
+fn unavailable(e: store::Error) -> Json<Value> {
+    eprintln!("store: {e}");
+    failed("the server's storage is unavailable; try again")
+}
+
+/// Unwrap a storage result in a route, or answer with [`unavailable`].
+macro_rules! stored {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(e) => return Ok(unavailable(e)),
+        }
+    };
+}
+
+/// The signed-in username, if the request carries an unexpired session. A storage failure
+/// counts as signed out.
 async fn current_user(cx: &Cx) -> Result<Option<String>> {
     let Some(hash) = session::token_hash(cx).await? else { return Ok(None) };
-    let store = app(cx).store.lock().expect("store lock");
-    Ok(store
-        .sessions
-        .get(&hash)
-        .filter(|(_, expires)| *expires > SystemTime::now())
-        .map(|(user, _)| user.clone()))
+    Ok(app(cx).store.session_user(&hash).await.unwrap_or_else(|e| {
+        eprintln!("store: {e}");
+        None
+    }))
 }
 
 #[page("/")]
 async fn home(cx: &Cx) -> Result<impl View> {
     let user = current_user(cx).await?;
-    let (signed_in, name, keys, counter, uv) = {
-        let store = app(cx).store.lock().expect("store lock");
-        let account = user.as_ref().and_then(|u| store.accounts.get(u));
-        let last = account.and_then(|a| a.last_sign_in.as_ref());
-        (
-            user.is_some(),
-            user.clone().unwrap_or_default(),
-            account.map_or(0, |a| a.keys.len()),
-            last.map_or(0, |s| s.counter),
-            last.is_some_and(|s| s.user_verified),
-        )
+    let store = &app(cx).store;
+    let account = match &user {
+        Some(u) => store.account(u).await.unwrap_or_else(|e| {
+            eprintln!("store: {e}");
+            None
+        }),
+        None => None,
     };
+    let last = account.as_ref().and_then(|a| a.last_sign_in);
+    let (signed_in, name, keys, counter, uv) = (
+        user.is_some(),
+        user.clone().unwrap_or_default(),
+        account.as_ref().map_or(0, |a| a.keys.len()),
+        last.map_or(0, |s| s.counter),
+        last.is_some_and(|s| s.user_verified),
+    );
+    let in_memory = !store.persistent();
     Ok(view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -160,7 +194,9 @@ async fn home(cx: &Cx) -> Result<impl View> {
                         </section>
                     }
                     <p id="status" role="status"></p>
-                    <p class="note">"Touch the key when it blinks. Accounts live in memory until the server stops."</p>
+                    <p class="note">"Touch the key when it blinks."
+                        if in_memory { " Accounts live in memory until the server stops." }
+                    </p>
                 </main>
             </body>
         </html>
@@ -205,8 +241,7 @@ async fn register_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> 
     }
     let signed_in = current_user(cx).await?;
     let app = app(cx);
-    let mut store = app.store.lock().expect("store lock");
-    let (user_id, exclude) = match store.accounts.get(&username) {
+    let (user_id, exclude) = match stored!(app.store.account(&username).await) {
         // Adding a key to an existing account needs that account's session.
         Some(account) if signed_in.as_deref() == Some(username.as_str()) => {
             (account.user_id, Some(account.keys.iter().map(|k| k.cred_id().clone()).collect()))
@@ -220,41 +255,34 @@ async fn register_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> 
             Err(e) => return Ok(failed(e)),
         };
     let ceremony = Uuid::new_v4();
-    store.registrations.insert(ceremony, (username, user_id, state));
+    stored!(app.store.begin(ceremony, Ceremony::Registration { username, user_id, state }).await);
     Ok(Json(json!({ "ok": true, "ceremony": ceremony, "options": options })))
 }
 
 #[route(POST "/api/register/finish")]
 async fn register_finish(cx: &Cx, Json(req): Json<Finish<RegisterPublicKeyCredential>>) -> Result<Json<Value>> {
     let app = app(cx);
-    let mut store = app.store.lock().expect("store lock");
     // Each ceremony's state is used once, whatever the outcome.
-    let Some((username, user_id, state)) = store.registrations.remove(&req.ceremony) else {
+    let Some(Ceremony::Registration { username, user_id, state }) = stored!(app.store.take(req.ceremony).await) else {
         return Ok(failed("unknown or expired registration; start again"));
     };
     let key = match app.webauthn.finish_securitykey_registration(&req.credential, &state) {
         Ok(k) => k,
         Err(e) => return Ok(failed(e)),
     };
-    // A credential ID belongs to one account only.
-    if store.accounts.values().flat_map(|a| &a.keys).any(|k| k.cred_id() == key.cred_id()) {
-        return Ok(failed("this credential is already registered"));
+    // A credential ID belongs to one account only; a username to one user handle.
+    match stored!(app.store.add_key(&username, user_id, key).await) {
+        AddKey::Added(keys) => Ok(Json(json!({ "ok": true, "username": username, "keys": keys }))),
+        AddKey::Taken => Ok(failed("that username was taken meanwhile; choose another")),
+        AddKey::Duplicate => Ok(failed("this credential is already registered")),
     }
-    let account = store
-        .accounts
-        .entry(username.clone())
-        .or_insert_with(|| Account { user_id, keys: Vec::new(), last_sign_in: None });
-    account.keys.push(key);
-    let keys = account.keys.len();
-    Ok(Json(json!({ "ok": true, "username": username, "keys": keys })))
 }
 
 #[route(POST "/api/login/start")]
 async fn login_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> {
     let username = req.username.trim().to_owned();
     let app = app(cx);
-    let mut store = app.store.lock().expect("store lock");
-    let Some(account) = store.accounts.get(&username) else {
+    let Some(account) = stored!(app.store.account(&username).await) else {
         return Ok(failed("no such user; register a key first"));
     };
     // allowCredentials lists this user's keys: Jotakey's credentials are not discoverable.
@@ -263,45 +291,36 @@ async fn login_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> {
         Err(e) => return Ok(failed(e)),
     };
     let ceremony = Uuid::new_v4();
-    store.authentications.insert(ceremony, (username, state));
+    stored!(app.store.begin(ceremony, Ceremony::Authentication { username, state }).await);
     Ok(Json(json!({ "ok": true, "ceremony": ceremony, "options": options })))
 }
 
 #[route(POST "/api/login/finish")]
 async fn login_finish(cx: &Cx, Json(req): Json<Finish<PublicKeyCredential>>) -> Result<Json<Value>> {
     let app = app(cx);
-    let (username, result) = {
-        let mut store = app.store.lock().expect("store lock");
-        let Some((username, state)) = store.authentications.remove(&req.ceremony) else {
-            return Ok(failed("unknown or expired sign-in; start again"));
-        };
-        // Checks the challenge, origin, RP ID hash, UP flag, signature and counter.
-        let result = match app.webauthn.finish_securitykey_authentication(&req.credential, &state) {
-            Ok(r) => r,
-            Err(e) => return Ok(failed(e)),
-        };
-        let Some(account) = store.accounts.get_mut(&username) else {
-            return Ok(failed("account removed during sign-in"));
-        };
-        for key in &mut account.keys {
-            key.update_credential(&result); // stores the new counter
-        }
-        account.last_sign_in = Some(SignIn { counter: result.counter(), user_verified: result.user_verified() });
-        (username, result)
+    let Some(Ceremony::Authentication { username, state }) = stored!(app.store.take(req.ceremony).await) else {
+        return Ok(failed("unknown or expired sign-in; start again"));
     };
+    // Checks the challenge, origin, RP ID hash, UP flag, signature and counter.
+    let result = match app.webauthn.finish_securitykey_authentication(&req.credential, &state) {
+        Ok(r) => r,
+        Err(e) => return Ok(failed(e)),
+    };
+    // Store the new counter before the session starts.
+    if !stored!(app.store.record_sign_in(&username, &result).await) {
+        return Ok(failed("account removed during sign-in"));
+    }
     let new_session = session::start(cx).await?;
-    app.store
-        .lock()
-        .expect("store lock")
-        .sessions
-        .insert(new_session.token_hash, (username.clone(), new_session.expires_at));
+    stored!(app.store.start_session(&new_session.token_hash, &username, new_session.expires_at).await);
     Ok(Json(json!({ "ok": true, "username": username, "counter": result.counter() })))
 }
 
 #[route(POST "/logout")]
 async fn logout(cx: &Cx) -> Result<SeeOther> {
-    if let Some(hash) = session::stop(cx).await? {
-        app(cx).store.lock().expect("store lock").sessions.remove(&hash);
+    if let Some(hash) = session::stop(cx).await?
+        && let Err(e) = app(cx).store.end_session(&hash).await
+    {
+        eprintln!("store: {e}");
     }
     Ok(see_other("/"))
 }
