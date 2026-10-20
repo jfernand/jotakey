@@ -103,8 +103,8 @@ carries an opaque ceremony ID. After a sign-in, Topcoat issues a session cookie 
 ## Options that matter for a Jotakey
 
 The firmware implements CTAP 2.0 with non-discoverable credentials, plus the CTAP 2.1 client
-PIN. The demo asks only for a touch, never the PIN, and uses webauthn-rs's *security key*
-flow, which matches that:
+PIN. By default the demo asks only for a touch, never the PIN, and uses webauthn-rs's
+*security key* flow, which matches that:
 
 - `residentKey: "discouraged"`. The key does not store credentials, so sign-in starts with
   a username and the server sends that user's credential IDs.
@@ -113,7 +113,7 @@ flow, which matches that:
   `danger-user-presence-only-security-keys` feature). Without that setting,
   webauthn-rs requests credProtect "userVerificationRequired", and Chrome refuses the
   registration: "Requested protection policy is inconsistent or incongruent with other
-  requested parameters". A relying party that *requires* UV cannot use a Jotakey yet.
+  requested parameters". **Register with PIN** asks for UV another way (below).
 - `attestation: "direct"` and ES256 (`-7`), the only algorithm Jotakey implements. With
   `"none"`, Chrome zeroes the AAGUID, so the page could not name the model. A Jotakey answers
   with packed self-attestation: signed by the new credential's own key, with no certificate,
@@ -128,10 +128,32 @@ flow, which matches that:
   key that is not registered". The server stores the transports and sends them back. They
   only steer the browser's prompt; no check depends on them.
 
+### Register with PIN
+
+**Register with PIN** (or **Add a key with PIN**, once signed in) makes a key that must
+verify the user, with its PIN, at registration and at every sign-in after. WebAuthn gives a
+site no way to set an authenticator's PIN: the browser does that. The registration asks for
+`userVerification: "required"`, so Chrome asks for the Jotakey's PIN, or offers to create one
+if the key has none. Jotakey then sets the UV flag, which it does only for a request whose
+`pinUvAuthParam` verifies against the PIN token.
+
+The request changes, but not webauthn-rs's flow, so still no `credProtect`; the server
+checks the result itself:
+
+- At registration, a response without the UV flag is refused ("the key did not verify you").
+- The stored credential is marked as registered with policy "required". At every sign-in,
+  webauthn-rs refuses an assertion with that credential whose UV flag is clear, whatever the
+  browser was asked for.
+- A sign-in asks for `userVerification: "required"` when all of the user's keys need it, and
+  `"preferred"` when some do, so the browser asks for the PIN of a key that has one.
+
+The page shows **PIN required** for each key. A PIN on the key stays until
+`authenticatorReset`, which also invalidates every credential the key made.
+
 After signing in, the page lists everything the server stores about the account: the user
 handle, and per key the credential ID, whether it is a synced passkey or device-bound,
-transports, algorithm, attestation format, when it was registered and last used, and the
-counter, with what the authenticator reported at this sign-in.
+transports, algorithm, attestation format, whether it needs the PIN, when it was registered
+and last used, and the counter, with what the authenticator reported at this sign-in.
 
 It also recognises a Jotakey (`src/model.rs`). At registration the server reads the AAGUID,
 the 16-byte model ID in the authenticator data, with Jotakey's own CBOR decoder

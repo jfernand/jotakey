@@ -73,6 +73,7 @@ fn key_rows(key: &Key) -> Vec<(&'static str, String)> {
         ("Algorithm", format!("{:?}", key.key.cred_algorithm())),
         ("Discoverable", discoverable(&cred)),
         ("Verified at registration", verified(cred.user_verified)),
+        ("PIN required", pin(crate::pin_required(&key.key))),
         ("Attestation", format!("{:?}", cred.attestation_format).to_lowercase()),
         ("Registered", when(key.registered)),
         ("Last used", key.last_used.map_or_else(|| "never".into(), when)),
@@ -115,6 +116,14 @@ fn counter(n: u32) -> String {
 
 fn verified(uv: bool) -> String {
     if uv { "yes: PIN, fingerprint or face".into() } else { "no: presence only".into() }
+}
+
+fn pin(required: bool) -> String {
+    if required {
+        "yes: every sign-in must verify you (PIN, fingerprint or face)".into()
+    } else {
+        "no: a touch is enough".into()
+    }
 }
 
 fn yes_no(b: bool) -> &'static str {

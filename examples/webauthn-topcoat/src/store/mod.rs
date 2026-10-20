@@ -84,7 +84,8 @@ pub fn credential_id(id: &CredentialID) -> String {
 
 /// A ceremony between its start and finish requests: the server's half of the challenge.
 pub enum Ceremony {
-    Registration { username: String, user_id: Uuid, state: SecurityKeyRegistration },
+    /// `pin`: the key must verify the user (PIN, fingerprint or face) now and at every sign-in.
+    Registration { username: String, user_id: Uuid, pin: bool, state: SecurityKeyRegistration },
     Authentication { username: String, state: SecurityKeyAuthentication },
 }
 

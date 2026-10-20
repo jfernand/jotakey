@@ -78,12 +78,15 @@ function username(button) {
   return button.dataset.username || (input ? input.value.trim() : "");
 }
 
+// A button with data-pin registers a key that must verify the user (its PIN) at every sign-in.
 async function register(button) {
-  const start = await post("/api/register/start", { username: username(button) });
-  status("Touch your key to register it…");
+  const pin = "pin" in button.dataset;
+  const start = await post("/api/register/start", { username: username(button), pin });
+  status(pin ? "Enter your key's PIN, then touch it to register it…" : "Touch your key to register it…");
   const cred = await navigator.credentials.create({ publicKey: creationOptions(start.options) });
   const done = await post("/api/register/finish", { ceremony: start.ceremony, credential: registrationJson(cred) });
-  const registered = `Registered key ${done.keys} (${done.model}) for ${done.username}. Now sign in with it.`;
+  const withPin = pin ? ", PIN required" : "";
+  const registered = `Registered key ${done.keys} (${done.model}${withPin}) for ${done.username}. Now sign in with it.`;
   // The key registered, but Jotakey's strict CBOR decoder could not read the browser's
   // attestation object: say so rather than hide it.
   status(done.warning ? `${done.warning} ${registered}` : registered, done.warning ? "warning" : "ok");
@@ -91,13 +94,14 @@ async function register(button) {
 
 async function login(button) {
   const start = await post("/api/login/start", { username: username(button) });
-  status("Touch your key to sign in…");
+  const uv = start.options.publicKey.userVerification;
+  status(uv === "discouraged" ? "Touch your key to sign in…" : "Enter your key's PIN if asked, then touch it to sign in…");
   const cred = await navigator.credentials.get({ publicKey: requestOptions(start.options) });
   await post("/api/login/finish", { ceremony: start.ceremony, credential: assertionJson(cred) });
   location.reload();
 }
 
-for (const [id, action] of [["register", register], ["login", login]]) {
+for (const [id, action] of [["register", register], ["register-pin", register], ["login", login]]) {
   const button = document.getElementById(id);
   if (!button) continue;
   button.addEventListener("click", async () => {
