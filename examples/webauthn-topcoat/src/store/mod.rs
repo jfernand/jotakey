@@ -86,7 +86,9 @@ pub fn credential_id(id: &CredentialID) -> String {
 pub enum Ceremony {
     /// `pin`: the key must verify the user (PIN, fingerprint or face) now and at every sign-in.
     Registration { username: String, user_id: Uuid, pin: bool, state: SecurityKeyRegistration },
-    Authentication { username: String, state: SecurityKeyAuthentication },
+    /// `user_id`: the account the keys belonged to at the start, so a sign-in never lands in
+    /// an account deleted and registered again meanwhile.
+    Authentication { username: String, user_id: Uuid, state: SecurityKeyAuthentication },
 }
 
 pub enum AddKey {
@@ -96,6 +98,15 @@ pub enum AddKey {
     Taken,
     /// The credential ID is already registered, to this account or another.
     Duplicate,
+}
+
+pub enum RemoveKey {
+    /// The key was removed; the account has this many left.
+    Removed(usize),
+    /// It was the last key: the account is gone, and the username free again.
+    AccountDeleted,
+    /// No such key on this account.
+    NotFound,
 }
 
 /// The backend failed (unreachable, throttled, corrupt item). The message is for the log,
@@ -163,34 +174,65 @@ impl Store {
         }
     }
 
-    /// Record a verified sign-in: the key's new counter and the sign-in shown on the page.
-    /// `false` if the account no longer exists.
-    pub async fn record_sign_in(&self, username: &str, result: &AuthenticationResult) -> Result<bool> {
+    /// Remove a key, by its base64url credential ID, from the account `username` has while
+    /// it still has `user_id`. Removing the last key deletes the account.
+    pub async fn remove_key(&self, username: &str, user_id: Uuid, credential: &str) -> Result<RemoveKey> {
         match self {
-            Store::Memory(s) => Ok(s.record_sign_in(username, result)),
+            Store::Memory(s) => Ok(s.remove_key(username, user_id, credential)),
             #[cfg(feature = "dynamodb")]
-            Store::Dynamo(s) => s.record_sign_in(username, result).await,
+            Store::Dynamo(s) => s.remove_key(username, user_id, credential).await,
         }
     }
 
-    pub async fn start_session(&self, hash: &TokenHash, username: &str, expires: SystemTime) -> Result<()> {
+    /// Every username with an account, sorted.
+    pub async fn usernames(&self) -> Result<Vec<String>> {
+        let mut names = match self {
+            Store::Memory(s) => s.usernames(),
+            #[cfg(feature = "dynamodb")]
+            Store::Dynamo(s) => s.usernames().await?,
+        };
+        names.sort();
+        Ok(names)
+    }
+
+    /// Record a verified sign-in: the key's new counter and the sign-in shown on the page.
+    /// `false` if the account no longer exists, has another user handle, or no longer has
+    /// the key.
+    pub async fn record_sign_in(&self, username: &str, user_id: Uuid, result: &AuthenticationResult) -> Result<bool> {
+        match self {
+            Store::Memory(s) => Ok(s.record_sign_in(username, user_id, result)),
+            #[cfg(feature = "dynamodb")]
+            Store::Dynamo(s) => s.record_sign_in(username, user_id, result).await,
+        }
+    }
+
+    pub async fn start_session(&self, hash: &TokenHash, username: &str, user_id: Uuid, expires: SystemTime) -> Result<()> {
         match self {
             Store::Memory(s) => {
-                s.start_session(hash, username, expires);
+                s.start_session(hash, username, user_id, expires);
                 Ok(())
             }
             #[cfg(feature = "dynamodb")]
-            Store::Dynamo(s) => s.start_session(hash, username, expires).await,
+            Store::Dynamo(s) => s.start_session(hash, username, user_id, expires).await,
         }
     }
 
-    /// The session's username, if it exists and has not expired.
-    pub async fn session_user(&self, hash: &TokenHash) -> Result<Option<String>> {
+    /// The session's username and user handle, if it exists and has not expired.
+    async fn session_user(&self, hash: &TokenHash) -> Result<Option<(String, Uuid)>> {
         match self {
             Store::Memory(s) => Ok(s.session_user(hash)),
             #[cfg(feature = "dynamodb")]
             Store::Dynamo(s) => s.session_user(hash).await,
         }
+    }
+
+    /// The signed-in user and their account. A session outlives nothing it was started for:
+    /// if the account was deleted, or deleted and registered again by someone else (a new
+    /// user handle), the session counts as signed out.
+    pub async fn signed_in(&self, hash: &TokenHash) -> Result<Option<(String, Account)>> {
+        let Some((username, user_id)) = self.session_user(hash).await? else { return Ok(None) };
+        let account = self.account(&username).await?.filter(|a| a.user_id == user_id);
+        Ok(account.map(|a| (username, a)))
     }
 
     pub async fn end_session(&self, hash: &TokenHash) -> Result<()> {
@@ -205,16 +247,15 @@ impl Store {
     }
 }
 
-/// Apply a verified sign-in to an account's keys and last sign-in. Counters only go up
-/// (`update_credential` ignores a lower one), so applying it again after a lost race is safe.
-fn apply_sign_in(account: &mut Account, result: &AuthenticationResult) {
+/// Apply a verified sign-in to an account's keys and last sign-in; `false`, changing nothing,
+/// if the account no longer has the key. Counters only go up (`update_credential` ignores a
+/// lower one), so applying it again after a lost race is safe.
+fn apply_sign_in(account: &mut Account, result: &AuthenticationResult) -> bool {
     let at = now();
-    for key in &mut account.keys {
-        if key.key.update_credential(result).is_some() {
-            key.sign_ins = key.sign_ins.saturating_add(1);
-            key.last_used = Some(at);
-        }
-    }
+    let Some(key) = account.keys.iter_mut().find(|k| k.key.cred_id() == result.cred_id()) else { return false };
+    key.key.update_credential(result);
+    key.sign_ins = key.sign_ins.saturating_add(1);
+    key.last_used = Some(at);
     account.last_sign_in = Some(SignIn {
         at,
         credential: credential_id(result.cred_id()),
@@ -222,4 +263,11 @@ fn apply_sign_in(account: &mut Account, result: &AuthenticationResult) {
         user_verified: result.user_verified(),
         backup_state: result.backup_state(),
     });
+    true
+}
+
+/// Remove the key with this base64url credential ID; `None` if the account has no such key.
+fn without_key(account: &mut Account, credential: &str) -> Option<Key> {
+    let i = account.keys.iter().position(|k| credential_id(k.key.cred_id()) == credential)?;
+    Some(account.keys.remove(i))
 }

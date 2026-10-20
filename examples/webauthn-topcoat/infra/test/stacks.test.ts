@@ -61,13 +61,13 @@ test('the server runs on x86_64 with the web adapter and knows its origin and ta
   });
 });
 
-test('the server may get, put and delete items, nothing more', () => {
+test('the server may get, put, delete and scan items, nothing more', () => {
   app.hasResourceProperties('AWS::IAM::Policy', {
     PolicyDocument: {
       Statement: [
         Match.objectLike({
           Effect: 'Allow',
-          Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem'],
+          Action: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem', 'dynamodb:Scan'],
         }),
       ],
     },

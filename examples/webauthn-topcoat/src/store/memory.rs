@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use topcoat::session::TokenHash;
 use webauthn_rs::prelude::*;
 
-use super::{Account, AddKey, Ceremony, Key, apply_sign_in, now};
+use super::{Account, AddKey, Ceremony, Key, RemoveKey, apply_sign_in, now, without_key};
 
 #[derive(Default)]
 pub struct Store(Mutex<Inner>);
@@ -18,8 +18,8 @@ struct Inner {
     accounts: HashMap<String, Account>,
     /// Ceremonies in progress, by ID, with their expiry.
     ceremonies: HashMap<Uuid, (Ceremony, SystemTime)>,
-    /// Signed-in sessions: token hash -> (username, expiry).
-    sessions: HashMap<TokenHash, (String, SystemTime)>,
+    /// Signed-in sessions: token hash -> (username, user handle, expiry).
+    sessions: HashMap<TokenHash, (String, Uuid, SystemTime)>,
 }
 
 impl Store {
@@ -65,26 +65,44 @@ impl Store {
         AddKey::Added(account.keys.len())
     }
 
-    pub fn record_sign_in(&self, username: &str, result: &AuthenticationResult) -> bool {
+    pub fn remove_key(&self, username: &str, user_id: Uuid, credential: &str) -> RemoveKey {
         let mut inner = self.lock();
-        let Some(account) = inner.accounts.get_mut(username) else { return false };
-        apply_sign_in(account, result);
-        true
+        let Some(account) = inner.accounts.get_mut(username).filter(|a| a.user_id == user_id) else {
+            return RemoveKey::NotFound;
+        };
+        if without_key(account, credential).is_none() {
+            return RemoveKey::NotFound;
+        }
+        if account.keys.is_empty() {
+            inner.accounts.remove(username);
+            return RemoveKey::AccountDeleted;
+        }
+        RemoveKey::Removed(account.keys.len())
     }
 
-    pub fn start_session(&self, hash: &TokenHash, username: &str, expires: SystemTime) {
+    pub fn usernames(&self) -> Vec<String> {
+        self.lock().accounts.keys().cloned().collect()
+    }
+
+    pub fn record_sign_in(&self, username: &str, user_id: Uuid, result: &AuthenticationResult) -> bool {
+        let mut inner = self.lock();
+        let Some(account) = inner.accounts.get_mut(username).filter(|a| a.user_id == user_id) else { return false };
+        apply_sign_in(account, result)
+    }
+
+    pub fn start_session(&self, hash: &TokenHash, username: &str, user_id: Uuid, expires: SystemTime) {
         let mut inner = self.lock();
         let now = SystemTime::now();
-        inner.sessions.retain(|_, (_, expires)| *expires > now);
-        inner.sessions.insert(hash.clone(), (username.to_owned(), expires));
+        inner.sessions.retain(|_, (_, _, expires)| *expires > now);
+        inner.sessions.insert(hash.clone(), (username.to_owned(), user_id, expires));
     }
 
-    pub fn session_user(&self, hash: &TokenHash) -> Option<String> {
+    pub fn session_user(&self, hash: &TokenHash) -> Option<(String, Uuid)> {
         self.lock()
             .sessions
             .get(hash)
-            .filter(|(_, expires)| *expires > SystemTime::now())
-            .map(|(user, _)| user.clone())
+            .filter(|(_, _, expires)| *expires > SystemTime::now())
+            .map(|(user, user_id, _)| (user.clone(), *user_id))
     }
 
     pub fn end_session(&self, hash: &TokenHash) {

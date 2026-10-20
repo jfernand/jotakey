@@ -101,9 +101,26 @@ async function login(button) {
   location.reload();
 }
 
-for (const [id, action] of [["register", register], ["register-pin", register], ["login", login]]) {
-  const button = document.getElementById(id);
-  if (!button) continue;
+// Unregister a key. The server forgets it; the key itself stored nothing (its credentials
+// are not discoverable), so there is nothing to delete on it.
+async function remove(button) {
+  const question = button.dataset.last === "yes"
+    ? "Remove your only key? That deletes the account and signs you out, and anyone may then register the username."
+    : "Remove this key? It will no longer sign in to this account.";
+  if (!confirm(question)) return;
+  await post("/api/keys/remove", { credential: button.dataset.credential });
+  location.reload();
+}
+
+const all = (selector) => [...document.querySelectorAll(selector)];
+const actions = [
+  [all("#register, #register-pin"), register],
+  // The sign-in button, and each name in the list of registered users.
+  [all("#login, button.user"), login],
+  [all("button.remove"), remove],
+];
+
+for (const [button, action] of actions.flatMap(([buttons, action]) => buttons.map((b) => [b, action]))) {
   button.addEventListener("click", async () => {
     button.disabled = true;
     try {

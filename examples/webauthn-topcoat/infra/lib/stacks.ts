@@ -92,8 +92,9 @@ export class AppStack extends cdk.Stack {
       }),
     });
     // Exactly what src/store/dynamo.rs calls: single-item reads, writes and deletes (a
-    // transaction's puts need PutItem). No Scan or Query: no one can list the accounts.
-    table.grant(server, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem');
+    // transaction's puts and deletes need PutItem and DeleteItem), and Scan for the list of
+    // usernames on the sign-in page. No Query, no table or stream management.
+    table.grant(server, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem', 'dynamodb:Scan');
 
     const domain = new apigwv2.DomainName(this, 'Domain', { domainName, certificate });
     const api = new apigwv2.HttpApi(this, 'Api', {

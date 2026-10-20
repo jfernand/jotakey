@@ -30,6 +30,7 @@ input { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--mut
 form { margin: 0; }
 button { font: inherit; font-weight: 600; padding: 0.6rem 1rem; border: 0; background: var(--accent); color: #0e0e0e; cursor: pointer; }
 button.quiet { background: transparent; color: var(--ink); border: 1px solid var(--muted); }
+button.remove { margin-top: 0.75rem; }
 button:disabled { opacity: 0.5; cursor: wait; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; margin: 0; }
 dt { color: var(--muted); }
