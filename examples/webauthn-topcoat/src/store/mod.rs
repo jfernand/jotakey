@@ -41,11 +41,14 @@ pub struct Key {
     pub sign_ins: u64,
     #[serde(default)]
     pub last_used: Option<u64>,
+    /// The authenticator's model, as it reported it at registration (None: not recorded).
+    #[serde(default)]
+    pub aaguid: Option<Uuid>,
 }
 
 impl Key {
-    pub fn new(key: SecurityKey) -> Self {
-        Key { key, registered: now(), sign_ins: 0, last_used: None }
+    pub fn new(key: SecurityKey, aaguid: Option<Uuid>) -> Self {
+        Key { key, registered: now(), sign_ins: 0, last_used: None, aaguid }
     }
 }
 
@@ -147,7 +150,7 @@ impl Store {
     }
 
     /// Add a verified key to `username`, creating the account with `user_id` if it is new.
-    pub async fn add_key(&self, username: &str, user_id: Uuid, key: SecurityKey) -> Result<AddKey> {
+    pub async fn add_key(&self, username: &str, user_id: Uuid, key: Key) -> Result<AddKey> {
         match self {
             Store::Memory(s) => Ok(s.add_key(username, user_id, key)),
             #[cfg(feature = "dynamodb")]

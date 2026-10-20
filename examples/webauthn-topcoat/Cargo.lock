@@ -3083,12 +3083,13 @@ dependencies = [
 
 [[package]]
 name = "webauthn-topcoat"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aws-config",
  "aws-sdk-dynamodb",
  "openssl",
  "serde",
+ "serde_cbor_2",
  "serde_json",
  "tokio",
  "topcoat",

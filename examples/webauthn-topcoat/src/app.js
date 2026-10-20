@@ -83,7 +83,7 @@ async function register(button) {
   status("Touch your key to register it…");
   const cred = await navigator.credentials.create({ publicKey: creationOptions(start.options) });
   const done = await post("/api/register/finish", { ceremony: start.ceremony, credential: registrationJson(cred) });
-  status(`Registered key ${done.keys} for ${done.username}. Now sign in with it.`, "ok");
+  status(`Registered key ${done.keys} (${done.model}) for ${done.username}. Now sign in with it.`, "ok");
 }
 
 async function login(button) {

@@ -3,6 +3,7 @@
 
 use webauthn_rs::prelude::*;
 
+use crate::model;
 use crate::store::{Account, Key, credential_id};
 
 /// A titled list of (label, value) rows.
@@ -22,11 +23,16 @@ pub fn sections(username: &str, account: &Account) -> Vec<Section> {
         ],
     }];
     if let Some(last) = &account.last_sign_in {
+        let used = account.keys.iter().position(|k| credential_id(k.key.cred_id()) == last.credential);
+        let with = match used {
+            Some(i) => format!("key {} ({})", i + 1, short(&last.credential)),
+            None => short(&last.credential),
+        };
         out.push(Section {
             title: "This sign-in".into(),
             rows: vec![
                 ("When", when(last.at)),
-                ("With key", short(&last.credential)),
+                ("With", with),
                 ("Signature counter", counter(last.counter)),
                 ("User verified", verified(last.user_verified)),
                 ("Backed up", yes_no(last.backup_state).into()),
@@ -39,6 +45,18 @@ pub fn sections(username: &str, account: &Account) -> Vec<Section> {
     out
 }
 
+/// "Signed in with a Jotakey", if the key used for the latest sign-in is one.
+pub fn signed_in_with_jotakey(account: &Account) -> Option<String> {
+    let last = account.last_sign_in.as_ref()?;
+    let key = account.keys.iter().find(|k| credential_id(k.key.cred_id()) == last.credential)?;
+    match model::verdict(key.aaguid.as_ref(), key.key.cred_id().as_ref()) {
+        model::Verdict::Jotakey(m) if m.is_empty() => Some("You signed in with a Jotakey.".into()),
+        model::Verdict::Jotakey(m) => Some(format!("You signed in with a Jotakey ({m}).")),
+        model::Verdict::ProbablyJotakey => Some("You signed in with what looks like a Jotakey.".into()),
+        model::Verdict::Other => None,
+    }
+}
+
 fn key_rows(key: &Key) -> Vec<(&'static str, String)> {
     let cred = Credential::from(key.key.clone());
     let kind = if cred.backup_eligible {
@@ -47,6 +65,7 @@ fn key_rows(key: &Key) -> Vec<(&'static str, String)> {
         "device-bound: it never leaves the authenticator"
     };
     vec![
+        ("Model", model::describe(key.aaguid.as_ref(), cred.cred_id.as_ref())),
         ("Credential ID", credential_id(&cred.cred_id)),
         ("Kind", kind.into()),
         ("Backed up", yes_no(cred.backup_state).into()),
