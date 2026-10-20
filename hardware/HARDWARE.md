@@ -21,6 +21,20 @@ stable 3.3 V rail.
   - VDDA (pin 5): 100 nF + 1 µF.
   - Check in DS11451 that VDDUSB is bonded to VDD in the UFQFPN32 package.
 - **Secure element decoupling:** 100 nF directly next to the OPTIGA VCC pin (pin 10).
+- **Bring-up links:** the 3.3 V supply is three rails joined by two 0 Ω resistors (0402,
+  LCSC C17168, Basic), so a board can be powered up one stage at a time:
+  - `+3V3`: the LDO's output, with C2 and C3;
+  - `+3V3_MCU`: the MCU's VDD and VDDA pins, their decoupling and the 3V3 SWD pad (TP4), fed
+    from `+3V3` through R6;
+  - `+3V3_SE`: the OPTIGA's VCC, its decoupling and the two I2C pull-ups, fed from
+    `+3V3_MCU` through R7.
+
+  JLCPCB fits both links. On a hand-assembled board, leave them off at first: check the LDO's
+  output with nothing on it, fit R6 and reach the MCU over SWD, then fit R7 for the OPTIGA.
+  Across an open link's pads, an ammeter measures one rail's current.
+  - The I2C pull-ups are on the OPTIGA's rail so that, with R7 open, they cannot power the
+    OPTIGA through the input protection diodes of its SDA and SCL pins. For the same reason,
+    firmware run with R7 open keeps PA5 (the OPTIGA's reset) low or floating.
 
 ## 2. Crystal-less USB
 
@@ -49,13 +63,13 @@ OPTIGA Trust M PG-USON-10 pinout (datasheet rev 3.70, Table 6 and Figure 7):
 | 4, 5, 6, 7 | n.c. | leave floating |
 | 8 | SCL | PA9 (pin 19), I2C1_SCL |
 | 9 | RST (active low, weak internal pull-up) | PA5 (pin 11), push-pull GPIO for a hard reset |
-| 10 | VCC | 3V3 rail, 100 nF next to the pin |
+| 10 | VCC | the OPTIGA's 3V3 rail (`+3V3_SE`, §1), 100 nF next to the pin |
 | exposed pad | not connected internally | solder to a PCB copper area (GND) for heat |
 
 There is no separate VCC_IO pin; the I2C level follows VCC (1.62–5.5 V).
 
-- **Pull-ups:** 4.7 kΩ from SDA and SCL to 3V3. Without them the bus floats and the firmware
-  cannot initialise it.
+- **Pull-ups:** 4.7 kΩ from SDA and SCL to the OPTIGA's 3V3 rail (§1). Without them the bus
+  floats and the firmware cannot initialise it.
 - **Package:** 3 × 3 mm, 0.5 mm pitch, leads 0.25 × 0.4 mm, exposed pad 2.5 × 1.7 mm
   (datasheet Figure 6).
 - **Part:** SLS32AIA010MH (OPTIGA Trust M V1, −40…+105 °C), LCSC C539250, JLCPCB Extended.
@@ -108,6 +122,7 @@ before ordering):
 | R1, R2 | 1 kΩ 1 %, 0402 | C11702 | Basic |
 | R3, R4 | 4.7 kΩ 1 %, 0402 | C25900 | Basic |
 | R5 | 10 kΩ 1 %, 0402 | C25744 | Basic |
+| R6, R7 | 0 Ω, 0402 (bring-up links, §1) | C17168 | Basic |
 
 J1 (edge contacts), E1 (touch electrode) and TP1–TP5 (SWD pads) are copper on the board, not
 parts. Four Extended parts each add JLCPCB's per-part setup fee.

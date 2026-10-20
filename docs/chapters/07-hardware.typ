@@ -182,12 +182,12 @@ package and pinout, so a later board can switch; `F` would then become HMAC, as 
 
 == The jotakey key board
 
-The jotakey key is a two-layer board whose own edge is the USB plug. Hardware 0.1.0 (git tag
-`hw-v0.1.0`) is described here; `hardware/HARDWARE.md` records the part choices against
+The jotakey key is a two-layer board whose own edge is the USB plug. Hardware 0.2.0 (git tag
+`hw-v0.2.0`) is described here; `hardware/HARDWARE.md` records the part choices against
 their datasheets, and `hardware/MANUFACTURING.md` the order.
 
 #board-views(
-  caption: [The jotakey key, hardware 0.1.0, rendered from the KiCad design: 47 × 18 mm, 2.0 mm thick, black solder mask. The back is drawn as seen from below.],
+  caption: [The jotakey key, hardware 0.2.0, rendered from the KiCad design: 47 × 18 mm, 2.0 mm thick, black solder mask. The back is drawn as seen from below.],
   ("figures/jotakey-key-front.png", [Front]),
   ("figures/jotakey-key-back.png", [Back]),
 )
@@ -209,6 +209,7 @@ centre of the touch electrode.
   ([U4], [USBLC6-2SC6, SOT-23-6], [ESD protection on D+, D− and VBUS, next to the contacts.]),
   ([E1], [10 mm copper disc], [The touch electrode, user presence (invariant 1). The bolt logo is cut out of the copper.]),
   ([D1], [Red LED, 0603], [The only display: touch requested, OK, fault.]),
+  ([R6, R7], [0 Ω links, 0402], [Bring-up: they join the LDO's 3.3 V to the microcontroller's supply and that to the secure element's. Fitted last on a hand-built board, they power it up one stage at a time.]),
   ([TP1–5], [Test pads, bottom], [SWD (DIO, CLK, RST, 3V3, GND) for a pogo-pin jig.]),
 )
 

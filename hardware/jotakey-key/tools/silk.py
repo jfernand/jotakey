@@ -51,7 +51,7 @@ CHIP_LABELS = {
 CHIP_LABEL_HEIGHT = 0.8
 
 TITLE = "Jotakey key: STM32L432 + OPTIGA Trust M USB-A dongle"
-DATE = "2026-10-17"  # of the HW_VERSION release
+DATE = "2026-10-19"  # of the HW_VERSION release
 COMMENTS = ["Pin plan and parts: hardware/HARDWARE.md",
             "Fabrication and assembly: JLCPCB, 2 layers, 2.0 mm, ENIG",
             "(c) Javier Fernandez @ JotaSoft 2026"]

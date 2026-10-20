@@ -41,6 +41,11 @@ PLACEMENT = {
     "C2": (95.6, 88.4, 180, "F"),    # LDO output, under its 3V3 pin
     "C3": (92.6, 89.5, 90, "F"),     # 3V3 bulk
     "U4": (100.0, 85.0, 270, "F"),   # USB ESD on the board axis, connector side up, MCU side down
+    # 0R bring-up links (HARDWARE.md section 1): R6 from the LDO to the MCU's rail, between
+    # the LDO and U4; R7 from the MCU's rail to the OPTIGA's, between U4 and the SDA pull-up
+    # it feeds. The MCU's rail runs between them, under U4.
+    "R6": (97.75, 85.5, 90, "F"),    # LDO end down
+    "R7": (102.55, 83.9, 90, "F"),   # OPTIGA end up
     # MCU in the middle: USB pins up, touch pins left, OPTIGA reset right.
     "U1": (100, 93.5, 90, "F"),
     # Under the MCU, each capacitor below its pin, GND pads away from the package.
@@ -55,7 +60,7 @@ PLACEMENT = {
     # Secure element in the top-right corner: SCL, RST and VCC face down towards the MCU,
     # SDA comes over the top. Pull-ups and decoupling on the way.
     "U2": (105.9, 86.4, 270, "F"),
-    "R3": (103.0, 86.0, 270, "F"),   # SDA pull-up, on the SDA path left of U2
+    "R3": (103.4, 86.0, 270, "F"),   # SDA pull-up, on the SDA path left of U2
     "R4": (105.0, 90.6, 90, "F"),    # SCL pull-up, below the SCL path
     "C9": (107.9, 89.7, 270, "F"),   # OPTIGA VCC (pin 10)
     "C5": (103.7, 90.9, 270, "F"),   # MCU VDD pin 17, at the package corner
