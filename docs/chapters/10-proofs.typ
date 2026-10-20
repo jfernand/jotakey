@@ -2,7 +2,7 @@
 #import "../isss-template.typ": *
 #import "../lib.typ": *
 
-= The proofs, one by one
+= The proofs
 
 Chapter 9 explained what formal verification is and showed the headline results. This
 chapter is the companion for reading the proofs themselves. It goes through every theorem
