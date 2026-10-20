@@ -114,7 +114,11 @@ flow, which matches that:
   webauthn-rs requests credProtect "userVerificationRequired", and Chrome refuses the
   registration: "Requested protection policy is inconsistent or incongruent with other
   requested parameters". A relying party that *requires* UV cannot use a Jotakey yet.
-- `attestation: "none"` and ES256 (`-7`), the only algorithm Jotakey implements.
+- `attestation: "direct"` and ES256 (`-7`), the only algorithm Jotakey implements. With
+  `"none"`, Chrome zeroes the AAGUID, so the page could not name the model. A Jotakey answers
+  with packed self-attestation: signed by the new credential's own key, with no certificate,
+  so it identifies no one. webauthn-rs verifies the signature; with no list of trusted CAs
+  it accepts any attestation that verifies. Synced passkeys still answer `"none"`.
 - No `hints`. The security-key flow sends `hints: ["security-key"]`, and Safari then offers
   only an NFC or USB key, so an iPhone's own passkeys fail with `NotAllowedError`. The server
   drops the hint, and browsers offer every kind of authenticator, Jotakey included.

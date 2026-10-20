@@ -274,6 +274,16 @@ fn any_authenticator<T: AnyAuthenticator>(mut options: T) -> T {
     options
 }
 
+/// Ask for "direct" attestation instead of webauthn-rs's "none". With "none", Chrome zeroes
+/// the AAGUID, so the page cannot name the model. A Jotakey's attestation is packed
+/// self-attestation: signed by the new credential's own key, with no certificate, so it
+/// identifies no one; webauthn-rs verifies that signature, and with no list of trusted
+/// CAs it accepts any attestation that verifies. Synced passkeys still answer "none".
+fn ask_for_model(mut options: CreationChallengeResponse) -> CreationChallengeResponse {
+    options.public_key.attestation = Some(webauthn_rs_proto::AttestationConveyancePreference::Direct);
+    options
+}
+
 /// Keep the transports the browser reported at registration (`getTransports()`: usb, nfc,
 /// internal, hybrid...). webauthn-rs drops them unless the attestation is packed or tpm, and
 /// without them in `allowCredentials` Safari looks for an NFC or USB key instead of the
@@ -313,7 +323,7 @@ async fn register_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> 
             Ok(r) => r,
             Err(e) => return Ok(failed(e)),
         };
-    let options = any_authenticator(options);
+    let options = ask_for_model(any_authenticator(options));
     let ceremony = Uuid::new_v4();
     stored!(app.store.begin(ceremony, Ceremony::Registration { username, user_id, state }).await);
     Ok(Json(json!({ "ok": true, "ceremony": ceremony, "options": options })))
