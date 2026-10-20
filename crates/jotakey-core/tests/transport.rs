@@ -6,6 +6,34 @@ use jotakey_core::transport::ble::{self, BleEvent, BleFramer, MAX_FRAGMENT};
 use jotakey_core::transport::ctaphid::{self, BROADCAST_CID, CtapHid, HidEvent, Packet, ReceiveState, cmd, err};
 use proptest::prelude::*;
 
+// ---------- draining what the device sends ----------
+
+/// More packets than any response needs (a 1200-byte message is 21 CTAPHID packets, or 64
+/// BLE fragments of 20 bytes). A framer that sends more never stops: fail, rather than
+/// hang until a test timeout (cargo mutants counts a hang as a timeout, not a kill).
+const MAX_PACKETS: usize = 1_000;
+
+/// Every packet the device has queued, in order.
+fn hid_packets(h: &mut CtapHid) -> Vec<Packet> {
+    let mut out = Vec::new();
+    while let Some(p) = h.next_packet() {
+        out.push(p);
+        assert!(out.len() <= MAX_PACKETS, "the CTAPHID framer never stops sending");
+    }
+    out
+}
+
+/// Every notification the device has queued, in order.
+fn ble_notifications(b: &mut BleFramer) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut buf = [0u8; MAX_FRAGMENT];
+    while let Some(n) = b.next_notification(&mut buf) {
+        out.push(buf[..n].to_vec());
+        assert!(out.len() <= MAX_PACKETS, "the BLE framer never stops sending");
+    }
+    out
+}
+
 // ---------- host-side CTAPHID helpers ----------
 
 fn init_packet(channel: u32, command: u8, total: usize, data: &[u8]) -> Packet {
@@ -33,7 +61,7 @@ fn fragment(channel: u32, command: u8, msg: &[u8]) -> Vec<Packet> {
 fn drain(h: &mut CtapHid) -> Vec<(u32, u8, Vec<u8>)> {
     let mut msgs: Vec<(u32, u8, Vec<u8>)> = Vec::new();
     let mut want: Option<usize> = None;
-    while let Some(p) = h.next_packet() {
+    for p in hid_packets(h) {
         let channel = u32::from_be_bytes(p[..4].try_into().unwrap());
         if p[4] & 0x80 != 0 {
             let total = u16::from_be_bytes([p[5], p[6]]) as usize;
@@ -218,7 +246,7 @@ proptest! {
                 ReceiveState::Busy { .. } => prop_assert!(!h.request().is_empty() && h.request().len() <= MAX_MSG_SIZE),
                 ReceiveState::Idle => {}
             }
-            while h.next_packet().is_some() {}
+            hid_packets(&mut h);
         }
     }
 }
@@ -243,10 +271,9 @@ fn ble_frames(command: u8, msg: &[u8], frag: usize) -> Vec<Vec<u8>> {
 
 fn ble_drain(b: &mut BleFramer) -> Vec<(u8, Vec<u8>)> {
     let mut out = Vec::new();
-    let mut buf = [0u8; MAX_FRAGMENT];
     let mut total = 0usize;
-    while let Some(n) = b.next_notification(&mut buf) {
-        let f = &buf[..n];
+    for f in ble_notifications(b) {
+        let f = &f[..];
         if f[0] & 0x80 != 0 {
             total = u16::from_be_bytes([f[1], f[2]]) as usize;
             out.push((f[0], f[3..].to_vec()));
@@ -312,11 +339,10 @@ proptest! {
     #[test]
     fn ble_arbitrary_writes(writes in proptest::collection::vec(proptest::collection::vec(any::<u8>(), 0..40), 0..64)) {
         let mut b = BleFramer::new(20);
-        let mut buf = [0u8; MAX_FRAGMENT];
         for (i, w) in writes.iter().enumerate() {
             let _ = b.handle_write(w, i as u64);
             prop_assert!(b.request().len() <= MAX_MSG_SIZE);
-            while b.next_notification(&mut buf).is_some() {}
+            ble_notifications(&mut b);
         }
     }
 }
@@ -385,7 +411,7 @@ fn hid_response_sequence_numbers() {
     send(&mut h, a, cmd::CBOR, &[4], 0);
     h.respond(a, &[0x55; MAX_MSG_SIZE]);
     let mut seqs = Vec::new();
-    while let Some(p) = h.next_packet() {
+    for p in hid_packets(&mut h) {
         if p[4] & 0x80 == 0 {
             seqs.push(p[4]);
         }
@@ -427,13 +453,12 @@ fn ble_notification_sequence_numbers() {
     let mut b = BleFramer::new(20);
     b.handle_write(&[ble::cmd::MSG, 0, 1, 4], 0);
     b.respond(&[0x55; MAX_MSG_SIZE]);
-    let mut buf = [0u8; MAX_FRAGMENT];
     let mut seqs = Vec::new();
     let mut first = true;
-    while let Some(n) = b.next_notification(&mut buf) {
-        assert!(n <= 20);
+    for f in ble_notifications(&mut b) {
+        assert!(f.len() <= 20);
         if !first {
-            seqs.push(buf[0]);
+            seqs.push(f[0]);
         }
         first = false;
     }
