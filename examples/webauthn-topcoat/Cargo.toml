@@ -2,7 +2,7 @@
 # A minimal relying party: register a security key and sign in with it. See README.md.
 [package]
 name = "webauthn-topcoat"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 rust-version = "1.98"
 authors = ["Javier Fernandez @ JotaSoft"]
@@ -19,6 +19,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 webauthn-rs = { version = "0.5.5", features = ["danger-user-presence-only-security-keys", "danger-credential-internals"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# AttestationConveyancePreference, to ask for "direct" attestation (src/main.rs,
+# ask_for_model); already in the tree through webauthn-rs.
+webauthn-rs-proto = "0.5.5"
 # Reads the AAGUID from a registration's attestation object with Jotakey's own strict CBOR
 # decoder (src/model.rs), the one the key runs.
 jotakey-core = { path = "../../crates/jotakey-core" }
