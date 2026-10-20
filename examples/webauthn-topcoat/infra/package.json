@@ -1,0 +1,28 @@
+{
+  "name": "webauthn-topcoat-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AWS deployment of the webauthn-topcoat demo relying party (CDK)",
+  "author": "Javier Fernandez @ JotaSoft",
+  "bin": {
+    "infra": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "@types/node": "24.19.2",
+    "aws-cdk": "2.1144.0",
+    "jest": "30.5.2",
+    "ts-jest": "29.4.14",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.272.0",
+    "constructs": "10.8.1"
+  }
+}
