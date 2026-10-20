@@ -214,6 +214,12 @@ just doc-print     # the same, for paper: plain white pages (docs/jotakey-print.
 
 The `fw`, `flash`, `testfw`, `host-tests` and `bridge` recipes target the ESP32-C6.
 
+CI (`.github/workflows/ci.yml`) runs on every push and pull request, and every Monday:
+formatting (`rustfmt.toml`), clippy with `-D warnings`, the tests, `cargo deny`, the firmware
+builds, `lean`, `diff`, a short fuzz run of every target, the docs, and the demo with its
+smoke test. The Monday run also fuzzes for longer and runs `mutants`. Recipes that need a
+board (`testfw`, `host-tests`) run only on a desk.
+
 ## 6. Layout
 
 ```
