@@ -228,6 +228,31 @@ fn failed(message: impl std::fmt::Display) -> Json<Value> {
     Json(json!({ "ok": false, "error": message.to_string() }))
 }
 
+/// Drop the `security-key` hint webauthn-rs's security-key flow adds, so the browser offers
+/// every authenticator: a Jotakey, a phone, the platform's own passkeys. Safari follows the
+/// hint strictly and offers only an NFC or USB key, which fails on an iPhone without one.
+/// The hint is UI only; the server's checks do not depend on it.
+trait AnyAuthenticator {
+    fn clear_hints(&mut self);
+}
+
+impl AnyAuthenticator for CreationChallengeResponse {
+    fn clear_hints(&mut self) {
+        self.public_key.hints = None;
+    }
+}
+
+impl AnyAuthenticator for RequestChallengeResponse {
+    fn clear_hints(&mut self) {
+        self.public_key.hints = None;
+    }
+}
+
+fn any_authenticator<T: AnyAuthenticator>(mut options: T) -> T {
+    options.clear_hints();
+    options
+}
+
 fn valid_username(name: &str) -> bool {
     (1..=64).contains(&name.len()) && name.chars().all(|c| c.is_alphanumeric() || "._-@".contains(c))
 }
@@ -254,6 +279,7 @@ async fn register_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> 
             Ok(r) => r,
             Err(e) => return Ok(failed(e)),
         };
+    let options = any_authenticator(options);
     let ceremony = Uuid::new_v4();
     stored!(app.store.begin(ceremony, Ceremony::Registration { username, user_id, state }).await);
     Ok(Json(json!({ "ok": true, "ceremony": ceremony, "options": options })))
@@ -290,6 +316,7 @@ async fn login_start(cx: &Cx, Json(req): Json<Start>) -> Result<Json<Value>> {
         Ok(r) => r,
         Err(e) => return Ok(failed(e)),
     };
+    let options = any_authenticator(options);
     let ceremony = Uuid::new_v4();
     stored!(app.store.begin(ceremony, Ceremony::Authentication { username, state }).await);
     Ok(Json(json!({ "ok": true, "ceremony": ceremony, "options": options })))
