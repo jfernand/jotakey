@@ -21,10 +21,10 @@
 //! it runs in constant time on cores without AES instructions, which includes both targets.
 
 use aes::Aes256;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use hkdf::Hkdf;
-use p256::elliptic_curve::sec1::FromEncodedPoint;
-use p256::{EncodedPoint, PublicKey, SecretKey};
+use p256::elliptic_curve::sec1::FromSec1Point;
+use p256::{PublicKey, Sec1Point, SecretKey};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
@@ -268,8 +268,8 @@ pub fn parse_public_key(d: &mut Decoder<'_>, depth: u8) -> Result<PublicKey, Sta
     let (Ok(x), Ok(y)) = (<&[u8; 32]>::try_from(x), <&[u8; 32]>::try_from(y)) else {
         return Err(Status::InvalidParameter);
     };
-    let point = EncodedPoint::from_affine_coordinates(x.into(), y.into(), false);
-    Option::from(PublicKey::from_encoded_point(&point)).ok_or(Status::InvalidParameter)
+    let point = Sec1Point::from_affine_coordinates(x.into(), y.into(), false);
+    Option::from(PublicKey::from_sec1_point(&point)).ok_or(Status::InvalidParameter)
 }
 
 #[cfg(test)]
@@ -277,7 +277,7 @@ mod tests {
     use super::*;
     use crate::mock::MockPlatform;
     use hex_literal::hex;
-    use p256::elliptic_curve::sec1::ToEncodedPoint;
+    use p256::elliptic_curve::sec1::ToSec1Point;
 
     // Computed with python-fido2's PinProtocolV2 (fido2.ctap2.pin) and `cryptography`:
     // authenticator scalar 01..20, platform scalar 41..60, PIN "1234" padded to 64 bytes,
@@ -467,7 +467,7 @@ mod tests {
         let mut expect = [0u8; 32];
         q.random_bytes(&mut expect).unwrap();
         assert_eq!(a.secret.to_bytes()[..], expect);
-        assert_eq!(a.secret.public_key().to_encoded_point(false).x().unwrap().len(), 32);
+        assert_eq!(a.secret.public_key().to_sec1_point(false).x().unwrap().len(), 32);
         p.fail_rng = true;
         assert!(KeyAgreementKey::generate(&mut p).is_err());
     }

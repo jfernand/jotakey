@@ -14,6 +14,12 @@ ignore = [
     # `unsafe-libyaml` is pulled in by esp-config's *build script* (host side) to read
     # YAML configuration; it never runs on the device.
     { id = "RUSTSEC-2024-0449", reason = "host build-script dependency only (esp-config)" },
+    # crypto-bigint 0.5 timing variability. The FIDO crypto (jotakey-core) is on p256 0.14 and
+    # crypto-bigint 0.7; only trouble-host's BLE LESC pairing still uses p256 0.13, and no
+    # trouble-host release has moved yet (0.8.0 included). Its key is fresh for every pairing
+    # (no bonding), and CTAP protects what the link carries. Remove this entry when a
+    # trouble-host release depends on p256 0.14: https://github.com/embassy-rs/trouble/issues/724
+    { id = "RUSTSEC-2026-0387", reason = "trouble-host BLE pairing only; FIDO crypto uses p256 0.14" },
 ]
 
 [licenses]

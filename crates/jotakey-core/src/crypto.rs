@@ -5,10 +5,9 @@
 //! which zeroizes on drop. Byte-array secrets are wrapped in [`zeroize::Zeroizing`] by
 //! callers.
 
-use ecdsa::hazmat::{SignPrimitive, bits2field};
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
-use p256::{NistP256, SecretKey, elliptic_curve::sec1::ToEncodedPoint};
+use hmac::{Hmac, KeyInit, Mac};
+use p256::{NistP256, SecretKey, elliptic_curve::sec1::ToSec1Point};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
@@ -39,7 +38,7 @@ pub fn sha256(parts: &[&[u8]]) -> [u8; 32] {
 /// # Errors
 /// Never in practice (HMAC accepts any key length); kept fallible to avoid `unwrap`.
 pub fn hmac_sha256(key: &[u8], parts: &[&[u8]]) -> Result<[u8; 32], CryptoError> {
-    let mut m = <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| CryptoError)?;
+    let mut m = <Hmac<Sha256> as KeyInit>::new_from_slice(key).map_err(|_| CryptoError)?;
     for p in parts {
         m.update(p);
     }
@@ -90,9 +89,7 @@ pub fn sign(sk: &SecretKey, msg_parts: &[&[u8]], entropy: &[u8; 32]) -> Result<D
 /// [`CryptoError`] on internal failure.
 pub fn sign_with_ad(sk: &SecretKey, msg_parts: &[&[u8]], ad: &[u8]) -> Result<DerSignature, CryptoError> {
     let digest = sha256(msg_parts);
-    let z = bits2field::<NistP256>(&digest).map_err(|_| CryptoError)?;
-    let scalar = sk.to_nonzero_scalar();
-    let (sig, _) = scalar.as_ref().try_sign_prehashed_rfc6979::<Sha256>(&z, ad).map_err(|_| CryptoError)?;
+    let (sig, _) = ecdsa::hazmat::sign_prehashed_rfc6979::<NistP256, Sha256>(&sk.to_nonzero_scalar(), &digest, ad);
     Ok(sig.to_der())
 }
 
@@ -124,7 +121,7 @@ pub fn encode_cose_key(public: &p256::PublicKey, enc: &mut Encoder<'_>) -> Resul
 /// # Errors
 /// As [`encode_cose_key`].
 pub fn encode_cose_key_with_alg(public: &p256::PublicKey, alg: i64, enc: &mut Encoder<'_>) -> Result<(), CborError> {
-    let point = public.to_encoded_point(false);
+    let point = public.to_sec1_point(false);
     let (Some(x), Some(y)) = (point.x(), point.y()) else {
         return Err(CborError::Unsupported);
     };
