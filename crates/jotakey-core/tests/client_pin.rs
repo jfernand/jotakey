@@ -5,7 +5,7 @@
 mod common;
 
 use aes::Aes256;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use common::*;
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
@@ -28,8 +28,8 @@ struct Client {
 }
 
 fn cose(pk: &p256::PublicKey) -> V {
-    use p256::elliptic_curve::sec1::ToEncodedPoint;
-    let p = pk.to_encoded_point(false);
+    use p256::elliptic_curve::sec1::ToSec1Point;
+    let p = pk.to_sec1_point(false);
     V::M(vec![
         (V::U(1), V::U(2)),
         (V::U(3), V::int(-25)),
@@ -40,7 +40,7 @@ fn cose(pk: &p256::PublicKey) -> V {
 }
 
 fn hmac(key: &[u8], parts: &[&[u8]]) -> [u8; 32] {
-    let mut m = <Hmac<Sha256> as Mac>::new_from_slice(key).unwrap();
+    let mut m = <Hmac<Sha256> as KeyInit>::new_from_slice(key).unwrap();
     for p in parts {
         m.update(p);
     }

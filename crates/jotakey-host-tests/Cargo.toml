@@ -8,6 +8,6 @@ publish.workspace = true
 
 [dependencies]
 jotakey-core = { path = "../jotakey-core", features = ["mock"] }
-p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "std"] }
-ecdsa = { version = "0.16", default-features = false, features = ["der", "verifying"] }
-sha2 = "0.10"
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa", "std"] }
+ecdsa = { version = "0.17", default-features = false, features = ["algorithm", "der"] }
+sha2 = "0.11"

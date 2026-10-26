@@ -11,7 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 jotakey-core = { path = "../crates/jotakey-core", features = ["mock"] }
-p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdh", "ecdsa"] }
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdh", "ecdsa"] }
 
 # Standalone workspace: built with nightly + sanitizers, separate from the main one.
 [workspace]

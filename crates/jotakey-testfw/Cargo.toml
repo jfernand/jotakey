@@ -25,7 +25,7 @@ esp-bootloader-esp-idf = { version = "0.6", features = ["esp32c6"] }
 esp-storage = { version = "0.10", features = ["esp32c6", "embedded-storage"] }
 embedded-storage = "0.3"
 jotakey-core = { path = "../jotakey-core" }
-p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa"] }
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "ecdsa"] }
 defmt = "1"
 defmt-rtt = "1"
 nb = "1"
