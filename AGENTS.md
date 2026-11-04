@@ -289,7 +289,8 @@ ESP32-C6 DevKit:
 
 - BOOT button = GPIO9 (active low): the user-presence button.
 - Addressable RGB LED = GPIO8 (WS2812, driven by RMT). Amber blink = touch requested,
-  green = OK, red = fault.
+  blue blink = wink, short blue flash once a second = BLE advertising, solid red = fault,
+  magenta at boot = `dev-key` build.
 - "USB" port = USB-Serial/JTAG: CTAPHID tunnel (COBS + CRC-32 framing), flashing, probe-rs.
 - "UART" port = USB-to-UART bridge chip; unused in production.
 - No secure element. Known EM and voltage fault-injection attacks on C3/C6-class parts are
