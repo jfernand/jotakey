@@ -10,7 +10,7 @@ No single technique catches everything, so Jotakey tests at multiple levels, on 
   ("Kind", "What it catches", "Where"),
   ([Unit & scenario tests], [Known behaviours, spec examples, every error path.], [`crates/*/tests`, `#[cfg(test)]`]),
   ([Property tests], [Laws that must hold for *all* inputs: round trips, bounds, monotonicity.], [`proptest` in the core]),
-  ([Fuzzing], [Crashes, hangs and invariant violations on inputs nobody imagined.], [`fuzz/` (8 targets)]),
+  ([Fuzzing], [Crashes, hangs and invariant violations on inputs nobody imagined.], [`fuzz/` (9 targets)]),
   ([Mutation testing], [Gaps in the *tests themselves*: code whose breakage no test notices.], [`cargo mutants`]),
   ([On-device tests], [What only silicon can show: the TRNG, the HMAC key, real flash, timing.], [`crates/jotakey-testfw`]),
   ([End-to-end], [The whole chain as a relying party sees it.], [`crates/jotakey-host-tests`, `scripts/fido2_check.py`, `scripts/fido2_pin_check.py`]),
@@ -145,7 +145,7 @@ with sorted keys before any credential logic runs. A target that only ever hits 
   needs its own test.
 ]
 
-=== The eight targets
+=== The nine targets
 
 Each target runs the real core code against `MockPlatform`, a deterministic stand-in for
 the hardware: its random numbers come from a seeded generator and its key store is
@@ -164,6 +164,7 @@ software HMAC, so every crash reproduces exactly. Its failure switches (`fail_rn
   ([`credential_unwrap`], [A tag key, an `rpIdHash` and a candidate credential ID.], [An accepted ID is exactly what `wrap` mints for the recovered nonce at that RP; a minted ID always unwraps to its nonce.], [3]),
   ([`pin_protocol`], [A key-agreement scalar, the platform's COSE key, then a message.], [An accepted key re-encodes to the same key, and a key without extra labels is byte for byte the canonical encoding. `decrypt` accepts exactly `iv ‖ whole blocks`, and re-encrypting under the same IV gives the message back. `verify` accepts only `authenticate`'s tag. Checked with a planted bug (CBC chaining removed): caught on the first seed.], [4]),
   ([`client_pin`], [A script: key agreement, setPIN, changePIN, token requests, makeCredential and getAssertion with the token, power cycles, resets, failing storage. The target is a correct platform; the input only chooses what it does.], [A plain model of the CTAP 2.1 PIN rules predicts the exact status of every step; the stored retries, mismatch count, token and UV flags must match it. The stored counter must already be one lower when the PIN is first processed. A planted bug that compared before counting was caught.], [1, 10]),
+  ([`record_log`], [A programming unit (4 or 8) and payload size, then a script of appends, power cuts after a chosen number of steps, and remounts.], [A remount never goes below the last confirmed sequence number, and finds that record's payload intact; confirmed numbers strictly increase; with the power on every append succeeds, so the log never breaks the flash's programming rules (whole units, each programmed once), which the mock flash enforces. A planted bug that erases the sector holding the latest record is caught within seconds.], [2])
 )
 ]
 
@@ -287,7 +288,10 @@ which is test scaffolding. Mutants that make code loop forever are caught by tim
 
 == On-device test firmware
 
-Some properties exist only on silicon. `crates/jotakey-testfw` is a separate firmware
+Some properties exist only on silicon. For the jotakey key, no board is on the desk yet:
+USB enumeration, the touch thresholds, the ECC fault on a torn double-word and an
+on-device test firmware for the STM32 are listed as work for when the first boards arrive.
+For the C6, `crates/jotakey-testfw` is a separate firmware
 built with `embedded-test` and run by `probe-rs` through the C6's built-in USB-JTAG. No
 extra debug probe is needed. Each test is flashed, the chip is reset, the test runs, and
 pass/fail comes back over semihosting with logs over RTT.

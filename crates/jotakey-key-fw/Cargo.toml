@@ -1,0 +1,50 @@
+[package]
+name = "jotakey-key-fw"
+description = "Jotakey firmware for the jotakey key (STM32L432KC + OPTIGA Trust M)"
+version = "0.1.0"
+authors = ["Javier Fernandez @ JotaSoft"]
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "jotakey-key-fw"
+path = "src/main.rs"
+test = false
+bench = false
+
+[features]
+# INSECURE development root when no OPTIGA driver exists yet (milestone 1): derives the root
+# key in software from the STM32 unique ID. Never enable for a device that holds real
+# credentials.
+dev-key = []
+
+# Pinned together (AGENTS.md §4): embassy-stm32 0.6, embassy-executor 0.10, embassy-time 0.5,
+# embassy-usb 0.6. Upgrade them as a set.
+[dependencies]
+jotakey-core = { path = "../jotakey-core" }
+embassy-stm32 = { version = "0.6", features = ["stm32l432kc", "time-driver-any", "unstable-pac", "defmt"] }
+embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-time = { version = "0.5", features = ["defmt"] }
+embassy-sync = "0.8"
+embassy-futures = "0.1"
+embassy-usb = { version = "0.6", default-features = false, features = ["defmt"] }
+cortex-m = { version = "0.7", features = ["critical-section-single-core", "inline-asm"] }
+cortex-m-rt = "0.7"
+defmt = "1"
+defmt-rtt = "1"
+panic-probe = { version = "1", features = ["print-defmt"] }
+static_cell = "2"
+heapless = "0.9"
+zeroize = { version = "1.8", default-features = false }
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+debug = true
+overflow-checks = true
+panic = "abort"
+
+[profile.dev]
+opt-level = "s"
+overflow-checks = true

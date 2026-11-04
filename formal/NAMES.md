@@ -100,6 +100,34 @@ The BLE framer (`src/transport/ble.rs`) uses the same private names (`ReceiveSta
 | `Status::PinInvalid` / `PinBlocked` / `PinAuthBlocked` after a comparison | `Output.wrongPin` | Every compared-and-rejected PIN, whatever the status code. |
 | — | `nextRun`, `wrongRun`, `nextStreak`, `wrongStreak` | Lean-only counters over the outputs. |
 
+## Presence gate (`src/presence.rs` ↔ `Jotakey/Presence.lean`)
+
+| Rust | Lean | Notes |
+|---|---|---|
+| `PresenceGate::new` | `start` | |
+| `PresenceGate::poll` | `poll` | Same name. |
+| `PresenceGate { deadline_ms, expired, released_seen, pressed_polls }` | `Gate { deadlineMs, expired, releasedSeen, pressedPolls }` | Rust saturates the deadline (`u64`) and the count (`u8`); Lean's naturals do not need to. |
+| `GateStep` (`Waiting`, `Confirmed`, `Timeout`) | `Step` (`waiting`, `confirmed`, `timeout`) | |
+| `UP_TIMEOUT_MS`, `DEBOUNCE_POLLS` | `upTimeoutMs`, `debouncePolls` | |
+| — | `gateAfter`, `leadingPresses`, `Accounts` | Lean-only: histories (newest first) and the invariant. |
+
+Answers `presence <start> <ms>:<0|1> ...` in `jotakey-spec`.
+
+## Record log (`src/storage.rs` ↔ `Jotakey/RecordLog.lean`)
+
+| Rust | Lean | Notes |
+|---|---|---|
+| `RecordLog::mount` | `mount` | |
+| `RecordLog::append` | `AppendStep` (`ok`, `cut`) | A relation: a power cut has many outcomes. |
+| `RecordLog { active, next, latest }` | `Log { active, next, latest }` | `latest` is a number, `0` for `None`; payloads are left out. |
+| `RecordLog::scan_end` | `scanEnd` | |
+| the sector switch at the top of `append` | `target` | |
+| two sectors of a log behind `storage::Flash` | `Flash { zero, one }` of `Slot` (`erased`, `torn`, `record`) | A slot is one record stride (`Flash::program_unit` sets it). |
+| `MAGIC`, CRC check in `decode` | `Slot.record` vs `Slot.torn` | Anything that fails the CRC is torn. |
+| — | `Fits`, `CutSlot`, `Run`, `Event`, `latestOf`, `maxSequence`, `written` | Lean-only. |
+
+Answers `append <sector0> <sector1>` (mount, then a completed append) in `jotakey-spec`.
+
 ## Properties: Rust tests ↔ Lean theorems
 
 | Rust test / fuzz oracle | Lean theorem |
@@ -115,3 +143,6 @@ The BLE framer (`src/transport/ble.rs`) uses the same private names (`ReceiveSta
 | `roundtrip`, `bound_to_rp` (proptests in `credential.rs`) | `unwrap_recovers_nonce`, `credential_bound_to_relying_party` |
 | `wrong_pins_are_counted_and_block`, `client_pin` fuzz model | `wrong_pins_between_successes_le_eight`, `wrong_pins_in_a_row_le_three`, `blocked_until_reset` |
 | `an_attempt_is_stored_before_the_pin_is_compared`, `client_pin` `retries_at_pin_check` oracle | `comparison_needs_a_counted_retry` |
+| `confirmation_needs_release_then_debounced_press`, `a_press_held_from_the_start_never_confirms` | `confirmed_needs_release_then_debounced_press`, `press_held_from_the_start_never_confirms` |
+| `deadline_is_thirty_seconds_after_the_request` | `timeout_at_deadline`, `timeout_is_final` |
+| `monotonic_across_power_cuts_any_unit`, `record_log` fuzz oracle | `trace_never_loses_confirmed`, `confirmed_strictly_increases` |

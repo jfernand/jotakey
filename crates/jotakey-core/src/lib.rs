@@ -36,9 +36,11 @@ pub mod ctap;
 pub mod mock;
 pub mod pin_protocol;
 pub mod platform;
+pub mod presence;
 pub mod selftest;
 pub mod status;
 pub mod storage;
+pub mod touch;
 pub mod transport;
 
 /// Largest CTAP request or response this authenticator accepts or emits, in bytes.

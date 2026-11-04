@@ -1,10 +1,17 @@
 // (c) Javier Fernandez @ JotaSoft 2026
-//! Differential test: the Rust CBOR decoder against the executable Lean specification.
+//! Differential tests: Rust code against the executable Lean specification.
 //!
-//! The Lean definitions `decodeHead` and `validate` are the ones the theorems in
-//! `formal/Jotakey/Cbor/` are proved about. This test sends tens of thousands of inputs to
-//! both implementations and requires identical verdicts (accept + consumed length, or
-//! reject). Agreement links the proofs to the code that ships.
+//! - The CBOR decoder: the Lean definitions `decodeHead` and `validate` are the ones the
+//!   theorems in `formal/Jotakey/Cbor/` are proved about. Tens of thousands of inputs go to
+//!   both implementations, which must give identical verdicts (accept + consumed length, or
+//!   reject).
+//! - The presence gate (`presence.rs` ↔ `Presence.lean`): the same reading sequences must
+//!   give the same steps.
+//! - The record log (`storage.rs` ↔ `RecordLog.lean`): from the same flash contents, mount
+//!   followed by a completed append must return the same sequence number and leave the same
+//!   slots, at both programming units.
+//!
+//! Agreement links the proofs to the code that ships.
 //!
 //! Needs the spec binary: `cd formal && lake build`. The path defaults to
 //! `formal/.lake/build/bin/jotakey-spec`; override with `JOTAKEY_SPEC`. Without the binary
@@ -18,6 +25,10 @@ use std::process::{Command, Stdio};
 
 use common::V;
 use jotakey_core::cbor::Decoder;
+use jotakey_core::presence::{GateStep, PresenceGate};
+use jotakey_core::storage::mock::MockFlash;
+use jotakey_core::storage::{Flash, RecordLog, SECTOR_SIZE};
+use jotakey_core::transport::serial::crc32;
 
 /// Small deterministic PRNG (xorshift64*) so failures are reproducible.
 struct Rng(u64);
@@ -132,11 +143,7 @@ fn spec_path() -> Option<PathBuf> {
 
 #[test]
 fn rust_decoder_agrees_with_lean_spec() {
-    let Some(spec) = spec_path() else {
-        assert!(std::env::var("JOTAKEY_REQUIRE_SPEC").is_err(), "Lean spec binary required but missing");
-        eprintln!("SKIPPED: build the Lean spec first (cd formal && lake build)");
-        return;
-    };
+    let Some(spec) = spec_or_skip() else { return };
 
     let mut rng = Rng(0x6a6f_7461_6b65_7921);
     let mut inputs: Vec<Vec<u8>> = Vec::new();
@@ -156,9 +163,6 @@ fn rust_decoder_agrees_with_lean_spec() {
         inputs.push([vec![b], vec![0xff; 8]].concat());
     }
 
-    let mut child =
-        Command::new(&spec).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("spawn jotakey-spec");
-    let mut stdin = child.stdin.take().unwrap();
     let queries: Vec<(String, String)> = inputs
         .iter()
         .flat_map(|b| {
@@ -166,6 +170,17 @@ fn rust_decoder_agrees_with_lean_spec() {
             [(format!("validate {hex}"), rust_validate(b)), (format!("head {hex}"), rust_head(b))]
         })
         .collect();
+    let queries = agree_with_spec(&spec, queries);
+    let accepted = queries.iter().filter(|(_, rust)| rust.starts_with("ok")).count();
+    eprintln!("differential: {} CBOR queries agree ({accepted} accepted)", queries.len());
+    assert!(accepted > queries.len() / 10, "corpus should exercise the accepting paths");
+}
+
+/// Send each `(query, Rust answer)` to the spec and require the spec to answer the same.
+fn agree_with_spec(spec: &PathBuf, queries: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut child =
+        Command::new(spec).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().expect("spawn jotakey-spec");
+    let mut stdin = child.stdin.take().unwrap();
     let writer = std::thread::spawn(move || {
         for (q, _) in queries.iter() {
             writeln!(stdin, "{q}").unwrap();
@@ -176,13 +191,188 @@ fn rust_decoder_agrees_with_lean_spec() {
     let answers: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
     let queries = writer.join().unwrap();
     child.wait().unwrap();
-
     assert_eq!(answers.len(), queries.len(), "spec answered a different number of queries");
-    let mut accepted = 0;
     for ((q, rust), lean) in queries.iter().zip(&answers) {
         assert_eq!(rust, lean, "Rust and Lean disagree on `{q}`");
-        accepted += usize::from(rust.starts_with("ok"));
     }
-    eprintln!("differential: {} queries agree ({accepted} accepted)", queries.len());
-    assert!(accepted > queries.len() / 10, "corpus should exercise the accepting paths");
+    queries
+}
+
+fn spec_or_skip() -> Option<PathBuf> {
+    let spec = spec_path();
+    if spec.is_none() {
+        assert!(std::env::var("JOTAKEY_REQUIRE_SPEC").is_err(), "Lean spec binary required but missing");
+        eprintln!("SKIPPED: build the Lean spec first (cd formal && lake build)");
+    }
+    spec
+}
+
+#[test]
+fn presence_gate_agrees_with_lean_spec() {
+    let Some(spec) = spec_or_skip() else { return };
+    let mut rng = Rng(0x7072_6573_656e_6365);
+    let mut queries = Vec::new();
+    let mut confirmed = 0;
+    for _ in 0..5_000 {
+        let start = rng.below(100_000);
+        let mut now = start;
+        let mut readings = Vec::new();
+        for _ in 0..rng.below(40) {
+            // Mostly a clock moving forward in poll steps; sometimes a jump or a step back.
+            now = match rng.below(20) {
+                0 => now + 30_000,
+                1 => now.saturating_sub(rng.below(50_000)),
+                _ => now + rng.below(60),
+            };
+            // Runs of presses and releases, as a finger produces them.
+            let pressed = if rng.below(4) == 0 {
+                rng.below(2) == 0
+            } else {
+                readings.last().is_some_and(|r: &(u64, bool)| r.1) ^ (rng.below(3) == 0)
+            };
+            readings.push((now, pressed));
+        }
+        let mut gate = PresenceGate::new(start);
+        let steps: Vec<&str> = readings
+            .iter()
+            .map(|&(t, p)| match gate.poll(t, p) {
+                GateStep::Waiting => "w",
+                GateStep::Confirmed => "c",
+                GateStep::Timeout => "t",
+            })
+            .collect();
+        confirmed += usize::from(steps.contains(&"c"));
+        let words: Vec<String> = readings.iter().map(|&(t, p)| format!("{t}:{}", u8::from(p))).collect();
+        queries.push((format!("presence {start} {}", words.join(" ")).trim_end().to_string(), steps.join(" ")));
+    }
+    let queries = agree_with_spec(&spec, queries);
+    eprintln!("differential: {} presence sequences agree ({confirmed} confirm)", queries.len());
+    assert!(confirmed > queries.len() / 10, "corpus should exercise confirmations");
+}
+
+/// A slot of the record-log model: erased, torn, or a valid record.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Slot {
+    Erased,
+    Torn,
+    Record(u32),
+}
+
+fn show(slots: &[Slot]) -> String {
+    let words: Vec<String> = slots
+        .iter()
+        .map(|s| match s {
+            Slot::Erased => "e".into(),
+            Slot::Torn => "t".into(),
+            Slot::Record(n) => n.to_string(),
+        })
+        .collect();
+    words.join(",")
+}
+
+/// Lay `slots` out at `stride` from `base`, as `RecordLog` writes them (payload `fill`).
+fn lay_out(flash: &mut MockFlash, base: usize, stride: usize, n: usize, slots: &[Slot]) {
+    for (i, slot) in slots.iter().enumerate() {
+        let at = base + i * stride;
+        let rec = &mut flash.mem[at..at + stride];
+        rec.fill(0xFF);
+        let seq = match slot {
+            Slot::Erased => continue,
+            Slot::Torn => 7,
+            Slot::Record(seq) => *seq,
+        };
+        {
+            rec[..4].copy_from_slice(b"JKR1");
+            rec[4..8].copy_from_slice(&seq.to_le_bytes());
+            rec[8..8 + n].fill(0xAB);
+            let crc = crc32(&rec[..8 + n]) ^ u32::from(matches!(slot, Slot::Torn));
+            rec[8 + n..12 + n].copy_from_slice(&crc.to_le_bytes());
+        }
+    }
+}
+
+/// Read slots back the way `mount` classifies them.
+fn read_back(flash: &mut MockFlash, base: usize, stride: usize, n: usize, capacity: usize) -> Vec<Slot> {
+    (0..capacity)
+        .map(|i| {
+            let mut rec = vec![0; stride];
+            flash.read((base + i * stride) as u32, &mut rec).unwrap();
+            let body = &rec[..8 + n];
+            let crc = u32::from_le_bytes(rec[8 + n..12 + n].try_into().unwrap());
+            if &body[..4] == b"JKR1" && crc32(body) == crc {
+                Slot::Record(u32::from_le_bytes(body[4..8].try_into().unwrap()))
+            } else if rec.iter().all(|&b| b == 0xFF) {
+                Slot::Erased
+            } else {
+                Slot::Torn
+            }
+        })
+        .collect()
+}
+
+fn gen_sector(r: &mut Rng, capacity: usize, newest: &mut u32) -> Vec<Slot> {
+    let mut slots = vec![Slot::Erased; capacity];
+    match r.below(4) {
+        // Erased.
+        0 => {}
+        // A run of consecutive records from the start, maybe ending in a torn one.
+        1 | 2 => {
+            let k = if r.below(3) == 0 { capacity } else { r.below(capacity as u64 + 1) as usize };
+            let first = *newest + 1 + r.below(3) as u32;
+            for (i, slot) in slots.iter_mut().take(k).enumerate() {
+                *slot = Slot::Record(first + i as u32);
+            }
+            *newest = first + k as u32;
+            if k < capacity && r.below(3) == 0 {
+                slots[k] = Slot::Torn;
+            }
+        }
+        // Anything, as a cut erase or corruption leaves it.
+        _ => {
+            for slot in slots.iter_mut() {
+                *slot = match r.below(4) {
+                    0 => Slot::Torn,
+                    1 => Slot::Record(1 + r.below(2000) as u32),
+                    _ => Slot::Erased,
+                };
+            }
+        }
+    }
+    slots
+}
+
+fn append_case<const N: usize>(r: &mut Rng, unit: u32) -> (String, String) {
+    let stride = (12 + N).next_multiple_of(unit as usize);
+    let capacity = SECTOR_SIZE as usize / stride;
+    let mut newest = r.below(1000) as u32;
+    let (a, b) = (gen_sector(r, capacity, &mut newest), gen_sector(r, capacity, &mut newest));
+    let (zero, one) = if r.below(2) == 0 { (a, b) } else { (b, a) };
+    let query = format!("append {} {}", show(&zero), show(&one));
+    let mut flash = MockFlash::with_unit(unit);
+    lay_out(&mut flash, 0, stride, N, &zero);
+    lay_out(&mut flash, SECTOR_SIZE as usize, stride, N, &one);
+    let answer = match RecordLog::<N>::mount(&mut flash, 0).and_then(|mut log| log.append(&mut flash, &[0x5A; N])) {
+        Ok(seq) => {
+            let zero = read_back(&mut flash, 0, stride, N, capacity);
+            let one = read_back(&mut flash, SECTOR_SIZE as usize, stride, N, capacity);
+            format!("{seq} {} {}", show(&zero), show(&one))
+        }
+        Err(_) => "err".into(),
+    };
+    (query, answer)
+}
+
+#[test]
+fn record_log_agrees_with_lean_spec() {
+    let Some(spec) = spec_or_skip() else { return };
+    let mut rng = Rng(0x7265_636f_7264_6c6f);
+    let mut queries = Vec::new();
+    for _ in 0..500 {
+        queries.push(append_case::<4>(&mut rng, 4));
+        queries.push(append_case::<32>(&mut rng, 4));
+        queries.push(append_case::<32>(&mut rng, 8));
+        queries.push(append_case::<36>(&mut rng, 8));
+    }
+    let queries = agree_with_spec(&spec, queries);
+    eprintln!("differential: {} record-log appends agree", queries.len());
 }

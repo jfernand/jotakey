@@ -76,3 +76,10 @@ path = "fuzz_targets/client_pin.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "record_log"
+path = "fuzz_targets/record_log.rs"
+test = false
+doc = false
+bench = false

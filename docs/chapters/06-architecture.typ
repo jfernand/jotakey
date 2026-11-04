@@ -68,9 +68,10 @@ The two ports have clean roles: "USB" carries the authenticator, "UART" carries 
   caption: "Crates and their trust levels",
   ("jotakey-core", [`no_std`, no allocation, `#![forbid(unsafe_code)]`, no `unwrap`/`panic!`/unchecked indexing or arithmetic (enforced by Clippy). CBOR, CTAP2 commands, CTAPHID, BLE framing, serial framing, credential wrapping, power-safe storage, self tests. *All* bytes from the host are interpreted here.], "amber"),
   ("jotakey-fw", [ESP32-C6 firmware (esp-hal, embassy, trouBLE). Thin adapters: TRNG, eFuse HMAC key, flash, button, LED, USB-Serial/JTAG, BLE GATT. Implements the core's `Platform` trait.], "dark"),
+  ("jotakey-key-fw", [jotakey key firmware (embassy-stm32, embassy-usb). Thin adapters: RNG, internal flash, touch controller, LED, native USB HID; the OPTIGA from milestone 2. Implements the same `Platform` trait.], "dark"),
   ("jotakey-testfw", [On-device test firmware (embedded-test + probe-rs).], "light"),
   ("jotakey-bridge", [Linux host daemon (serial ⇄ uhid).], "light"),
-  ("formal/", [Lean 4 models, proofs, and the executable CBOR specification.], "light"),
+  ("formal/", [Lean 4 models, proofs, and the executable specification (CBOR, presence gate, record log).], "light"),
 )
 
 The core is written so that it does not know it runs on a microcontroller. Hardware is
@@ -95,7 +96,34 @@ request completely. If it needs a touch, it parks the validated parameters in a 
 value and returns `NeedsUserPresence`. The firmware blinks the LED, sends keepalives,
 watches the button and the cancel signal, then calls `Authenticator::complete` with
 `Confirmed`, `Timeout` or `Cancelled`. Signing code is reachable *only* from `complete`
-under `Confirmed`, which is proven by the Lean model(§9.6).
+under `Confirmed`, which is proven by the Lean model (§9.6).
+
+When a touch counts is itself core code: `presence::PresenceGate`, a small pure state
+machine the firmware feeds one sensor reading per poll. Both firmwares use it, the C6 with
+its button and the key with its touch electrode, so the rule exists once, and it is proved
+in Lean (§10.9) and checked against the model by the differential test.
+
+== The jotakey key's firmware
+
+`crates/jotakey-key-fw` runs on the STM32L432KC with embassy-stm32. It is built in two
+milestones.
+
+- *Milestone 1 (now).* Native USB full-speed with one HID interface carrying the FIDO
+  report descriptor, so the key enumerates as an ordinary FIDO device with no bridge; the
+  48 MHz USB clock comes from the internal HSI48 oscillator, trimmed against USB
+  start-of-frame. The RNG peripheral feeds the core's health tests, and any seed or clock
+  error it reports latches the failure. The touch controller (TSC) reads the electrode, and
+  the core's `touch::TouchDetector` turns its counts into touched or not, against a
+  baseline taken at boot. The record logs live in the top 32 KB of internal flash. Logs
+  go over SWD only.
+- *Milestone 2.* The OPTIGA Trust M driver: the shielded connection, `DeriveKey` for
+  `derive_secret`, the hardware counter `0xE120` for `increment_counter`, and on-device
+  provisioning.
+
+Until milestone 2 there is no root key: a production build fails its boot probe and stays
+in the fault state, answering every request with `CTAP1_ERR_OTHER`. Only the *INSECURE*
+`dev-key` build, whose root is derived from the chip's unique ID, serves requests. It
+exists to test everything else end to end.
 
 == The key hierarchy
 
@@ -172,7 +200,8 @@ The nonce is not secret, and the private key is never in the ID, not even encryp
 On the jotakey key, the signature counter lives in the OPTIGA instead (§7.5): a hardware
 up-counter that can only increase, survives power loss by construction, and cannot be
 rolled back even by firmware an attacker controls. The record log described here holds the
-counter and the epoch on the C6, and the epoch on the key.
+counter and the epoch on the C6, and the epoch and the PIN record on the key (plus, until
+the OPTIGA driver of milestone 2, the counter).
 
 On the C6, only two values persist: the signature counter and the epoch. Each lives in its own
 power-loss-safe *record log* of two flash sectors. A new value is appended as a record
@@ -185,7 +214,16 @@ If power fails mid-write, the torn record is ignored at the next boot. That is h
 because nothing carrying $N+1$ was ever released. A property test cuts power at random
 byte offsets (including in the middle of a sector erase) across thousands of runs and
 checks that no confirmed counter value is ever lost or handed out twice. The test firmware
-repeats the torn-write check on real NOR flash.
+repeats the torn-write check on real NOR flash. The algorithm itself is proved in Lean
+(§10.10): for every way a power cut can leave the flash, a remount never finds a value
+older than the last one confirmed.
+
+The STM32L4's flash adds one rule: it programs aligned 64-bit double-words, each once
+between erases, and protects each with ECC. The `Flash` trait therefore states its
+*programming unit* (4 bytes on the C6, 8 on the key), and records are padded to whole units.
+On the C6 nothing changes. A double-word whose programming was cut fails its ECC check
+when read; the key's flash adapter catches that fault (an NMI) and reads it as a torn
+record, which the log already ignores.
 
 == User experience
 
@@ -199,8 +237,12 @@ repeats the torn-write check on real NOR flash.
   ([magenta at boot], [*INSECURE* development build (`dev-key` feature, root key derived from the MAC address).]),
 )
 
-A touch counts only if the button is seen *released* after the request arrived, then held
-for two consecutive 20 ms polls. A button taped down, or still held from a previous
+On the jotakey key, one red LED shows the same states as patterns: a slow blink asks for a
+touch, a fast blink is a wink, solid on is a fault, and three quick flashes at boot mark a
+`dev-key` build.
+
+A touch counts only if the button (or, on the key, the electrode) is seen *released* after
+the request arrived, then held for two consecutive 20 ms polls. A button taped down, or still held from a previous
 request, never approves anything. Holding BOOT for 3 s while idle turns on BLE for two
 minutes, so the radio is never exposed without the owner's intent.
 

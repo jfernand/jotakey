@@ -7,6 +7,10 @@
 //! record = MAGIC (4) ‖ seq (4, LE) ‖ payload (N) ‖ CRC-32 (4, LE) over magic‖seq‖payload
 //! ```
 //!
+//! Records sit at a stride of the record length rounded up to the flash's programming unit
+//! ([`Flash::program_unit`]), the gap left erased: 4 bytes on the ESP32-C6, so its records
+//! are packed; 8 on the STM32L4, which programs ECC-protected double-words, each once.
+//!
 //! The current value is the valid record with the highest `seq`. A new value is appended
 //! after the last record of the active sector. When that sector is full, the *other*
 //! sector is erased and the record goes there. The sector holding the current value is
@@ -28,6 +32,8 @@ use crate::transport::serial::crc32;
 pub const SECTOR_SIZE: u32 = 4096;
 /// Record marker ("JKR1").
 const MAGIC: [u8; 4] = *b"JKR1";
+/// Largest record stride: a 64-byte payload (76 bytes) rounded up to 8.
+const MAX_STRIDE: usize = 80;
 
 /// NOR flash as the record log needs it. Programming can only clear bits; erase sets a
 /// whole sector to `0xFF`. Offsets are relative to the start of the log's region.
@@ -47,6 +53,12 @@ pub trait Flash {
     /// # Errors
     /// Hardware failure.
     fn erase(&mut self, offset: u32) -> Result<(), PlatformError>;
+    /// The programming unit in bytes: every write starts on a multiple of it and covers whole
+    /// units, and each unit is programmed at most once between erases. 4 or 8; anything
+    /// else makes the logs refuse to mount.
+    fn program_unit(&self) -> u32 {
+        4
+    }
 }
 
 /// A two-sector append-only log of `N`-byte payloads (`N` a multiple of 4, `N ≤ 64`).
@@ -68,11 +80,24 @@ const fn record_len(n: usize) -> u32 {
 
 impl<const N: usize> RecordLog<N> {
     const LEN: u32 = record_len(N);
-    const PER_SECTOR: u32 = SECTOR_SIZE / Self::LEN;
     const _CHECK: () = assert!(N.is_multiple_of(4) && N <= 64, "payload must be a multiple of 4 and ≤ 64");
 
-    fn encode(seq: u32, payload: &[u8; N]) -> Result<[u8; 76], PlatformError> {
-        let mut rec = [0xFFu8; 76];
+    /// The distance between records: [`Self::LEN`] rounded up to the programming unit.
+    fn stride<F: Flash>(flash: &F) -> Result<u32, PlatformError> {
+        let unit = flash.program_unit();
+        if unit != 4 && unit != 8 {
+            return Err(PlatformError);
+        }
+        Self::LEN.checked_next_multiple_of(unit).ok_or(PlatformError)
+    }
+
+    /// Records per sector at the flash's stride.
+    fn per_sector<F: Flash>(flash: &F) -> Result<u32, PlatformError> {
+        SECTOR_SIZE.checked_div(Self::stride(flash)?).ok_or(PlatformError)
+    }
+
+    fn encode(seq: u32, payload: &[u8; N]) -> Result<[u8; MAX_STRIDE], PlatformError> {
+        let mut rec = [0xFFu8; MAX_STRIDE];
         let body_end = 8usize.checked_add(N).ok_or(PlatformError)?;
         rec.get_mut(..4).ok_or(PlatformError)?.copy_from_slice(&MAGIC);
         rec.get_mut(4..8).ok_or(PlatformError)?.copy_from_slice(&seq.to_le_bytes());
@@ -102,11 +127,12 @@ impl<const N: usize> RecordLog<N> {
     pub fn mount<F: Flash>(flash: &mut F, base: u32) -> Result<Self, PlatformError> {
         let () = Self::_CHECK;
         let mut log = Self { base, active: 0, next: 0, latest: None };
-        let mut buf = [0u8; 76];
+        let stride = Self::stride(flash)?;
+        let mut buf = [0u8; MAX_STRIDE];
         let len = usize::try_from(Self::LEN).map_err(|_| PlatformError)?;
         for sector in 0..2u32 {
-            for i in 0..Self::PER_SECTOR {
-                let off = i.checked_mul(Self::LEN).ok_or(PlatformError)?;
+            for i in 0..Self::per_sector(flash)? {
+                let off = i.checked_mul(stride).ok_or(PlatformError)?;
                 let rec = buf.get_mut(..len).ok_or(PlatformError)?;
                 flash.read(log.sector_base(sector)?.checked_add(off).ok_or(PlatformError)?, rec)?;
                 if let Some((seq, payload)) = Self::decode(rec)
@@ -126,15 +152,16 @@ impl<const N: usize> RecordLog<N> {
     }
 
     fn scan_end<F: Flash>(&self, flash: &mut F, sector: u32) -> Result<u32, PlatformError> {
-        let mut buf = [0u8; 76];
-        let len = usize::try_from(Self::LEN).map_err(|_| PlatformError)?;
+        let stride = Self::stride(flash)?;
+        let mut buf = [0u8; MAX_STRIDE];
+        let len = usize::try_from(stride).map_err(|_| PlatformError)?;
         let mut end = 0u32;
-        for i in 0..Self::PER_SECTOR {
-            let off = i.checked_mul(Self::LEN).ok_or(PlatformError)?;
+        for i in 0..Self::per_sector(flash)? {
+            let off = i.checked_mul(stride).ok_or(PlatformError)?;
             let rec = buf.get_mut(..len).ok_or(PlatformError)?;
             flash.read(self.sector_base(sector)?.checked_add(off).ok_or(PlatformError)?, rec)?;
             if rec.iter().any(|&b| b != 0xFF) {
-                end = off.checked_add(Self::LEN).ok_or(PlatformError)?;
+                end = off.checked_add(stride).ok_or(PlatformError)?;
             }
         }
         Ok(end)
@@ -157,28 +184,30 @@ impl<const N: usize> RecordLog<N> {
             Some((s, _)) => s.checked_add(1).ok_or(PlatformError)?,
             None => 1,
         };
+        let stride = Self::stride(flash)?;
         let mut sector = self.active;
         let mut next = self.next;
         let room = SECTOR_SIZE.saturating_sub(next);
-        if room < Self::LEN || self.latest.is_none() && next > 0 {
+        if room < stride || self.latest.is_none() && next > 0 {
             // Switch to the other sector; it never holds the latest value.
             sector = if self.latest.is_none() { self.active } else { 1u32.saturating_sub(self.active) };
             flash.erase(self.sector_base(sector)?)?;
             next = 0;
         }
         let rec = Self::encode(seq, payload)?;
-        let len = usize::try_from(Self::LEN).map_err(|_| PlatformError)?;
+        // The whole stride, padding included, so no unit is left half-programmed.
+        let len = usize::try_from(stride).map_err(|_| PlatformError)?;
         let rec = rec.get(..len).ok_or(PlatformError)?;
         let addr = self.sector_base(sector)?.checked_add(next).ok_or(PlatformError)?;
         flash.write(addr, rec)?;
-        let mut check = [0u8; 76];
+        let mut check = [0u8; MAX_STRIDE];
         let check = check.get_mut(..len).ok_or(PlatformError)?;
         flash.read(addr, check)?;
         if check != rec {
             return Err(PlatformError);
         }
         self.active = sector;
-        self.next = next.checked_add(Self::LEN).ok_or(PlatformError)?;
+        self.next = next.checked_add(stride).ok_or(PlatformError)?;
         self.latest = Some((seq, *payload));
         Ok(seq)
     }
@@ -192,28 +221,63 @@ pub mod mock {
     use super::{Flash, SECTOR_SIZE};
     use crate::platform::PlatformError;
 
+    const MEM: usize = 4 * SECTOR_SIZE as usize;
+    /// Smallest programming unit, so `programmed` covers every unit size.
+    const MIN_UNIT: usize = 4;
+
     /// Two-sector-per-log RAM flash. `cut_after` (if set) is the number of byte-program or
     /// sector-erase steps after which "power fails": the step is applied partially and
     /// every later operation fails.
+    ///
+    /// Writes must cover whole programming units, each at most once between erases; a write
+    /// that breaks the rule fails. With 8-byte units the flash models the STM32L4's ECC: a
+    /// unit whose programming the power cut interrupted reads back as zeros, as the key's
+    /// flash adapter returns it after the ECC fault.
     #[derive(Clone, Debug)]
     pub struct MockFlash {
         /// Flash contents.
-        pub mem: [u8; 4 * SECTOR_SIZE as usize],
+        pub mem: [u8; MEM],
         /// Remaining steps before the simulated power cut.
         pub cut_after: Option<u32>,
         /// Whether power has failed.
         pub dead: bool,
         /// Number of completed sector erases.
         pub erases: u32,
+        /// Programming unit in bytes (4 or 8).
+        pub unit: u32,
+        /// Per 4-byte cell: programmed since the last erase.
+        programmed: [bool; MEM / MIN_UNIT],
+        /// Per 4-byte cell: inside a unit whose programming was cut (8-byte units only).
+        torn: [bool; MEM / MIN_UNIT],
     }
 
     impl Default for MockFlash {
         fn default() -> Self {
-            Self { mem: [0xFF; 4 * SECTOR_SIZE as usize], cut_after: None, dead: false, erases: 0 }
+            Self::with_unit(4)
         }
     }
 
     impl MockFlash {
+        /// An erased flash with the given programming unit.
+        #[must_use]
+        pub const fn with_unit(unit: u32) -> Self {
+            Self {
+                mem: [0xFF; MEM],
+                cut_after: None,
+                dead: false,
+                erases: 0,
+                unit,
+                programmed: [false; MEM / MIN_UNIT],
+                torn: [false; MEM / MIN_UNIT],
+            }
+        }
+
+        fn erase_range(&mut self, from: usize, to: usize) {
+            self.mem[from..to].fill(0xFF);
+            self.programmed[from / MIN_UNIT..to / MIN_UNIT].fill(false);
+            self.torn[from / MIN_UNIT..to / MIN_UNIT].fill(false);
+        }
+
         fn tick(&mut self) -> bool {
             if self.dead {
                 return false;
@@ -245,35 +309,56 @@ pub mod mock {
             }
             let o = offset as usize;
             buf.copy_from_slice(self.mem.get(o..o + buf.len()).ok_or(PlatformError)?);
-            Ok(())
-        }
-
-        fn write(&mut self, offset: u32, data: &[u8]) -> Result<(), PlatformError> {
-            for (i, &b) in data.iter().enumerate() {
-                if !self.tick() {
-                    return Err(PlatformError);
+            for (i, b) in buf.iter_mut().enumerate() {
+                if self.torn[(o + i) / MIN_UNIT] {
+                    *b = 0;
                 }
-                let cell = self.mem.get_mut(offset as usize + i).ok_or(PlatformError)?;
-                *cell &= b; // NOR: programming only clears bits
             }
             Ok(())
         }
 
+        fn write(&mut self, offset: u32, data: &[u8]) -> Result<(), PlatformError> {
+            let (o, unit) = (offset as usize, self.unit as usize);
+            if !o.is_multiple_of(unit) || !data.len().is_multiple_of(unit) || o + data.len() > MEM {
+                return Err(PlatformError);
+            }
+            if self.programmed[o / MIN_UNIT..(o + data.len()) / MIN_UNIT].iter().any(|&p| p) {
+                return Err(PlatformError); // a unit programmed twice
+            }
+            for (i, &b) in data.iter().enumerate() {
+                let cell = (o + i) / MIN_UNIT;
+                if !self.tick() {
+                    if unit == 8 && (o + i) % unit != 0 {
+                        let start = (o + i) / unit * unit / MIN_UNIT;
+                        self.torn[start..start + unit / MIN_UNIT].fill(true);
+                    }
+                    return Err(PlatformError);
+                }
+                self.programmed[cell] = true;
+                self.mem[o + i] &= b; // NOR: programming only clears bits
+            }
+            Ok(())
+        }
+
+        fn program_unit(&self) -> u32 {
+            self.unit
+        }
+
         fn erase(&mut self, offset: u32) -> Result<(), PlatformError> {
             let o = offset as usize;
-            let sector = self.mem.get_mut(o..o + SECTOR_SIZE as usize).ok_or(PlatformError)?;
-            if self.dead {
+            let end = o + SECTOR_SIZE as usize;
+            if end > MEM || self.dead {
                 return Err(PlatformError);
             }
             match self.cut_after {
                 Some(0) => {
                     // Power fails mid-erase: half the sector is erased.
-                    sector[..SECTOR_SIZE as usize / 2].fill(0xFF);
+                    self.erase_range(o, o + SECTOR_SIZE as usize / 2);
                     self.dead = true;
                     Err(PlatformError)
                 }
                 _ => {
-                    sector.fill(0xFF);
+                    self.erase_range(o, end);
                     self.erases += 1;
                     let _ = self.tick();
                     Ok(())
@@ -377,8 +462,121 @@ mod tests {
         assert_eq!(b.latest(), Some(&(1, [2; 32])));
     }
 
+    /// 8-byte units: a 44-byte record takes a 48-byte stride, its last 4 bytes left erased,
+    /// and 85 records fill a sector.
+    #[test]
+    fn eight_byte_units_pad_each_record() {
+        let mut f = MockFlash::with_unit(8);
+        let mut log = RecordLog::<32>::mount(&mut f, 0).unwrap();
+        for i in 1..=85u32 {
+            assert_eq!(log.append(&mut f, &[i as u8; 32]).unwrap(), i);
+        }
+        assert_eq!(f.erases, 0);
+        assert_eq!(&f.mem[..4], b"JKR1");
+        assert_eq!(&f.mem[40..44], &crc32(&f.mem[..40]).to_le_bytes());
+        assert_eq!(&f.mem[44..48], &[0xFF; 4]);
+        assert_eq!(&f.mem[48..52], b"JKR1");
+        assert_eq!(&f.mem[52..56], &2u32.to_le_bytes());
+        assert_eq!(&f.mem[85 * 48..85 * 48 + 4], &[0xFF; 4]);
+        // Record 86 needs the other sector.
+        assert_eq!(log.append(&mut f, &[0xEE; 32]).unwrap(), 86);
+        assert_eq!(f.erases, 1);
+        let s1 = SECTOR_SIZE as usize;
+        assert_eq!(&f.mem[s1 + 4..s1 + 8], &86u32.to_le_bytes());
+        let log = RecordLog::<32>::mount(&mut f, 0).unwrap();
+        assert_eq!(log.latest(), Some(&(86, [0xEE; 32])));
+        // A record that is already a multiple of 8 (4 + 4 + 36 + 4) is not padded.
+        let mut f = MockFlash::with_unit(8);
+        let mut pin = RecordLog::<36>::mount(&mut f, 0).unwrap();
+        pin.append(&mut f, &[1; 36]).unwrap();
+        pin.append(&mut f, &[2; 36]).unwrap();
+        assert_eq!(&f.mem[48..52], b"JKR1");
+        let pin = RecordLog::<36>::mount(&mut f, 0).unwrap();
+        assert_eq!(pin.latest(), Some(&(2, [2; 36])));
+    }
+
+    #[test]
+    fn unsupported_program_units_are_refused() {
+        for unit in [0, 1, 2, 3, 5, 6, 7, 16, 4096] {
+            let mut f = MockFlash::with_unit(unit);
+            assert!(RecordLog::<4>::mount(&mut f, 0).is_err(), "unit {unit}");
+        }
+        let mut f = MockFlash::with_unit(4);
+        let mut log = RecordLog::<4>::mount(&mut f, 0).unwrap();
+        f.unit = 3;
+        assert!(log.append(&mut f, &[1; 4]).is_err());
+    }
+
+    /// A flash that keeps the trait's default programming unit, as the C6 adapters do.
+    struct DefaultUnit(MockFlash);
+
+    impl Flash for DefaultUnit {
+        fn read(&mut self, offset: u32, buf: &mut [u8]) -> Result<(), PlatformError> {
+            self.0.read(offset, buf)
+        }
+        fn write(&mut self, offset: u32, data: &[u8]) -> Result<(), PlatformError> {
+            self.0.write(offset, data)
+        }
+        fn erase(&mut self, offset: u32) -> Result<(), PlatformError> {
+            self.0.erase(offset)
+        }
+    }
+
+    #[test]
+    fn the_default_unit_is_four_bytes_and_packs_records() {
+        let mut f = DefaultUnit(MockFlash::with_unit(4));
+        assert_eq!(f.program_unit(), 4);
+        let mut log = RecordLog::<32>::mount(&mut f, 0).unwrap();
+        log.append(&mut f, &[1; 32]).unwrap();
+        log.append(&mut f, &[2; 32]).unwrap();
+        // 44-byte records back to back: the C6's on-flash format.
+        assert_eq!(&f.0.mem[44..48], b"JKR1");
+        assert_eq!(RecordLog::<32>::mount(&mut f, 0).unwrap().latest(), Some(&(2, [2; 32])));
+    }
+
+    /// The mock enforces what the STM32L4 does, so the tests above prove the log obeys it.
+    #[test]
+    fn mock_flash_refuses_partial_and_repeated_programming() {
+        let mut f = MockFlash::with_unit(8);
+        assert!(f.write(4, &[0; 8]).is_err(), "unaligned start");
+        assert!(f.write(0, &[0; 4]).is_err(), "partial unit");
+        f.write(0, &[0x0F; 8]).unwrap();
+        assert!(f.write(0, &[0; 8]).is_err(), "programmed twice");
+        f.erase(0).unwrap();
+        f.write(0, &[0; 8]).unwrap();
+        // A cut inside a unit leaves it unreadable (zeros), not half-written.
+        f.cut_after = Some(3);
+        assert!(f.write(8, &[0xA5; 8]).is_err());
+        let mut b = [0xFF; 8];
+        f.power_on();
+        f.read(8, &mut b).unwrap();
+        assert_eq!(b, [0; 8]);
+        // With 4-byte units a cut leaves the bytes as programmed so far.
+        let mut f = MockFlash::with_unit(4);
+        f.cut_after = Some(2);
+        assert!(f.write(0, &[0xA5; 4]).is_err());
+        f.power_on();
+        f.read(0, &mut b[..4]).unwrap();
+        assert_eq!(b[..4], [0xA5, 0xA5, 0xFF, 0xFF]);
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig { cases: 300, ..ProptestConfig::default() })]
+
+        /// The monotonicity property below, for each payload size the platforms store and both
+        /// programming units.
+        #[test]
+        fn monotonic_across_power_cuts_any_unit(
+            unit in prop_oneof![Just(4u32), Just(8u32)],
+            size in 0usize..3,
+            cuts in proptest::collection::vec(0u32..4000, 1..10),
+        ) {
+            match size {
+                0 => check_monotonic::<4>(unit, &cuts)?,
+                1 => check_monotonic::<32>(unit, &cuts)?,
+                _ => check_monotonic::<36>(unit, &cuts)?,
+            }
+        }
 
         /// Invariant 2 under power loss: across any number of power cuts at any point,
         /// every sequence number that `append` confirmed is strictly greater than all
@@ -402,5 +600,32 @@ mod tests {
             let log = RecordLog::<4>::mount(&mut f, 0).unwrap();
             prop_assert!(log.latest().map_or(0, |l| l.0) >= last_confirmed);
         }
+    }
+
+    fn check_monotonic<const N: usize>(unit: u32, cuts: &[u32]) -> Result<(), TestCaseError> {
+        let mut f = MockFlash::with_unit(unit);
+        let mut last: Option<(u32, [u8; N])> = None;
+        for (round, &cut) in cuts.iter().enumerate() {
+            f.power_on();
+            let mut log = RecordLog::<N>::mount(&mut f, 0).unwrap();
+            if let Some((seq, payload)) = last {
+                let got = log.latest().copied();
+                prop_assert!(got.is_some_and(|(s, _)| s >= seq), "remount lost a confirmed value");
+                // The confirmed record itself survives unless a later one replaced it.
+                if got.is_some_and(|(s, _)| s == seq) {
+                    prop_assert_eq!(got.map(|g| g.1), Some(payload));
+                }
+            }
+            f.cut_after = Some(cut);
+            let mut i = 0u8;
+            loop {
+                let payload = [round as u8 ^ i; N];
+                let Ok(seq) = log.append(&mut f, &payload) else { break };
+                prop_assert!(last.is_none_or(|(s, _)| seq > s));
+                last = Some((seq, payload));
+                i = i.wrapping_add(1);
+            }
+        }
+        Ok(())
     }
 }

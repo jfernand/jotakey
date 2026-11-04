@@ -14,7 +14,7 @@ fuzz target time="300":
     cd fuzz && mkdir -p corpus/{{target}} && cargo +nightly fuzz run {{target}} corpus/{{target}} $(test -d seeds/{{target}} && echo seeds/{{target}}) -- -max_total_time={{time}}
 
 fuzz-all time="120":
-    for t in cbor_decode ctap_dispatch ctaphid_stack ble_stream serial_deframe credential_unwrap pin_protocol client_pin; do \
+    for t in cbor_decode ctap_dispatch ctaphid_stack ble_stream serial_deframe credential_unwrap pin_protocol client_pin record_log; do \
         {{just_executable()}} fuzz $t {{time}} || exit 1; \
     done
 
@@ -35,6 +35,15 @@ fw:
 
 flash:
     cd crates/jotakey-fw && cargo run --release
+
+# The jotakey key (STM32L432KC). Milestone 1: no OPTIGA driver yet, so only a dev-key build
+# serves requests; the production build stays in its fault state.
+key-fw *features:
+    cd crates/jotakey-key-fw && cargo build --release {{features}}
+
+# Flash the key over SWD (probe-rs) and show its defmt log. Never sets readout protection.
+key-flash *features:
+    cd crates/jotakey-key-fw && cargo run --release {{features}}
 
 testfw:
     cd crates/jotakey-testfw && cargo test

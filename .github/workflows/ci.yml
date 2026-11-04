@@ -36,7 +36,7 @@ jobs:
       - name: Formatting (every crate, also those outside the workspace)
         run: |
           cargo fmt --all --check
-          for dir in crates/jotakey-fw crates/jotakey-testfw fuzz examples/webauthn-topcoat; do
+          for dir in crates/jotakey-fw crates/jotakey-key-fw crates/jotakey-testfw fuzz examples/webauthn-topcoat; do
             cargo fmt --check --manifest-path "$dir/Cargo.toml"
           done
       - name: Clippy
@@ -51,6 +51,7 @@ jobs:
         run: |
           cargo deny check
           (cd crates/jotakey-fw && cargo deny check)
+          (cd crates/jotakey-key-fw && cargo deny check)
           (cd examples/webauthn-topcoat && cargo deny check)
 
   # ESP32-C6 firmware and on-device test firmware: build only (no board in CI).
@@ -70,6 +71,24 @@ jobs:
       - name: On-device test firmware, built but not run (just testfw needs a board)
         working-directory: crates/jotakey-testfw
         run: cargo build --tests
+
+  # The jotakey key's firmware (STM32L432KC): build only. The production build has no root
+  # until the OPTIGA driver exists and must still build; the dev-key build serves requests.
+  key-firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust stable for Cortex-M4F
+        run: |
+          rustup toolchain install stable --profile minimal -c clippy -t thumbv7em-none-eabihf
+          rustup default stable
+      - name: Key firmware (just key-fw), both feature sets
+        working-directory: crates/jotakey-key-fw
+        run: |
+          cargo build --release
+          cargo clippy --release -- -D warnings
+          cargo build --release --features dev-key
+          cargo clippy --release --features dev-key -- -D warnings
 
   # Lean models and proofs, the axiom audit, and the Rust decoder against the Lean spec.
   formal:

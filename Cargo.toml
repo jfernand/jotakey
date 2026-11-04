@@ -6,9 +6,10 @@ members = [
     "crates/jotakey-host-tests",
     "crates/jotakey-explorer",
 ]
-# Firmware crates target riscv32imac-unknown-none-elf and the fuzz crate needs nightly +
-# libFuzzer; they are built from their own directories, as is the example web app.
-exclude = ["crates/jotakey-fw", "crates/jotakey-testfw", "fuzz", "examples/webauthn-topcoat"]
+# Firmware crates target riscv32imac-unknown-none-elf (C6) or thumbv7em-none-eabihf (key),
+# and the fuzz crate needs nightly + libFuzzer; they are built from their own directories, as
+# is the example web app.
+exclude = ["crates/jotakey-fw", "crates/jotakey-key-fw", "crates/jotakey-testfw", "fuzz", "examples/webauthn-topcoat"]
 
 [workspace.package]
 edition = "2024"

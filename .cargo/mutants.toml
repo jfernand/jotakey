@@ -21,4 +21,7 @@ exclude_re = [
     "storage.rs.*mock::",
     # Equivalent: sequence numbers in a log are unique, so `>` and `>=` pick the same record.
     "storage.rs:.*replace > with >= in RecordLog<N>::mount",
+    # Equivalent: `target > baseline` picks how the baseline drifts, up or down; when the two
+    # are equal both branches move it by zero. (`feed` has no other `>`.)
+    "touch.rs:.*replace > with >= in TouchDetector::feed",
 ]

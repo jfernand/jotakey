@@ -448,9 +448,11 @@ Jotakey has today. It does not mean:
 
 - *Equivalence on all inputs.* The test samples. An input outside the four families could
   still differ. The Aeneas route of §9.7 would close this gap with a proof.
-- *Coverage of the other models.* Only the CBOR decoder has an executable specification so
-  far. The state-machine models are linked to the Rust code by fuzz oracles that check the
-  theorem statements (chapter 8), not by differential tests.
+- *Coverage of the other models.* The CBOR decoder, the presence gate and the record log
+  have executable specifications (`presence` and `append` queries; the record log's power
+  cuts are a relation and are covered by fuzzing instead). The other state-machine models
+  are linked to the Rust code by fuzz oracles that check the theorem statements (chapter 8),
+  not by differential tests.
 - *Protection against a shared misreading of the standard.* If the model and the Rust code
   both misunderstand RFC 8949 in the same way, they agree and the test passes. The theorems
   help here because they state the intended properties independently of either
@@ -467,7 +469,9 @@ setting for continuous integration.
 ```sh
 cd formal && lake build jotakey-spec && cd ..
 cargo test -p jotakey-core --test differential -- --nocapture
-# differential: 101536 queries agree (80069 accepted)
+# differential: 101536 CBOR queries agree (80069 accepted)
+# differential: 5000 presence sequences agree (3043 confirm)
+# differential: 2000 record-log appends agree
 ```
 ]
 
