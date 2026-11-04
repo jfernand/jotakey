@@ -11,6 +11,7 @@
 //! - Bonds are kept in RAM only (MVP). After a power cycle the host must pair again.
 
 use core::cell::RefCell;
+use core::sync::atomic::Ordering;
 
 use embassy_futures::join::join;
 use embassy_futures::select::{Either, Either3, select, select3};
@@ -22,7 +23,7 @@ use jotakey_core::status::Status;
 use jotakey_core::transport::ble::{BleEvent, BleFramer, MAX_FRAGMENT, MIN_FRAGMENT};
 use trouble_host::prelude::*;
 
-use crate::link::{BLE_KEEPALIVE, BLE_REPLY, CANCEL, REQUESTS, Request, Transport};
+use crate::link::{ADVERTISING, BLE_KEEPALIVE, BLE_REPLY, CANCEL, REQUESTS, Request, Transport};
 
 /// How long the device advertises after the user enables BLE.
 pub const BLE_WINDOW: Duration = Duration::from_secs(120);
@@ -103,14 +104,24 @@ pub async fn run<C: Controller>(controller: C, address: [u8; 6]) {
                 BLE_ENABLE.wait().await;
                 let until = Instant::now() + BLE_WINDOW;
                 while Instant::now() < until {
-                    match select(advertise(&mut peripheral, &server), Timer::at(until)).await {
+                    ADVERTISING.store(true, Ordering::Relaxed);
+                    let advertised = select(advertise(&mut peripheral, &server), Timer::at(until)).await;
+                    ADVERTISING.store(false, Ordering::Relaxed);
+                    match advertised {
                         Either::First(Ok(conn)) => {
+                            log::info!("ble: connected");
                             framer.borrow_mut().reset(FRAGMENT);
                             serve(&server, &conn, &framer).await;
                             CANCEL.signal(Transport::Ble);
                         }
-                        Either::First(Err(_)) => Timer::after_secs(1).await,
-                        Either::Second(()) => break,
+                        Either::First(Err(e)) => {
+                            log::warn!("ble: advertising failed: {e:?}");
+                            Timer::after_secs(1).await;
+                        }
+                        Either::Second(()) => {
+                            log::info!("ble: advertising window over");
+                            break;
+                        }
                     }
                 }
             }
@@ -152,7 +163,17 @@ async fn serve<P: PacketPool>(server: &Server<'_>, conn: &GattConnection<'_, '_,
     loop {
         let event = select3(conn.next(), BLE_REPLY.receive(), BLE_KEEPALIVE.wait()).await;
         match event {
-            Either3::First(GattConnectionEvent::Disconnected { .. }) => return,
+            Either3::First(GattConnectionEvent::Disconnected { reason }) => {
+                log::info!("ble: disconnected: {reason:?}");
+                return;
+            }
+            Either3::First(GattConnectionEvent::PairingComplete { security_level, .. }) => {
+                log::info!("ble: paired, {security_level:?}");
+            }
+            Either3::First(GattConnectionEvent::PairingFailed(e)) => log::warn!("ble: pairing failed: {e:?}"),
+            Either3::First(GattConnectionEvent::Encrypted { security_level, .. }) => {
+                log::info!("ble: encrypted, {security_level:?}");
+            }
             Either3::First(GattConnectionEvent::Gatt { event }) => {
                 let mut forward: Option<Vec<u8, MAX_FRAGMENT>> = None;
                 let mut reject = false;
@@ -169,6 +190,7 @@ async fn serve<P: PacketPool>(server: &Server<'_>, conn: &GattConnection<'_, '_,
                             }
                         });
                     } else {
+                        log::warn!("ble: write to the control point on an unencrypted link: refused");
                         reject = true;
                     }
                 }

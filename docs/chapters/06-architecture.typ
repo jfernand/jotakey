@@ -233,6 +233,7 @@ record, which the log already ignores.
   ([off], [Idle, healthy.]),
   ([amber blink], [A website is asking: touch BOOT to approve. Times out after 30 s.]),
   ([blue blink], [CTAPHID_WINK: the platform asks the device to identify itself.]),
+  ([short blue flash, once a second], [Bluetooth is on and advertising, waiting for a connection: for 120 s after a 3 s hold of BOOT, and again after a disconnect within that time.]),
   ([solid red], [Self test or hardware fault. The authenticator refuses everything until reset; the UART log says why.]),
   ([magenta at boot], [*INSECURE* development build (`dev-key` feature, root key derived from the MAC address).]),
 )

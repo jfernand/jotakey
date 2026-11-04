@@ -1,12 +1,14 @@
 // (c) Javier Fernandez @ JotaSoft 2026
 //! Status LED: the DevKit's WS2812 on GPIO8, driven by the RMT peripheral.
 
+use core::sync::atomic::Ordering;
+
 use embassy_time::{Duration, Timer};
 use esp_hal::Async;
 use esp_hal::gpio::Level;
 use esp_hal::rmt::{Channel, PulseCode, Tx};
 
-use crate::link::{LED, LedState};
+use crate::link::{ADVERTISING, LED, LedState};
 
 /// RMT at 80 MHz with divider 1: one tick = 12.5 ns. WS2812 timing:
 /// 0 = 0.4 µs high + 0.85 µs low, 1 = 0.8 µs high + 0.45 µs low.
@@ -45,6 +47,8 @@ const MAGENTA: (u8, u8, u8) = (30, 0, 30);
 pub async fn led_task(mut ch: Channel<'static, Async, Tx>) {
     let mut state = LedState::Idle;
     let mut phase = false;
+    // Ticks of 250 ms; advertising flashes blue on one tick in four.
+    let mut tick = 0u8;
     loop {
         if let Some(s) = LED.try_take() {
             // Fault is sticky: nothing may hide it.
@@ -53,6 +57,9 @@ pub async fn led_task(mut ch: Channel<'static, Async, Tx>) {
             }
         }
         match state {
+            LedState::Idle if ADVERTISING.load(Ordering::Relaxed) => {
+                show(&mut ch, if tick == 0 { BLUE } else { OFF }).await;
+            }
             LedState::Idle => show(&mut ch, OFF).await,
             LedState::Fault => show(&mut ch, RED).await,
             LedState::Touch => show(&mut ch, if phase { AMBER } else { OFF }).await,
@@ -77,6 +84,7 @@ pub async fn led_task(mut ch: Channel<'static, Async, Tx>) {
             }
         }
         phase = !phase;
+        tick = (tick + 1) % 4;
         Timer::after(Duration::from_millis(250)).await;
     }
 }

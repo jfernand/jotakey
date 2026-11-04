@@ -4,6 +4,8 @@
 //! Exactly one CTAP request is processed at a time. A transport that receives a request
 //! while another is in flight answers `CTAP1_ERR_CHANNEL_BUSY` itself.
 
+use core::sync::atomic::AtomicBool;
+
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
@@ -60,6 +62,10 @@ pub static BLE_KEEPALIVE: Signal<CriticalSectionRawMutex, u8> = Signal::new();
 pub static CANCEL: Signal<CriticalSectionRawMutex, Transport> = Signal::new();
 /// LED commands.
 pub static LED: Signal<CriticalSectionRawMutex, LedState> = Signal::new();
+/// BLE is advertising (on, and not connected): the idle LED flashes blue. A background
+/// state rather than an [`LedState`], so a touch request or a wink shows over it and the
+/// LED goes back to flashing blue afterwards.
+pub static ADVERTISING: AtomicBool = AtomicBool::new(false);
 
 /// Deliver a reply to the transport a request came from. Never blocks: if the transport
 /// has gone away, the reply is dropped and the host times out.

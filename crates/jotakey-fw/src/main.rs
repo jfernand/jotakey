@@ -63,6 +63,9 @@ async fn main(spawner: Spawner) {
     esp_alloc::heap_allocator!(size: 72 * 1024);
     let timg0 = TimerGroup::new(p.TIMG0);
     esp_rtos::start(timg0.timer0, p.FROM_CPU_INTR0);
+    // The log goes to UART0, the "UART" port (esp-println's `uart` feature), never to the
+    // USB-Serial/JTAG port, which carries only CTAPHID frames. Level from ESP_LOG at build time.
+    esp_println::logger::init_logger_from_env();
     log::info!("jotakey {} booting", env!("CARGO_PKG_VERSION"));
 
     // LED first, so faults are visible.
@@ -172,6 +175,8 @@ async fn authenticator_loop(
             }
         };
         link::CANCEL.reset();
+        // The command byte only: request data is never logged.
+        log::info!("request over {:?}: command {:#04x}", req.transport, req.data.first().copied().unwrap_or(0));
         let n = match auth.process(platform, &req.data, out) {
             Outcome::Response(n) => n,
             Outcome::NeedsUserPresence => {
@@ -181,6 +186,7 @@ async fn authenticator_loop(
                     Transport::Ble => jotakey_core::transport::ble::keepalive::UP_NEEDED,
                 };
                 let up = presence::wait(button, req.transport, status).await;
+                log::info!("user presence: {up:?}");
                 LED.signal(LedState::Idle);
                 auth.complete(platform, up, out)
             }
