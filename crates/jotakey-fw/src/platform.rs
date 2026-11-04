@@ -184,7 +184,14 @@ impl Platform for EspPlatform<'_> {
     fn rotate_epoch(&mut self) -> Result<(), PlatformError> {
         let mut fresh = Zeroizing::new([0u8; 32]);
         self.random_bytes(fresh.as_mut())?;
-        self.epoch_log.append(&mut self.flash, &fresh)?;
+        if let Err(e) = self.epoch_log.append(&mut self.flash, &fresh) {
+            // Re-mount, as after every failed append (`RecordLog::append`; the contract
+            // `formal/Jotakey/RecordLog.lean` proves the log safe under).
+            if let Ok(l) = RecordLog::<32>::mount(&mut self.flash, EPOCH_BASE) {
+                self.epoch_log = l;
+            }
+            return Err(e);
+        }
         self.epoch.copy_from_slice(fresh.as_ref());
         Ok(())
     }

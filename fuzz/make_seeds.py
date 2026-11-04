@@ -118,6 +118,9 @@ def main():
         "ctap_dispatch": {k: bytes([0, 0]) + v for k, v in REQUESTS.items()},
         "client_pin": CLIENT_PIN_SCRIPTS,
         "pin_protocol": {"new_pin_enc": pin_protocol(PIN_CIPHERTEXT), "pin_auth": pin_protocol(bytes(33))},
+        # config (unit 8; payload 4, 32 or 36), appends, a cut after 300 steps, remount.
+        "record_log": {f"unit8_n{n}": bytes([1 | size << 1, 0, 3, 6, 1, 0x2C, 0x01, 2, 9, 2])
+                       for size, n in enumerate((4, 32, 36))},
     }
     for target, files in seeds.items():
         d = HERE / target

@@ -29,3 +29,9 @@ open Jotakey
 #print axioms ClientPin.wrong_pins_between_successes_le_eight
 #print axioms ClientPin.wrong_pins_in_a_row_le_three
 #print axioms ClientPin.blocked_until_reset
+#print axioms Presence.confirmed_needs_release_then_debounced_press
+#print axioms Presence.press_held_from_the_start_never_confirms
+#print axioms Presence.timeout_at_deadline
+#print axioms Presence.timeout_is_final
+#print axioms RecordLog.trace_never_loses_confirmed
+#print axioms RecordLog.confirmed_strictly_increases

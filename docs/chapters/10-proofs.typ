@@ -11,10 +11,10 @@ what it means, how the proof works, and which later theorem relies on it. The so
 carry the same explanations in their doc comments (*Proves* and *How*), so the chapter and
 the code can be read side by side.
 
-There are 56 theorems in five files. Most are *lemmas*: stepping stones, proved because a
+There are 77 theorems in seven files. Most are *lemmas*: stepping stones, proved because a
 bigger proof needs them. Following the dependencies from each lemma to the theorems that
 use it, we eventually reach theorems that nothing else uses. These are the *key theorems*:
-the conclusions the whole development exists to establish. There are sixteen.
+the conclusions the whole development exists to establish. There are twenty.
 
 #let inv(body) = text(size: 7pt, fill: fg-muted)[#body]
 
@@ -53,6 +53,14 @@ the conclusions the whole development exists to establish. There are sixteen.
     [The only way past a blocked PIN is a reset, which also ends every credential.]),
   ([`comparison_needs_a_counted_retry` #inv[· invariant 10] \ A PIN is compared only after a retry was counted for it.],
     [The rule that makes the counter mean something; the Rust side checks the same order.]),
+  ([`press_held_from_the_start_never_confirms` #inv[· invariant 1] \ A button or electrode pressed at every reading since the request never confirms.],
+    [A taped-down button, or a finger left on the key after an earlier request, cannot approve anything.]),
+  ([`timeout_at_deadline` #inv[· invariant 1] \ A reading at or past the 30 s deadline times out.],
+    [A request waiting for a touch cannot be kept open indefinitely, to catch a touch meant for something else.]),
+  ([`timeout_is_final` #inv[· invariant 1] \ After one reading past the deadline, every later poll times out, whatever time it reports.],
+    [A clock that jumps back cannot reopen a request that already timed out.]),
+  ([`confirmed_strictly_increases` #inv[· invariant 2] \ Through any appends, power cuts and remounts, each confirmed counter value exceeds the previous one.],
+    [The persistence step under the counter: pulling the plug at any moment cannot make the key repeat a counter value.]),
 )
 
 The invariant numbers are those of `AGENTS.md`, §2. Two of the key theorems prove no
@@ -77,9 +85,15 @@ on them:
 - `unwrap_accepts_only_wrapped_ids` says that `unwrap` accepts nothing but `wrap`'s own
   outputs, with no assumption about the MAC at all. `credential_bound_to_relying_party` is
   a corollary.
+- `confirmed_needs_release_then_debounced_press` is the main statement about the presence
+  gate (a confirmation needs a release, then a debounced press, all before the deadline);
+  `press_held_from_the_start_never_confirms` is its corollary.
+- `trace_never_loses_confirmed` is the main statement about the record log (the latest
+  record on flash is never below the last confirmed one); `confirmed_strictly_increases`
+  is proved from it.
 
-All sixteen key theorems and these four are listed in `formal/AxiomAudit.lean`, which checks
-on every build that they rest only on Lean's three standard axioms (§9.3). The two panels
+All twenty key theorems and these six are listed in `formal/AxiomAudit.lean`, which checks
+on every build that they rest only on Lean's three standard axioms (§9.3). The three panels
 below show which theorem is proved from which; key theorems are at the left margin.
 
 #codepanel(title: "Who uses whom: CBOR heads (each line is proved using the lines below it)")[
@@ -134,10 +148,28 @@ comparison_needs_a_counted_retry        (direct)
 ```
 ]
 
+#codepanel(title: "Who uses whom: presence gate, record log")[
+```
+press_held_from_the_start_never_confirms
+└─ confirmed_needs_release_then_debounced_press ─ gateAfter_accounts
+timeout_at_deadline ─ gateAfter_accounts
+timeout_is_final ─ gateAfter_accounts
+
+confirmed_strictly_increases
+├─ trace_never_loses_confirmed
+│  ├─ mount_fits ─ scanEnd_le_length, erased_from_scanEnd
+│  ├─ append_ok ─ le_latestOf, maxSequence_le, le_maxSequence, maxSequence_mem
+│  ├─ append_preserves_latest ─ latest_located, le_latestOf, get_set_other
+│  └─ cut_lengths
+└─ append_ok
+```
+]
+
 The reading order follows the files: numbers and bytes first (§10.2), then CBOR heads
 (§10.3) and the validator built on them (§10.4), CTAPHID (§10.5), the authenticator state
-machine (§10.6), credential IDs (§10.7) and the PIN lockout (§10.8). §10.9 lists what the
-proofs leave out, and §10.10 maps every Rust name to its Lean counterpart. The Lean
+machine (§10.6), credential IDs (§10.7), the PIN lockout (§10.8), the presence gate
+(§10.9) and the record log (§10.10). §10.11 lists what the proofs leave out, and §10.12 maps
+every Rust name to its Lean counterpart. The Lean
 syntax is introduced in the same order in the comments of the source files, and
 `formal/Jotakey.lean` repeats the order.
 
@@ -157,7 +189,7 @@ Four conventions run through all the files:
   (`decodeHead_accepts_only_canonical`), and variables after what they hold (`width`,
   `relyingParty`, `nextSequence`). The one deliberate exception is `ih`, the conventional
   name for an induction hypothesis. The Rust code follows the same rule in its own
-  conventions; §10.10 translates between the two.
+  conventions; §10.12 translates between the two.
 - *Hypotheses are arguments.* `(hFits : value < 256 ^ width)` in a theorem's signature
   means "assuming the value fits in `width` bytes". Hypothesis names start with `h` and
   say what they assume. Calling the theorem requires a proof of each, so every assumption
@@ -731,6 +763,109 @@ directly: the mock platform records the stored counter at the moment the PIN is 
 processed, and both a unit test and the `client_pin` fuzz target require it to be one
 lower already. A planted bug that compared first was caught by both.
 
+== When a touch counts
+
+`Presence.lean` models `PresenceGate` (`presence.rs`), the rule both firmwares feed their
+sensor readings to while a request waits for the user: the C6's BOOT button and the key's
+touch electrode. `Authenticator.lean` takes a confirmed touch as an input; this model says
+where one can come from. A gate starts when the request arrives (`start nowMs` sets the
+deadline 30 s later) and `poll gate nowMs pressed` handles one reading: past the deadline,
+or once expired, it times out; a release resets the press count and records that a release
+was seen; a press after a release counts, and the second in a row confirms.
+
+The history of readings is a list, *newest first*, so the reading just taken is the head
+(`::`) and induction starts at the oldest one. `gateAfter startMs history` is the gate after
+that history.
+
+- *`gateAfter_accounts`*: the gate after any history satisfies `Accounts`, five facts
+  about how its state relates to the history behind it: the deadline is `startMs + 30000`;
+  if not expired, every reading so far came before it; a reading at or past it expires the
+  gate; if a release was seen, the history contains one; and, until it expires, the press
+  count is at most the run of presses at the head of the history (`leadingPresses`).
+  Induction on the history, splitting `poll` into its branches. That last field needs the
+  "until it expires": an expired gate keeps its count while later readings change, which
+  is harmless because it only ever answers `timeout`. The first version of the invariant
+  missed this and `omega` produced the counterexample.
+- *`confirmed_needs_release_then_debounced_press`*: if the poll of a new reading confirms,
+  that reading is a press, the last two readings are presses, an older reading since the
+  request is a release, and every reading came before the deadline. A confirmation comes
+  from one branch of `poll`; `Accounts` of the older history turns its conditions into
+  statements about the readings.
+- *`press_held_from_the_start_never_confirms`* (key theorem): a sensor pressed at every
+  reading never confirms. The previous theorem would need a release, and there is none.
+- *`timeout_at_deadline`* and *`timeout_is_final`* (key theorems): a reading at or past
+  the deadline times out, and so does every poll after it, whatever time it reports. The
+  Rust gate keeps an `expired` flag for exactly this.
+
+#codepanel(title: "Presence.lean")[
+```lean
+theorem confirmed_needs_release_then_debounced_press (startMs nowMs : Nat) (pressed : Bool)
+    (older : List (Nat × Bool))
+    (hConfirmed : (poll (gateAfter startMs older) nowMs pressed).2 = .confirmed) :
+    pressed = true ∧
+      debouncePolls ≤ leadingPresses ((nowMs, pressed) :: older) ∧
+      (∃ reading ∈ older, reading.2 = false) ∧
+      ∀ reading ∈ (nowMs, pressed) :: older, reading.1 < startMs + upTimeoutMs
+```
+]
+
+The readings' times may come in any order: the theorems do not assume a monotonic clock.
+The differential test (§9.8) feeds both implementations sequences with jumps forward and
+back, and they agree step by step.
+
+== The record log under power loss
+
+`RecordLog.lean` models `RecordLog` (`storage.rs`), which persists the signature counter
+on the C6 (and on the jotakey key until the OPTIGA counter replaces it), the reset epoch,
+and the PIN record. `Authenticator.lean` assumes a persisted counter; this model proves the
+log is one, whatever power cuts interrupt it.
+
+The model works at the level of *slots*: a sector holds `capacity` slots, each `erased`,
+`torn` (anything that fails the CRC) or `record sequence`. The byte layout below that is
+the Rust tests' job: records sit at stride-aligned offsets and cover whole programming
+units, each programmed once, so a cut while writing one record damages its slot alone
+(`mock_flash_refuses_partial_and_repeated_programming`). `mount` computes the latest
+sequence number, the active sector and the next free slot exactly as Rust does, and
+`target` where the next append goes.
+
+A power cut is *nondeterministic*. `AppendStep` is a relation, not a function: `ok`, or a
+`cut` that may leave each slot of the target sector as `CutSlot` allows. During an erase,
+every slot may end up as it was, erased or torn; during a write, the slot being written may
+end up erased, torn or holding the new record, and every other slot keeps its value. Each
+theorem holds for every outcome the relation allows.
+
+- *`mount_fits`*: a freshly mounted log fits the flash it came from (`Fits`): its latest
+  number is the flash's, the active sector holds it, everything from `next` on in the active
+  sector is erased, and both sectors have `capacity` slots.
+- *`append_preserves_latest`*: no outcome of an append, completed or cut, lowers the latest
+  record on the flash. If the append erases, it erases the *other* sector, since a log with
+  a record never erases its active one; if it writes, it writes past the latest record's
+  slot. Either way that record survives.
+- *`append_ok`*: a confirmed append returns `latest + 1`, which becomes the latest record,
+  and the log as Rust updates it still fits.
+- *`trace_never_loses_confirmed`*: a `Run` is any sequence of appends, cuts and remounts
+  from an erased flash, where a failed append is followed by a remount (the documented
+  contract of `RecordLog::append`, which every platform keeps). Along any run, the log fits
+  the flash and the latest record is at least the last confirmed number. Induction on the
+  run.
+- *`confirmed_strictly_increases`* (key theorem): every confirmed number exceeds the one
+  confirmed before it.
+
+#codepanel(title: "RecordLog.lean")[
+```lean
+theorem confirmed_strictly_increases (capacity : Nat) (hCapacity : 0 < capacity)
+    {events flash log confirmed flash' sequence}
+    (hRun : Run capacity events flash log confirmed)
+    (hStep : AppendStep capacity log flash flash' (some sequence)) : confirmed < sequence
+```
+]
+
+The differential test checks `mount` and a completed append against the Rust code on
+generated flash contents (realistic runs, torn records, and the debris a cut erase
+leaves), at both programming units. The cut outcomes are checked by the `record_log` fuzz
+target and the power-cut property tests instead, because a relation has no single answer
+to compare.
+
 == What the proofs leave out
 
 Each model makes choices about what to leave out (§9.4), and those choices are as important
@@ -744,7 +879,9 @@ as the theorems. In one place:
   ([Authenticator], [The parser's classification of requests into `Command`, the clock that provides `uptimeMs`, flash write failures, and keepalives. Fault absorption is proved per event, not over traces.]),
   ([Credentials], [The cryptography: the MAC is a parameter, and `hNoCrossSiteCollision` idealises collision resistance. Key derivation (HKDF, P-256 scalars) is not modelled.]),
   ([PIN lockout], [The PIN protocol's cryptography (key agreement, encryption, MACs) and the tokens: which requests count as attempts is taken from the code, not derived. Storage write failures are not modelled (in Rust they stop the attempt before the comparison). The reset here is unconditional; its window and touch are proved in the authenticator model.]),
-  ([Link to Rust], [Only the CBOR model is tied to the code by differential testing. The others are tied by careful transcription, review, and the tests and fuzz oracles of chapter 8 that check the same properties on the real code (§9.7). The planned Aeneas experiment would replace transcription with translation.]),
+  ([Presence gate], [Cancellation, which the firmware checks before each poll, and the sensor: whether one reading is a press (the key's `TouchDetector` thresholds) is outside the model. Rust saturates the deadline at `u64::MAX` and the press count at 255; the model has no such limits.]),
+  ([Record log], [Payloads (checked by the fuzz target), and the byte layout under the slots (checked by the Rust tests). A transient flash error with the power still on is modelled only through the remount contract. Sequence numbers past `u32::MAX` (Rust refuses to append).]),
+  ([Link to Rust], [The CBOR, presence and record-log models are tied to the code by differential testing (§9.8). The others are tied by careful transcription, review, and the tests and fuzz oracles of chapter 8 that check the same properties on the real code (§9.7). The planned Aeneas experiment would replace transcription with translation.]),
 )
 
 None of these gaps is hidden: each is either a hypothesis in a theorem's signature or a
@@ -803,6 +940,19 @@ and `AGENTS.md` requires both to change together with any rename.
   ([`PIN_RETRIES_MAX`, `MISMATCHES_PER_POWER_CYCLE`], [`maxRetries`, `mismatchesPerPowerCycle`], []),
   ([power lost after `store_pin`], [`Event.interruptedAttempt`], []),
   ([PIN statuses after a comparison], [`Output.wrongPin`], [Whatever the status code.]),
+  ([*Presence gate*], [], []),
+  ([`PresenceGate::new`, `poll`], [`start`, `poll`], [Same names.]),
+  ([`PresenceGate { deadline_ms, expired, released_seen, pressed_polls }`], [`Gate { deadlineMs, expired, releasedSeen, pressedPolls }`], []),
+  ([`GateStep` (`Waiting`, `Confirmed`, `Timeout`)], [`Step` (`waiting`, `confirmed`, `timeout`)], []),
+  ([`UP_TIMEOUT_MS`, `DEBOUNCE_POLLS`], [`upTimeoutMs`, `debouncePolls`], []),
+  ([—], [`gateAfter`, `leadingPresses`, `Accounts`], [Model only: histories, newest first.]),
+  ([*Record log*], [], []),
+  ([`RecordLog::mount`, `append`], [`mount`, `AppendStep` (`ok`, `cut`)], [Lean's append is a relation: a cut has many outcomes.]),
+  ([`RecordLog { active, next, latest }`], [`Log { active, next, latest }`], [`latest` is a number, `0` for `None`; payloads are left out.]),
+  ([`scan_end`], [`scanEnd`], []),
+  ([the sector switch in `append`], [`target`], []),
+  ([the two sectors of a log (`Flash` trait, `MockFlash`)], [`Flash { zero, one }` of `Slot`s], [Slots are record-sized; `program_unit` sets the stride.]),
+  ([—], [`Fits`, `CutSlot`, `Run`, `latestOf`, `maxSequence`], [Model only.]),
 )
 ]
 
@@ -824,5 +974,8 @@ what the Lean theorems prove about the model.
   ([`roundtrip`, `bound_to_rp` (`credential.rs`)], [`unwrap_recovers_nonce`, `credential_bound_to_relying_party`]),
   ([`wrong_pins_are_counted_and_block`, `client_pin` model], [`wrong_pins_between_successes_le_eight`, `wrong_pins_in_a_row_le_three`, `blocked_until_reset`]),
   ([`an_attempt_is_stored_before_the_pin_is_compared`, `retries_at_pin_check` oracle], [`comparison_needs_a_counted_retry`]),
+  ([`confirmation_needs_release_then_debounced_press`, `a_press_held_from_the_start_never_confirms`], [`confirmed_needs_release_then_debounced_press`, `press_held_from_the_start_never_confirms`]),
+  ([`deadline_is_thirty_seconds_after_the_request`], [`timeout_at_deadline`, `timeout_is_final`]),
+  ([`monotonic_across_power_cuts_any_unit`, `record_log` fuzz oracle], [`trace_never_loses_confirmed`, `confirmed_strictly_increases`]),
 )
 ]

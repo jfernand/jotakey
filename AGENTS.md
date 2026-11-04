@@ -15,8 +15,11 @@ Stop and ask a human.
 ## 1. Product requirements (distilled)
 
 - Act as a FIDO2 / WebAuthn authenticator ("passkey" device) for websites and operating systems.
-- Rust everywhere. Firmware is `no_std`: `esp-hal` on the ESP32-C6. The jotakey key's firmware
-  is not written yet; its HAL is chosen with the port (§4, new dependencies).
+- Rust everywhere. Firmware is `no_std`: `esp-hal` on the ESP32-C6, `embassy-stm32` on the
+  jotakey key. The key's firmware (`crates/jotakey-key-fw`) is at milestone 1: native USB
+  CTAPHID, touch, LED, RNG and flash storage, with an INSECURE `dev-key` root. Milestone 2 is
+  the OPTIGA driver (shielded connection, `DeriveKey`, counter `0xE120`, provisioning); until
+  then a production build has no root and stays in its fault state.
 - **Transport-agnostic CTAP core.** Implement **CTAPHID** and **BLE** transports.
   - The jotakey key is a native USB full-speed device: CTAPHID over USB HID, no bridge. It has
     no radio, so no BLE.
@@ -48,11 +51,16 @@ Each invariant is enforced in code, tested, and (where marked ⊢) proved in the
    browsers send) is answered at once with the UP flag clear; WebAuthn requires relying
    parties to reject such an assertion. In the core, UP=1 signatures happen only in
    `Authenticator::complete` under `PresenceResult::Confirmed`; the silent path is
-   `get_assertion::sign(…, user_present: false, …)` from `Authenticator::process`.
+   `get_assertion::sign(…, user_present: false, …)` from `Authenticator::process`. Whether a
+   touch counts is `presence::PresenceGate` (released after the request, then pressed for
+   `DEBOUNCE_POLLS` polls, before the deadline), the one implementation both firmwares use.
 2. ⊢ **Monotonic counter:** the signature counter strictly increases across power loss.
    Persist `N+1` *before* releasing a signature that carries `N+1`. On the key the counter is
-   an OPTIGA hardware up-counter, which cannot go down even under a compromised MCU; on the
-   C6 it is a flash record log.
+   an OPTIGA hardware up-counter, which cannot go down even under a compromised MCU (milestone
+   2; until then the key, too, uses a flash record log); on the C6 it is a flash record log.
+   `storage::RecordLog` is proved in `formal/Jotakey/RecordLog.lean` never to lose a confirmed
+   value under power cuts, given that a failed `append` is followed by a remount: every
+   platform remounts a log after a failed append.
 3. ⊢ **RP binding:** a credential ID unwraps only for the `rpIdHash` it was minted for. Tag
    comparison is constant-time (`subtle`).
 4. ⊢ **Total parsers:** every byte string from the host yields `Ok` or `Err`. No panic, no
@@ -124,8 +132,15 @@ Both platforms share one hierarchy; only the root and the function that derives 
   Signing with the UP flag is reachable only from `complete` with `Confirmed`; the one other
   signing path is the silent assertion, which signs with the flag clear. Do not add others.
 - **User presence:** the sensor must be seen released after the request, then pressed for
-  ≥ 40 ms; 30 s timeout; keepalive `UP_NEEDED` every ≤ 100 ms. The key reads its touch
-  electrode with the STM32 touch-sensing controller (TSC); the C6 reads its BOOT button.
+  ≥ 40 ms; 30 s timeout, final once reached; keepalive `UP_NEEDED` every ≤ 100 ms. The rule is
+  the core's `presence::PresenceGate` (proved in `formal/Jotakey/Presence.lean`); firmware
+  only reads the sensor and checks for CANCEL. The key reads its touch electrode with the
+  STM32 touch-sensing controller (TSC) through the core's `touch::TouchDetector` (baseline
+  at boot, 4 % drop to touch, 2 % to release; provisional until measured on a board); the C6
+  reads its BOOT button.
+- **Flash programming unit:** `storage::Flash::program_unit` (4 on the C6, 8 on the STM32L4,
+  which programs ECC-protected double-words once each). Record logs pad each record to whole
+  units, so the C6's on-flash format is unchanged.
 - **PIN and UV:** getInfo advertises `clientPin`, `pinUvAuthToken` and `makeCredUvNotRqd`
   (registration without the PIN stays allowed for non-resident credentials) but not `uv`
   (no built-in verification). `versions` stays `FIDO_2_0` until the rest of CTAP 2.1 is in.
@@ -144,7 +159,18 @@ The jotakey key:
   readout protection level 2. Secrets are generated on the device and never leave it.
 - **Pins:** touch on PB4/PB5 (TSC group 2), LED on PA3, OPTIGA on I2C1 (PA9 SCL, PA10 SDA)
   with reset on PA5, USB on PA11/PA12, SWD on the five bottom-side test pads.
-  `hardware/HARDWARE.md` is the reference.
+  `hardware/HARDWARE.md` is the reference. Until the OPTIGA driver exists, PA5 is held low.
+- **Logs** go over SWD (defmt RTT) only; USB carries only CTAPHID reports.
+- **LED** (one red LED): touch requested = slow blink, wink = fast blink, fault = solid on,
+  `dev-key` build = three quick flashes at boot.
+- **Persistent state** = epoch + PIN record (and, in milestone 1, the counter), each a
+  `storage::RecordLog` in the top 32 KB of internal flash (0x0803_8000, kept out of the image
+  by `memory.x`): logical 4 KB sectors of two 2 KB pages; counter 0–1, epoch 2–3, PIN 4–5,
+  OPTIGA binding secret 6–7 (milestone 2). A torn double-word's ECC error is caught by the
+  NMI handler and reads as a torn record (AN4894); this path awaits an on-device test.
+- **`dev-key` feature** = INSECURE software root key derived from the STM32 unique ID (three
+  flashes at boot). Never ship it. VID/PID is the pid.codes test pair `1209:0001` until a PID
+  is allocated.
 
 The ESP32-C6:
 
@@ -184,10 +210,11 @@ The ESP32-C6:
   descriptive names over spec abbreviations (`channel`, not `cid`), except for constants
   that quote the CTAP spec (`BROADCAST_CID`, `cmd::CBOR`).
 - Lean: no `sorry`, no new `axiom`, no `native_decide`; `formal/AxiomAudit.lean` must list only
-  `propext`, `Quot.sound`, `Classical.choice`. Keep `jotakey-spec` and the Rust decoder in
-  agreement (`just diff`).
+  `propext`, `Quot.sound`, `Classical.choice`. Keep `jotakey-spec` and the Rust code in
+  agreement (`just diff`: the CBOR decoder, the presence gate, the record log).
 - Firmware dependency versions are pinned to a combination known to work together
-  (esp-hal 1.2, esp-rtos 0.4, esp-radio 1.0.0-beta.1, trouble-host 0.7 / bt-hci 0.9).
+  (C6: esp-hal 1.2, esp-rtos 0.4, esp-radio 1.0.0-beta.1, trouble-host 0.7 / bt-hci 0.9; key:
+  embassy-stm32 0.6, embassy-executor 0.10, embassy-time 0.5, embassy-usb 0.6).
   Upgrade them together, never one at a time.
 - Hardware and firmware are versioned separately (`hardware/HARDWARE.md` §8): the board's
   version is the KiCad text variable `HW_VERSION`, tagged `hw-vX.Y.Z`; the firmware's is the
@@ -203,16 +230,19 @@ just lean          # cd formal && lake build && no-sorry check
 just diff          # differential tests Rust vs Lean (needs formal/.lake/build/bin/jotakey-spec)
 just fw            # build firmware for riscv32imac-unknown-none-elf
 just flash         # espflash flash --monitor
+just key-fw [--features dev-key]    # build the jotakey key's firmware (thumbv7em-none-eabihf)
+just key-flash [--features dev-key] # flash it over SWD with probe-rs and show the defmt log
 just testfw        # on-device tests via probe-rs (embedded-test); board on the "USB" port
 just host-tests    # end-to-end against a real device through the bridge (touch when asked)
-just deny          # cargo deny (licences, advisories); firmware: cd crates/jotakey-fw && cargo deny check
+just deny          # cargo deny (licences, advisories); firmware: cd crates/jotakey-fw (or jotakey-key-fw) && cargo deny check
 just bridge        # run the uhid bridge (Linux; needs /dev/uhid access)
 just explore       # terminal browser for attached FIDO keys, any make (read-only; --dump prints)
 just doc           # typst compile docs/jotakey.typ
 just doc-print     # the same, for paper: plain white pages (docs/jotakey-print.pdf)
 ```
 
-The `fw`, `flash`, `testfw`, `host-tests` and `bridge` recipes target the ESP32-C6.
+The `fw`, `flash`, `testfw`, `host-tests` and `bridge` recipes target the ESP32-C6; `key-fw`
+and `key-flash` target the jotakey key.
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request, and every Monday:
 formatting (`rustfmt.toml`), clippy with `-D warnings`, the tests, `cargo deny`, the firmware
@@ -223,8 +253,9 @@ board (`testfw`, `host-tests`) run only on a desk.
 ## 6. Layout
 
 ```
-crates/jotakey-core      protocol core (CBOR, CTAP2, CTAPHID, BLE framing, credentials, PIN protocol, self-tests)
+crates/jotakey-core      protocol core (CBOR, CTAP2, CTAPHID, BLE framing, credentials, PIN protocol, self-tests, presence gate, touch detector, record log)
 crates/jotakey-fw        ESP32-C6 firmware (esp-hal, embassy, BLE via esp-radio + trouble-host)
+crates/jotakey-key-fw    jotakey key firmware (STM32L432KC; embassy-stm32, embassy-usb HID, TSC touch)
 crates/jotakey-testfw    on-device test firmware (embedded-test + probe-rs)
 crates/jotakey-bridge    Linux serial↔uhid bridge
 crates/jotakey-host-tests end-to-end tests against a real device through the bridge

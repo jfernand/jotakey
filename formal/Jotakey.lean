@@ -10,7 +10,9 @@
 --   4. `Jotakey/Authenticator.lean` the user-presence/counter state machine; structures, traces
 --   5. `Jotakey/Credential.lean`   credential IDs; `variable`, assumptions as hypotheses
 --   6. `Jotakey/ClientPin.lean`    PIN lockout; invariants carried through traces
---   7. `Main.lean`, `AxiomAudit.lean` the executable spec and the axiom check
+--   7. `Jotakey/Presence.lean`     when a touch counts; invariants over a reading history
+--   8. `Jotakey/RecordLog.lean`    the power-safe log; nondeterministic power cuts as a relation
+--   9. `Main.lean`, `AxiomAudit.lean` the executable spec and the axiom check
 --
 -- Three kinds of comments appear throughout:
 --   `--` ...            a line comment, ignored by Lean (like `//` in Rust)
@@ -23,3 +25,5 @@ import Jotakey.CtapHid
 import Jotakey.Authenticator
 import Jotakey.Credential
 import Jotakey.ClientPin
+import Jotakey.Presence
+import Jotakey.RecordLog
