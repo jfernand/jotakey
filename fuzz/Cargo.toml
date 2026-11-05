@@ -83,3 +83,10 @@ path = "fuzz_targets/record_log.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "optiga_bus"
+path = "fuzz_targets/optiga_bus.rs"
+test = false
+doc = false
+bench = false

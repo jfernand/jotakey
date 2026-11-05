@@ -45,6 +45,45 @@ pub fn hmac_sha256(key: &[u8], parts: &[&[u8]]) -> Result<[u8; 32], CryptoError>
     Ok(m.finalize().into_bytes().into())
 }
 
+/// Longest output [`tls_prf_sha256`] produces (the OPTIGA's limit for an exported secret).
+pub const TLS_PRF_MAX_OUT: usize = 256;
+
+/// The TLS 1.2 PRF with SHA-256 (RFC 5246 §5): `P_SHA256(secret, seed)`, where `seed` is the
+/// concatenation of `seed_parts` (TLS's `label ‖ seed`).
+///
+/// `P_SHA256(S, x) = HMAC(S, A(1) ‖ x) ‖ HMAC(S, A(2) ‖ x) ‖ …` with `A(0) = x` and
+/// `A(i) = HMAC(S, A(i−1))`, cut to `out.len()` bytes. This is the function `F` of the
+/// jotakey key (AGENTS.md §3): the OPTIGA's `DeriveKey` computes it over `K_root`, and the
+/// shielded connection derives its session keys with it. The MCU computes it only over
+/// secrets it holds itself (the binding and freshness secrets, `optiga::shielded`).
+///
+/// # Errors
+/// [`CryptoError`] if `out` is longer than [`TLS_PRF_MAX_OUT`].
+pub fn tls_prf_sha256(secret: &[u8], seed_parts: &[&[u8]], out: &mut [u8]) -> Result<(), CryptoError> {
+    if out.len() > TLS_PRF_MAX_OUT {
+        return Err(CryptoError);
+    }
+    let mut a = Zeroizing::new(hmac_seed(secret, None, seed_parts)?);
+    for chunk in out.chunks_mut(32) {
+        let block = Zeroizing::new(hmac_seed(secret, Some(&a), seed_parts)?);
+        chunk.copy_from_slice(block.get(..chunk.len()).ok_or(CryptoError)?);
+        *a = hmac_sha256(secret, &[a.as_ref()])?;
+    }
+    Ok(())
+}
+
+/// `HMAC(secret, prefix ‖ seed_parts…)`.
+fn hmac_seed(secret: &[u8], prefix: Option<&[u8; 32]>, seed_parts: &[&[u8]]) -> Result<[u8; 32], CryptoError> {
+    let mut m = <Hmac<Sha256> as KeyInit>::new_from_slice(secret).map_err(|_| CryptoError)?;
+    if let Some(p) = prefix {
+        m.update(p);
+    }
+    for p in seed_parts {
+        m.update(p);
+    }
+    Ok(m.finalize().into_bytes().into())
+}
+
 /// Derive the P-256 private key of a credential.
 ///
 /// `priv = HKDF-SHA256(ikm = seed, salt = rpIdHash, info = label ‖ nonce ‖ ctr)` for the first
@@ -154,6 +193,30 @@ mod tests {
             hmac_sha256(b"Jefe", &[b"what do ya want ", b"for nothing?"]).unwrap(),
             hex!("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
         );
+    }
+
+    /// The TLS 1.2 PRF-SHA256 test vector (IETF TLS WG; recomputed independently with
+    /// Python's `hmac`): secret, label "test label", seed, 100 bytes.
+    #[test]
+    fn tls_prf_sha256_known_answer() {
+        let secret = hex!("9bbe436ba940f017b17652849a71db35");
+        let seed = hex!("a0ba9f936cda311827a6f796ffd5198c");
+        let mut out = [0u8; 100];
+        tls_prf_sha256(&secret, &[b"test label", &seed], &mut out).unwrap();
+        assert_eq!(
+            out,
+            hex!(
+                "e3f229ba727be17b8d122620557cd453c2aab21d07c3d495329b52d4e61edb5a6b301791e90d35c9c9a46b4e14baf9af0fa022f7077def17abfd3797c0564bab4fbc91666e9def9b97fce34f796789baa48082d122ee42c5a72e5a5110fff70187347b66"
+            )
+        );
+        // Shorter outputs are prefixes; the seed may be split anywhere.
+        let mut short = [0u8; 40];
+        tls_prf_sha256(&secret, &[b"test ", b"label", &seed[..3], &seed[3..]], &mut short).unwrap();
+        assert_eq!(short, out[..40]);
+        let mut too_long = [0u8; TLS_PRF_MAX_OUT + 1];
+        assert_eq!(tls_prf_sha256(&secret, &[], &mut too_long), Err(CryptoError));
+        let mut max = [0u8; TLS_PRF_MAX_OUT];
+        assert!(tls_prf_sha256(&secret, &[], &mut max).is_ok());
     }
 
     #[test]

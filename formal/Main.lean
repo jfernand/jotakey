@@ -2,6 +2,7 @@
 import Jotakey.Cbor.Cbor
 import Jotakey.Presence
 import Jotakey.RecordLog
+import Jotakey.Shielded
 
 /-!
 # `jotakey-spec`: the executable CBOR specification
@@ -14,10 +15,15 @@ head <hex>       →  ok <major> <arg> <consumed> | err   (Decoder::head)
 presence <start> <ms>:<0|1> ...  →  <w|c|t> ...  (PresenceGate::new, then poll per reading)
 append <sector0> <sector1>  →  <sequence> <sector0> <sector1>  (mount, then one append that
                                 completes; a sector is a comma list of slots `e`, `t`, `<seq>`)
+shielded <event> ...  →  <state>[!] ...  (the OPTIGA session: per event, `-` for no session
+                                or `<lastSseq>/<0|1 live>`, with `!` if a response was used;
+                                events `h<sseq>`, `c<sctr>:<seq>:<0|1 authentic>:<0|1 correct>`,
+                                `u<sctr>:<seq>:<0|1 authentic>`, `f`)
+release <value> ...  →  <r|-> ...  (release_counter per value read back)
 ```
 
 The answers come from the very definitions the theorems in `Jotakey/Cbor/` (`Heads.lean`,
-`Cbor.lean`), `Presence.lean` and `RecordLog.lean` are about, so agreement with Rust on many
+`Cbor.lean`), `Presence.lean`, `RecordLog.lean` and `Shielded.lean` are about, so agreement with Rust on many
 inputs ties the proofs to the shipped code.
 -/
 
@@ -86,6 +92,47 @@ def appendAnswer (zero one : List Jotakey.RecordLog.Slot) : String :=
   let flash' := flash.set sector (written capacity (flash.get sector) erase slot (log.latest + 1))
   s!"{log.latest + 1} {showSector flash'.zero} {showSector flash'.one}"
 
+def parseBit : String → Option Bool
+  | "0" => some false
+  | "1" => some true
+  | _ => none
+
+/-- Parse one `shielded` event. -/
+def parseEvent (word : String) : Option Jotakey.Shielded.Event :=
+  open Jotakey.Shielded in
+  if word == "f" then some .fail
+  else match word.toList with
+    | 'h' :: digits => (String.ofList digits).toNat?.map .handshake
+    | 'c' :: rest =>
+      match (String.ofList rest).splitOn ":" with
+      | [sctr, seq, a, ok] => do
+        let r : Response := ⟨← sctr.toNat?, ← seq.toNat?, ← parseBit a⟩
+        pure (.check r (← parseBit ok))
+      | _ => none
+    | 'u' :: rest =>
+      match (String.ofList rest).splitOn ":" with
+      | [sctr, seq, a] => do pure (.use ⟨← sctr.toNat?, ← seq.toNat?, ← parseBit a⟩)
+      | _ => none
+    | _ => none
+
+def showState : Option Jotakey.Shielded.Session → String
+  | none => "-"
+  | some s => s!"{s.lastSseq}/{if s.fresh then 1 else 0}"
+
+/-- Run the events in the order given (oldest first) through `step`. -/
+def shieldedSteps (state : Option Jotakey.Shielded.Session) :
+    List Jotakey.Shielded.Event → List String
+  | [] => []
+  | e :: later =>
+    let (state', usedSeq) := Jotakey.Shielded.step state e
+    (showState state' ++ (if usedSeq.isSome then "!" else "")) :: shieldedSteps state' later
+
+def releaseSteps (mark : Option Nat) : List Nat → List String
+  | [] => []
+  | v :: later =>
+    let (mark', ok) := Jotakey.Shielded.release mark v
+    (if ok then "r" else "-") :: releaseSteps mark' later
+
 def answer (line : String) : String :=
   -- Syntax: list patterns such as `["validate", hex]` match a list of exactly two strings, the
   -- first being "validate". `s!"ok {consumed}"` is string interpolation (Rust's `format!`).
@@ -116,6 +163,14 @@ def answer (line : String) : String :=
     | some zero, some one =>
       if zero.length = one.length ∧ 0 < zero.length then appendAnswer zero one else "bad"
     | _, _ => "bad"
+  | "shielded" :: events =>
+    match events.mapM parseEvent with
+    | some parsed => " ".intercalate (shieldedSteps none parsed)
+    | none => "bad"
+  | "release" :: values =>
+    match values.mapM String.toNat? with
+    | some parsed => " ".intercalate (releaseSteps none parsed)
+    | none => "bad"
   | _ => "bad"
 
 -- Syntax: `partial def` lets a function recurse without a termination proof (it reads until

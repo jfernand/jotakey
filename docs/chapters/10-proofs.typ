@@ -11,10 +11,10 @@ what it means, how the proof works, and which later theorem relies on it. The so
 carry the same explanations in their doc comments (*Proves* and *How*), so the chapter and
 the code can be read side by side.
 
-There are 77 theorems in seven files. Most are *lemmas*: stepping stones, proved because a
+There are 85 theorems in eight files. Most are *lemmas*: stepping stones, proved because a
 bigger proof needs them. Following the dependencies from each lemma to the theorems that
 use it, we eventually reach theorems that nothing else uses. These are the *key theorems*:
-the conclusions the whole development exists to establish. There are twenty.
+the conclusions the whole development exists to establish. There are twenty-four.
 
 #let inv(body) = text(size: 7pt, fill: fg-muted)[#body]
 
@@ -61,6 +61,14 @@ the conclusions the whole development exists to establish. There are twenty.
     [A clock that jumps back cannot reopen a request that already timed out.]),
   ([`confirmed_strictly_increases` #inv[· invariant 2] \ Through any appends, power cuts and remounts, each confirmed counter value exceeds the previous one.],
     [The persistence step under the counter: pulling the plug at any moment cannot make the key repeat a counter value.]),
+  ([`live_needs_check` #inv[· invariants 2, 7] \ The OPTIGA session is live only if, since the last handshake, a live-session check came back right.],
+    [A recorded session replayed on the bus never becomes live, so its old answers are never used.]),
+  ([`used_needs_live` #inv[· invariants 2, 7] \ A response from the OPTIGA is used only in a live session, and only if it authenticated and is in the sequence window.],
+    [Nothing a bus attacker forges or replays reaches the authenticator.]),
+  ([`used_strictly_increase` #inv[· invariants 2, 7] \ Within a session, the sequence numbers of the responses used strictly increase.],
+    [No response is used twice or out of order, so an old answer cannot stand in for a new one.]),
+  ([`released_strictly_increase` #inv[· invariant 2] \ The counter values the key releases strictly increase, whatever values are read back.],
+    [On the key, even an OPTIGA that misbehaved could not make it sign with a counter that went back.]),
 )
 
 The invariant numbers are those of `AGENTS.md`, §2. Two of the key theorems prove no
@@ -71,7 +79,7 @@ memory. A device that rejected every credential ID could never sign for the wron
 theorems are not true for an empty reason.
 
 "Nothing else uses it" is a good way to find the conclusions, but it is not a definition
-of importance. Four lemmas deserve the same attention, even though another theorem builds
+of importance. Seven lemmas deserve the same attention, even though another theorem builds
 on them:
 
 - `signature_requires_confirmed_touch` *is* invariant 1, the most important property of
@@ -91,9 +99,12 @@ on them:
 - `trace_never_loses_confirmed` is the main statement about the record log (the latest
   record on flash is never below the last confirmed one); `confirmed_strictly_increases`
   is proved from it.
+- `accept_needs_everything` is the shielded session's acceptance rule itself: a response is
+  accepted only with the record header, a sequence number in the window and a tag that
+  verifies, and outside the live-session check only in a live session.
 
-All twenty key theorems and these six are listed in `formal/AxiomAudit.lean`, which checks
-on every build that they rest only on Lean's three standard axioms (§9.3). The three panels
+All twenty-four key theorems and these seven are listed in `formal/AxiomAudit.lean`, which checks
+on every build that they rest only on Lean's three standard axioms (§9.3). The panels
 below show which theorem is proved from which; key theorems are at the left margin.
 
 #codepanel(title: "Who uses whom: CBOR heads (each line is proved using the lines below it)")[
@@ -165,10 +176,22 @@ confirmed_strictly_increases
 ```
 ]
 
+#codepanel(title: "Who uses whom: the OPTIGA session and counter")[
+```
+live_needs_check ─ accept_moves_forward ─ accept_needs_everything
+used_needs_live ─ accept_needs_everything
+used_strictly_increase
+├─ used_bounded ─ accept_moves_forward, accept_needs_everything
+└─ accept_moves_forward, accept_needs_everything
+released_strictly_increase ─ released_le_mark
+```
+]
+
 The reading order follows the files: numbers and bytes first (§10.2), then CBOR heads
 (§10.3) and the validator built on them (§10.4), CTAPHID (§10.5), the authenticator state
 machine (§10.6), credential IDs (§10.7), the PIN lockout (§10.8), the presence gate
-(§10.9) and the record log (§10.10). §10.11 lists what the proofs leave out, and §10.12 maps
+(§10.9), the record log (§10.10) and the OPTIGA session (§10.11). §10.12 lists what the
+proofs leave out, and §10.13 maps
 every Rust name to its Lean counterpart. The Lean
 syntax is introduced in the same order in the comments of the source files, and
 `formal/Jotakey.lean` repeats the order.
@@ -189,7 +212,7 @@ Four conventions run through all the files:
   (`decodeHead_accepts_only_canonical`), and variables after what they hold (`width`,
   `relyingParty`, `nextSequence`). The one deliberate exception is `ih`, the conventional
   name for an induction hypothesis. The Rust code follows the same rule in its own
-  conventions; §10.12 translates between the two.
+  conventions; §10.13 translates between the two.
 - *Hypotheses are arguments.* `(hFits : value < 256 ^ width)` in a theorem's signature
   means "assuming the value fits in `width` bytes". Hypothesis names start with `h` and
   say what they assume. Calling the theorem requires a proof of each, so every assumption
@@ -816,8 +839,8 @@ back, and they agree step by step.
 == The record log under power loss
 
 `RecordLog.lean` models `RecordLog` (`storage.rs`), which persists the signature counter
-on the C6 (and on the jotakey key until the OPTIGA counter replaces it), the reset epoch,
-and the PIN record. `Authenticator.lean` assumes a persisted counter; this model proves the
+on the C6 (and in the key's `dev-key` builds), the reset epoch, the PIN record and the key's
+pairing secret. `Authenticator.lean` assumes a persisted counter; this model proves the
 log is one, whatever power cuts interrupt it.
 
 The model works at the level of *slots*: a sector holds `capacity` slots, each `erased`,
@@ -866,6 +889,54 @@ leaves), at both programming units. The cut outcomes are checked by the `record_
 target and the power-cut property tests instead, because a relation has no single answer
 to compare.
 
+== The OPTIGA session
+
+`Shielded.lean` models how the jotakey key decides what to believe from its secure element
+(`optiga/shielded.rs`, `optiga/device.rs`; §6.3 explains the protocol). The cryptography is
+not modelled: a response either carries a tag that verifies under the session keys
+(`authentic`) or does not. What is modelled is the *rule*, and the rule is where a replay or
+a reordering would slip through.
+
+`accept` is `Session::accept`: refuse a response for any use but the live-session check
+while the session is not live; refuse anything but the record header; refuse a sequence
+number outside `(last, last + 3]`; refuse a tag that does not verify; and only then move
+`last`. `step` is how the driver uses it, event by event: a handshake opens a session that is
+not live; the live-session check's answer makes it live only if accepted *and* equal to the
+MCU's own value; any refusal or other failure drops the session. Histories are lists of
+events, newest first.
+
+- *`accept_needs_everything`* and *`accept_moves_forward`*: an accepted response met every
+  condition, and accepting moves the window strictly forward, by at most three.
+- *`live_needs_check`* (key theorem): if the session after a history is live, then since the
+  last handshake a live-session check came back right. Induction on the history: a handshake
+  makes a session that is not live, only a correct check sets `fresh`, and everything else
+  keeps the flag (`accept_moves_forward`) or drops the session.
+- *`used_needs_live`* (key theorem): a response is used only in a live session, authentic, in
+  the window, and the number reported is its own.
+- *`used_strictly_increase`* (key theorem): the sequence numbers used since the last
+  handshake strictly increase. Its invariant `used_bounded` says they all lie at or below the
+  window's position while the session exists, and nothing more is used once it is dropped.
+- *`released_strictly_increase`* (key theorem): `release` is the counter rule of
+  `Optiga::increment_counter`; whatever values are read back, the values released strictly
+  increase.
+
+#codepanel(title: "Shielded.lean")[
+```lean
+theorem live_needs_check :
+    ∀ (history : List Event) (s : Session), stateAfter history = some s → s.fresh = true →
+      checkSinceHandshake history
+theorem used_strictly_increase : ∀ history : List Event, (used history).Pairwise (· > ·)
+theorem released_strictly_increase : ∀ values : List Nat, (released values).Pairwise (· > ·)
+```
+]
+
+What these theorems give is conditional on the cryptography, as always: an old recording
+fails the check because it cannot contain a PRF value for a nonce chosen after it was made,
+and a forged response fails because its tag does not verify. The differential test drives the
+real `Session`, with real CCM tags (some damaged), through generated event histories and
+compares every state with `step`; the `optiga_bus` fuzz target puts an attacker between the
+driver and a simulated OPTIGA and checks the same properties end to end.
+
 == What the proofs leave out
 
 Each model makes choices about what to leave out (§9.4), and those choices are as important
@@ -881,7 +952,8 @@ as the theorems. In one place:
   ([PIN lockout], [The PIN protocol's cryptography (key agreement, encryption, MACs) and the tokens: which requests count as attempts is taken from the code, not derived. Storage write failures are not modelled (in Rust they stop the attempt before the comparison). The reset here is unconditional; its window and touch are proved in the authenticator model.]),
   ([Presence gate], [Cancellation, which the firmware checks before each poll, and the sensor: whether one reading is a press (the key's `TouchDetector` thresholds) is outside the model. Rust saturates the deadline at `u64::MAX` and the press count at 255; the model has no such limits.]),
   ([Record log], [Payloads (checked by the fuzz target), and the byte layout under the slots (checked by the Rust tests). A transient flash error with the power still on is modelled only through the remount contract. Sequence numbers past `u32::MAX` (Rust refuses to append).]),
-  ([Link to Rust], [The CBOR, presence and record-log models are tied to the code by differential testing (§9.8). The others are tied by careful transcription, review, and the tests and fuzz oracles of chapter 8 that check the same properties on the real code (§9.7). The planned Aeneas experiment would replace transcription with translation.]),
+  ([OPTIGA session], [The cryptography (CCM, the PRF; a tag is a flag), the OPTIGA itself (that it picks `RND` at random, and that its counter only goes up, which holds once the unit is locked), the I2C data link and APDU parsers (total by construction and fuzzed, not proved), and that each response answers the request just sent (true because the driver sends one request at a time and drops the session on any failure). Sequence numbers are naturals; Rust's stay below `SEQ_LIMIT`.]),
+  ([Link to Rust], [The CBOR, presence, record-log and OPTIGA-session models are tied to the code by differential testing (§9.8). The others are tied by careful transcription, review, and the tests and fuzz oracles of chapter 8 that check the same properties on the real code (§9.7). The planned Aeneas experiment would replace transcription with translation.]),
 )
 
 None of these gaps is hidden: each is either a hypothesis in a theorem's signature or a
@@ -953,6 +1025,14 @@ and `AGENTS.md` requires both to change together with any rename.
   ([the sector switch in `append`], [`target`], []),
   ([the two sectors of a log (`Flash` trait, `MockFlash`)], [`Flash { zero, one }` of `Slot`s], [Slots are record-sized; `program_unit` sets the stride.]),
   ([—], [`Fits`, `CutSlot`, `Run`, `latestOf`, `maxSequence`], [Model only.]),
+  ([*OPTIGA session*], [], []),
+  ([`Session::accept`], [`accept`], [The tag check is the flag `Response.authentic`.]),
+  ([`Session { last_sseq, fresh }`], [`Session { lastSseq, fresh }`], [The keys are left out.]),
+  ([`Purpose`, `in_window`], [`Purpose`, `inWindow`], []),
+  ([`SEQ_WINDOW`, `SEQ_LIMIT`, `SCTR_RECORD`], [`seqWindow`, `seqLimit`, `recordSctr`], []),
+  ([`Optiga::establish`, `command` (drop on failure)], [`step` over `Event`], [`handshake`, `check`, `use`, `fail`.]),
+  ([`release_counter`], [`release`], []),
+  ([—], [`stateAfter`, `used`, `checkSinceHandshake`, `Bounded`, `released`], [Model only: histories, newest first.]),
 )
 ]
 
@@ -977,5 +1057,8 @@ what the Lean theorems prove about the model.
   ([`confirmation_needs_release_then_debounced_press`, `a_press_held_from_the_start_never_confirms`], [`confirmed_needs_release_then_debounced_press`, `press_held_from_the_start_never_confirms`]),
   ([`deadline_is_thirty_seconds_after_the_request`], [`timeout_at_deadline`, `timeout_is_final`]),
   ([`monotonic_across_power_cuts_any_unit`, `record_log` fuzz oracle], [`trace_never_loses_confirmed`, `confirmed_strictly_increases`]),
+  ([`accepted_sequence_numbers_increase`, `replays_forgeries_and_alerts_are_refused`], [`accept_needs_everything`, `accept_moves_forward`, `used_strictly_increase`]),
+  ([`a_replayed_session_is_not_live`, `nothing_is_used_before_the_session_is_live`, `optiga_bus` oracles], [`live_needs_check`, `used_needs_live`]),
+  ([`counter_release_rule`, `a_counter_that_goes_back_is_refused`, `optiga_bus` counter oracle], [`released_strictly_increase`]),
 )
 ]

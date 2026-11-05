@@ -25,6 +25,9 @@ use std::process::{Command, Stdio};
 
 use common::V;
 use jotakey_core::cbor::Decoder;
+use jotakey_core::optiga::device::release_counter;
+use jotakey_core::optiga::shielded::{Handshake, Purpose, SCTR_RECORD, Session};
+use jotakey_core::optiga::sim::SlaveSession;
 use jotakey_core::presence::{GateStep, PresenceGate};
 use jotakey_core::storage::mock::MockFlash;
 use jotakey_core::storage::{Flash, RecordLog, SECTOR_SIZE};
@@ -375,4 +378,157 @@ fn record_log_agrees_with_lean_spec() {
     }
     let queries = agree_with_spec(&spec, queries);
     eprintln!("differential: {} record-log appends agree", queries.len());
+}
+
+/// One event of the shielded-session model (`formal/Jotakey/Shielded.lean`, `Event`).
+enum SessionEvent {
+    Handshake(u32),
+    Check { sctr: u8, seq: u32, authentic: bool, correct: bool },
+    Use { sctr: u8, seq: u32, authentic: bool },
+    Fail,
+}
+
+/// The real `Session` driven the way `Optiga` drives it: a refusal drops the session; a
+/// live-session check that is accepted makes it live only if its value was right.
+fn run_sessions(events: &[SessionEvent], rng: &mut Rng) -> String {
+    let binding = [0x5Au8; 64];
+    let mut current: Option<(Session, SlaveSession)> = None;
+    let mut out = Vec::new();
+    for e in events {
+        let mut used = false;
+        match *e {
+            SessionEvent::Handshake(sseq) => {
+                let rnd: [u8; 32] = core::array::from_fn(|_| rng.below(256) as u8);
+                let slave = SlaveSession::new(&binding, rnd);
+                let hs = Handshake::start(&binding, &slave.hello(sseq)).expect("hello");
+                let mseq = rng.below(1 << 16) as u32;
+                let session = hs.finish(&slave.finished(mseq)).expect("finished");
+                current = Some((session, slave));
+            }
+            SessionEvent::Check { sctr, seq, authentic, correct } => {
+                if let Some((s, slave)) = current.as_mut() {
+                    let (mut msg, n) = slave.record(sctr, seq, &[0, 0, 0, 32], authentic);
+                    match s.accept(&mut msg[..n], Purpose::Freshness) {
+                        Ok(_) if correct => s.mark_fresh(),
+                        _ => current = None,
+                    }
+                }
+            }
+            SessionEvent::Use { sctr, seq, authentic } => {
+                if let Some((s, slave)) = current.as_mut() {
+                    let (mut msg, n) = slave.record(sctr, seq, &[0, 0, 0, 0], authentic);
+                    match s.accept(&mut msg[..n], Purpose::Use) {
+                        Ok(_) => used = true,
+                        Err(_) => current = None,
+                    }
+                }
+            }
+            SessionEvent::Fail => current = None,
+        }
+        let state = match &current {
+            None => "-".to_string(),
+            Some((s, _)) => format!("{}/{}", s.last_sseq(), u8::from(s.is_fresh())),
+        };
+        out.push(if used { format!("{state}!") } else { state });
+    }
+    out.join(" ")
+}
+
+#[test]
+fn shielded_session_agrees_with_lean_spec() {
+    let Some(spec) = spec_or_skip() else { return };
+    let mut rng = Rng(0x7368_6965_6c64_6564);
+    let mut queries = Vec::new();
+    let mut uses = 0;
+    for _ in 0..3_000 {
+        let mut events = Vec::new();
+        let mut words = Vec::new();
+        // The test's own idea of the window, to aim most sequence numbers near it.
+        let mut last: u32 = 0;
+        // Most histories start the way the driver does: a handshake, then the check.
+        if rng.below(4) != 0 {
+            let sseq = rng.below(1 << 16) as u32;
+            last = sseq + 1;
+            events.push(SessionEvent::Handshake(sseq));
+            events.push(SessionEvent::Check { sctr: SCTR_RECORD, seq: last, authentic: true, correct: true });
+            words.push(format!("h{sseq}"));
+            words.push(format!("c{SCTR_RECORD}:{last}:1:1"));
+        }
+        for _ in 0..rng.below(30) {
+            let sctr = match rng.below(30) {
+                0 => 0x22,
+                1 => 0x40,
+                _ => SCTR_RECORD,
+            };
+            let seq = match rng.below(12) {
+                0 => last.saturating_sub(rng.below(3) as u32),
+                1 => last + 3 + rng.below(3) as u32,
+                2 => last + 2,
+                _ => last + 1,
+            };
+            let authentic = rng.below(20) != 0;
+            match rng.below(40) {
+                0 | 1 => {
+                    let sseq = rng.below(1 << 16) as u32;
+                    last = sseq;
+                    events.push(SessionEvent::Handshake(sseq));
+                    words.push(format!("h{sseq}"));
+                }
+                2 => {
+                    let correct = rng.below(5) != 0;
+                    events.push(SessionEvent::Check { sctr, seq, authentic, correct });
+                    words.push(format!("c{sctr}:{seq}:{}:{}", u8::from(authentic), u8::from(correct)));
+                    last = seq.max(last);
+                }
+                3 => {
+                    events.push(SessionEvent::Fail);
+                    words.push("f".to_string());
+                }
+                _ => {
+                    events.push(SessionEvent::Use { sctr, seq, authentic });
+                    words.push(format!("u{sctr}:{seq}:{}", u8::from(authentic)));
+                    last = seq.max(last);
+                }
+            }
+        }
+        let rust = run_sessions(&events, &mut rng);
+        uses += rust.matches('!').count();
+        queries.push((format!("shielded {}", words.join(" ")).trim_end().to_string(), rust));
+    }
+    let queries = agree_with_spec(&spec, queries);
+    eprintln!("differential: {} shielded-session histories agree ({uses} responses used)", queries.len());
+    assert!(uses > queries.len(), "corpus should use responses");
+}
+
+#[test]
+fn counter_release_agrees_with_lean_spec() {
+    let Some(spec) = spec_or_skip() else { return };
+    let mut rng = Rng(0x0063_6f75_6e74_6572);
+    let mut queries = Vec::new();
+    for _ in 0..2_000 {
+        let mut v = rng.below(1000) as u32;
+        let mut values = Vec::new();
+        for _ in 0..rng.below(20) {
+            v = match rng.below(6) {
+                0 => v.saturating_sub(rng.below(5) as u32),
+                1 => v,
+                2 => [0, u32::MAX, u32::MAX - 1][rng.below(3) as usize],
+                _ => v.saturating_add(1 + rng.below(3) as u32),
+            };
+            values.push(v);
+        }
+        let mut mark = None;
+        let tokens: Vec<&str> = values
+            .iter()
+            .map(|&x| {
+                let (m, ok) = release_counter(mark, x);
+                mark = m;
+                if ok { "r" } else { "-" }
+            })
+            .collect();
+        let words: Vec<String> = values.iter().map(u32::to_string).collect();
+        queries.push((format!("release {}", words.join(" ")).trim_end().to_string(), tokens.join(" ")));
+    }
+    let queries = agree_with_spec(&spec, queries);
+    eprintln!("differential: {} counter sequences agree", queries.len());
 }

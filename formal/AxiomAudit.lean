@@ -35,3 +35,9 @@ open Jotakey
 #print axioms Presence.timeout_is_final
 #print axioms RecordLog.trace_never_loses_confirmed
 #print axioms RecordLog.confirmed_strictly_increases
+#print axioms Shielded.accept_needs_everything
+#print axioms Shielded.accept_moves_forward
+#print axioms Shielded.live_needs_check
+#print axioms Shielded.used_needs_live
+#print axioms Shielded.used_strictly_increase
+#print axioms Shielded.released_strictly_increase

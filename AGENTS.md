@@ -16,10 +16,11 @@ Stop and ask a human.
 
 - Act as a FIDO2 / WebAuthn authenticator ("passkey" device) for websites and operating systems.
 - Rust everywhere. Firmware is `no_std`: `esp-hal` on the ESP32-C6, `embassy-stm32` on the
-  jotakey key. The key's firmware (`crates/jotakey-key-fw`) is at milestone 1: native USB
-  CTAPHID, touch, LED, RNG and flash storage, with an INSECURE `dev-key` root. Milestone 2 is
-  the OPTIGA driver (shielded connection, `DeriveKey`, counter `0xE120`, provisioning); until
-  then a production build has no root and stays in its fault state.
+  jotakey key. The key's firmware (`crates/jotakey-key-fw`) is at milestone 2: native USB
+  CTAPHID, touch, LED, RNG and flash storage (milestone 1), and the OPTIGA driver
+  (`jotakey_core::optiga`: shielded connection, live-session check, `DeriveKey`, counter
+  `0xE120`, provisioning). Built and tested against a simulated OPTIGA; not yet run on a
+  board. An unprovisioned unit has no root and stays in its fault state.
 - **Transport-agnostic CTAP core.** Implement **CTAPHID** and **BLE** transports.
   - The jotakey key is a native USB full-speed device: CTAPHID over USB HID, no bridge. It has
     no radio, so no BLE.
@@ -56,8 +57,11 @@ Each invariant is enforced in code, tested, and (where marked ⊢) proved in the
    `DEBOUNCE_POLLS` polls, before the deadline), the one implementation both firmwares use.
 2. ⊢ **Monotonic counter:** the signature counter strictly increases across power loss.
    Persist `N+1` *before* releasing a signature that carries `N+1`. On the key the counter is
-   an OPTIGA hardware up-counter, which cannot go down even under a compromised MCU (milestone
-   2; until then the key, too, uses a flash record log); on the C6 it is a flash record log.
+   the OPTIGA's monotonic up-counter `0xE120`, which on a locked unit cannot go down even
+   under a compromised MCU: the MCU counts it, reads it back through a live shielded session,
+   and releases a value only above every value released since power-up
+   (`optiga::device::release_counter`, proved in `formal/Jotakey/Shielded.lean`). `dev-key`
+   builds and the C6 use a flash record log.
    `storage::RecordLog` is proved in `formal/Jotakey/RecordLog.lean` never to lose a confirmed
    value under power cuts, given that a failed `append` is followed by a remount: every
    platform remounts a log after a failed append.
@@ -71,7 +75,10 @@ Each invariant is enforced in code, tested, and (where marked ⊢) proved in the
    Busy, cancel and timeout semantics follow the CTAP spec.
 6. ⊢ **Reset:** `authenticatorReset` is allowed only within 10 s of power-up and only with UP.
 7. **Fail closed:** if power-on KATs or RNG health tests fail, or (on the key) the OPTIGA cannot
-   be reached over its shielded connection, refuse all crypto and show the fault pattern on the LED.
+   be reached over a live shielded session, refuse all crypto and show the fault pattern on the
+   LED. A failed live-session check (a possible replay on the bus) disables the root until
+   power-up. ⊢ Nothing read from the OPTIGA is used unless it authenticated, in order, in a live
+   session (`optiga::shielded::Session::accept`, `formal/Jotakey/Shielded.lean`).
 8. **Secrets:** the root secret never leaves its hardware key store: the OPTIGA on the key,
    the eFuse HMAC peripheral on the C6. Derived keys are `Zeroize`d on drop. No secret,
    private key, nonce or tag is ever logged, printed, `Debug`-formatted, or returned in an error.
@@ -117,13 +124,21 @@ Both platforms share one hierarchy; only the root and the function that derives 
   asks for one credential at a time (`ctap::PlatformTagger`, `ctap::credential_seed`), and a
   failing derivation is an error, never "not our credential".
 - **Shielded connection (key):** OPTIGA ↔ STM32 traffic for the root and the counter is
-  encrypted and authenticated with a 64-byte platform binding secret, held in OPTIGA object
-  `0xE140` (read `NEV`, change `NEV`) and in STM32 flash. It is created on the device at
-  provisioning, like the root.
+  encrypted and authenticated (IFX I2C presentation layer v1: AES-128-CCM-8, keys
+  `PRF(binding, "Platform Binding" ‖ RND)`) with a 64-byte platform binding secret, held in
+  OPTIGA object `0xE140` (read `NEV`, change `NEV`). The MCU keeps a 64-byte **pairing
+  secret** `P = SHA-512(OPTIGA TRNG(64) ‖ STM32 RNG(64))` in flash and derives both the
+  binding secret `HKDF-SHA256(P, "jotakey/optiga-binding/v1")` and the **freshness secret**
+  `HKDF-SHA256(P, "jotakey/optiga-fresh/v1")` (OPTIGA object `0xF1D1`, `PRESSEC`, read `NEV`,
+  change `NEV`, execute `Conf(0xE140)`). All are created on the device at provisioning.
+- **Live-session check (key):** the handshake has no challenge from the MCU, so a recorded
+  session could be replayed on the bus. After every handshake the MCU sends a fresh 32-byte
+  nonce through the session, `DeriveKey(0xF1D1, "jotakey/fresh/v1" ‖ nonce)`, and compares the
+  answer with its own PRF; only then does it use the session. Any failure drops the session.
 - **Signature counter (key):** OPTIGA monotonic up-counter `0xE120`, threshold 600 000 (the
   rated endurance). At the threshold it freezes and the key refuses to sign.
 - Attestation: `packed` self-attestation. Persistent MCU state: the key stores the epoch, the
-  binding secret and the PIN record; the C6 stores the counter, the epoch and the PIN record
+  pairing secret and the PIN record; the C6 stores the counter, the epoch and the PIN record
   (`PinRecord`, 36 bytes: set flag, retries, verifier).
 
 ## 3a. Design decisions made during implementation (keep consistent)
@@ -154,19 +169,30 @@ The jotakey key:
   protection level 2: debug is disabled permanently and the firmware is frozen, like a YubiKey.
   A security fix means a new key. Development boards stay at level 0. Signed firmware updates
   are a documented future exploration, not a feature.
-- **Provisioning runs on the device**, started by a human: pair the shielded connection,
-  create and lock `K_root`, configure the counter, write the epoch; then a human sets
-  readout protection level 2. Secrets are generated on the device and never leave it.
+- **Provisioning runs on the device**, started by a human, in two separate firmware images
+  (`--features provision`, then `--features provision-lock`; `src/provision.rs`,
+  `jotakey_core::optiga::provision`). `provision` (after a 3 s touch) pairs the shielded
+  connection, creates `K_root` through it, sets every access condition and the counter
+  (0, threshold 600 000), and stores `P`: all reversible while the objects' life cycle is
+  below operational. `provision-lock` (after a 10 s touch) is the one **irreversible** OPTIGA
+  step: life cycle operational on `0xF1D0`, `0xF1D1`, `0xE120`, `0xE140`. Until locked, someone
+  on the bus can reopen the conditions; a provisioned but unlocked unit is a development unit.
+  Then a human sets readout protection level 2. Secrets are generated on the device and never
+  leave it. CI compiles both images; automation never flashes or runs them.
 - **Pins:** touch on PB4/PB5 (TSC group 2), LED on PA3, OPTIGA on I2C1 (PA9 SCL, PA10 SDA)
   with reset on PA5, USB on PA11/PA12, SWD on the five bottom-side test pads.
-  `hardware/HARDWARE.md` is the reference. Until the OPTIGA driver exists, PA5 is held low.
+  `hardware/HARDWARE.md` is the reference. The `dev-key` build never drives the OPTIGA and
+  holds PA5 low; the others pulse it before every session.
+- **OPTIGA timing:** I2C at 400 kHz, reset low 1 ms then 25 ms start-up; a `DeriveKey` takes
+  about 50 ms and is an OPTIGA *security event* (one per 5 s is free; bursts beyond 128 are
+  throttled). USB runs on an interrupt-priority executor so this blocking work never stalls it.
 - **Logs** go over SWD (defmt RTT) only; USB carries only CTAPHID reports.
 - **LED** (one red LED): touch requested = slow blink, wink = fast blink, fault = solid on,
   `dev-key` build = three quick flashes at boot.
-- **Persistent state** = epoch + PIN record (and, in milestone 1, the counter), each a
-  `storage::RecordLog` in the top 32 KB of internal flash (0x0803_8000, kept out of the image
-  by `memory.x`): logical 4 KB sectors of two 2 KB pages; counter 0–1, epoch 2–3, PIN 4–5,
-  OPTIGA binding secret 6–7 (milestone 2). A torn double-word's ECC error is caught by the
+- **Persistent state** = epoch + PIN record + pairing secret (and, in `dev-key` builds, the
+  counter), each a `storage::RecordLog` in the top 32 KB of internal flash (0x0803_8000, kept
+  out of the image by `memory.x`): logical 4 KB sectors of two 2 KB pages; counter 0–1, epoch
+  2–3, PIN 4–5, pairing secret 6–7. A torn double-word's ECC error is caught by the
   NMI handler and reads as a torn record (AN4894); this path awaits an on-device test.
 - **`dev-key` feature** = INSECURE software root key derived from the STM32 unique ID (three
   flashes at boot). Never ship it. VID/PID is the pid.codes test pair `1209:0001` until a PID
@@ -211,7 +237,8 @@ The ESP32-C6:
   that quote the CTAP spec (`BROADCAST_CID`, `cmd::CBOR`).
 - Lean: no `sorry`, no new `axiom`, no `native_decide`; `formal/AxiomAudit.lean` must list only
   `propext`, `Quot.sound`, `Classical.choice`. Keep `jotakey-spec` and the Rust code in
-  agreement (`just diff`: the CBOR decoder, the presence gate, the record log).
+  agreement (`just diff`: the CBOR decoder, the presence gate, the record log, the OPTIGA
+  session's acceptance rule, the counter release rule).
 - Firmware dependency versions are pinned to a combination known to work together
   (C6: esp-hal 1.2, esp-rtos 0.4, esp-radio 1.0.0-beta.1, trouble-host 0.7 / bt-hci 0.9; key:
   embassy-stm32 0.6, embassy-executor 0.10, embassy-time 0.5, embassy-usb 0.6).
@@ -232,6 +259,7 @@ just fw            # build firmware for riscv32imac-unknown-none-elf
 just flash         # espflash flash --monitor
 just key-fw [--features dev-key]    # build the jotakey key's firmware (thumbv7em-none-eabihf)
 just key-flash [--features dev-key] # flash it over SWD with probe-rs and show the defmt log
+                                    # (provision / provision-lock images: a human only, §3a)
 just testfw        # on-device tests via probe-rs (embedded-test); board on the "USB" port
 just host-tests    # end-to-end against a real device through the bridge (touch when asked)
 just deny          # cargo deny (licences, advisories); firmware: cd crates/jotakey-fw (or jotakey-key-fw) && cargo deny check
@@ -253,9 +281,9 @@ board (`testfw`, `host-tests`) run only on a desk.
 ## 6. Layout
 
 ```
-crates/jotakey-core      protocol core (CBOR, CTAP2, CTAPHID, BLE framing, credentials, PIN protocol, self-tests, presence gate, touch detector, record log)
+crates/jotakey-core      protocol core (CBOR, CTAP2, CTAPHID, BLE framing, credentials, PIN protocol, self-tests, presence gate, touch detector, record log, OPTIGA driver + simulator)
 crates/jotakey-fw        ESP32-C6 firmware (esp-hal, embassy, BLE via esp-radio + trouble-host)
-crates/jotakey-key-fw    jotakey key firmware (STM32L432KC; embassy-stm32, embassy-usb HID, TSC touch)
+crates/jotakey-key-fw    jotakey key firmware (STM32L432KC; embassy-stm32, embassy-usb HID, TSC touch, OPTIGA on I2C1)
 crates/jotakey-testfw    on-device test firmware (embedded-test + probe-rs)
 crates/jotakey-bridge    Linux serial↔uhid bridge
 crates/jotakey-host-tests end-to-end tests against a real device through the bridge
