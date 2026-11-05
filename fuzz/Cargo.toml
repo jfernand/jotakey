@@ -3,6 +3,7 @@ name = "jotakey-fuzz"
 version = "0.0.0"
 authors = ["Javier Fernandez @ JotaSoft"]
 publish = false
+license = "MIT OR Apache-2.0"
 edition = "2024"
 
 [package.metadata]

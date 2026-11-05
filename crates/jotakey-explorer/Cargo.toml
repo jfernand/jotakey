@@ -5,6 +5,7 @@ edition.workspace = true
 version.workspace = true
 authors.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 # Terminal UI (crossterm backend, re-exported as ratatui::crossterm).

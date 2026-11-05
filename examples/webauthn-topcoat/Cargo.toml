@@ -7,6 +7,7 @@ edition = "2024"
 rust-version = "1.98"
 authors = ["Javier Fernandez @ JotaSoft"]
 publish = false
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 topcoat = "0.10"
