@@ -1,28 +1,37 @@
 // (c) Javier Fernandez @ JotaSoft 2026
 //! [`Platform`] implementation on the jotakey key's STM32L432: the RNG peripheral with
-//! continuous health tests, the root key, and the record logs in internal flash.
+//! continuous health tests, the root key in the OPTIGA, the signature counter in the OPTIGA,
+//! and the record logs in internal flash.
 //!
-//! Milestone 1: the OPTIGA driver does not exist yet. Without the `dev-key` feature there is
-//! no root, `derive_secret` fails, and the boot probe puts the key in its permanent fault
-//! state (invariant 7). The signature counter is a flash record log until milestone 2 moves
-//! it to the OPTIGA's monotonic counter `0xE120` (AGENTS.md §3).
+//! Production (milestone 2): `derive_secret` and `increment_counter` go to the OPTIGA over a
+//! live shielded session (`jotakey_core::optiga`), established with the pairing secret kept
+//! in flash. A unit without a pairing secret (not provisioned) has no root and stays in its
+//! fault state (invariant 7). The INSECURE `dev-key` build keeps milestone 1's software root
+//! and flash counter, and never touches the OPTIGA.
 
 use embassy_stm32::pac;
 use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::Rng;
 use embassy_time::Instant;
+use jotakey_core::optiga::OptigaError;
+use jotakey_core::optiga::apdu::OID_ROOT;
+use jotakey_core::optiga::device::NONCE_LEN;
+use jotakey_core::optiga::provision::{self, MCU_RANDOM_LEN, Pairing, ProvisionError};
+use jotakey_core::optiga::shielded::SECRET_LEN;
 use jotakey_core::platform::{PIN_RECORD_LEN, PinRecord, Platform, PlatformError, SecretLabel};
 use jotakey_core::selftest::RngHealth;
 use jotakey_core::storage::{RecordLog, SECTOR_SIZE};
 use zeroize::Zeroizing;
 
 use crate::flash::Region;
+use crate::optiga::SecureElement;
 
-/// Counter log (milestone 1 only): logical sectors 0–1. Epoch log: 2–3. PIN log: 4–5.
-/// Sectors 6–7 are reserved for the OPTIGA platform binding secret (milestone 2).
+/// Counter log (`dev-key` builds only; production counts in the OPTIGA): logical sectors 0–1.
+/// Epoch log: 2–3. PIN log: 4–5. Pairing secret log: 6–7.
 const COUNTER_BASE: u32 = 0;
 const EPOCH_BASE: u32 = 2 * SECTOR_SIZE;
 const PIN_BASE: u32 = 4 * SECTOR_SIZE;
+const PAIRING_BASE: u32 = 6 * SECTOR_SIZE;
 
 /// Status polls before a missing RNG word counts as a failure. A word takes about 42 RNG
 /// clock cycles (RM0394 §24.3); this is several milliseconds at 80 MHz.
@@ -30,13 +39,15 @@ const RNG_POLLS: u32 = 100_000;
 
 /// Where the root key comes from.
 pub enum RootKey {
-    /// No root reachable: every derivation fails (production build in milestone 1, until the
-    /// OPTIGA driver exists).
-    #[cfg_attr(feature = "dev-key", allow(dead_code))]
+    /// No root reachable: every derivation fails.
+    #[allow(dead_code)]
     Unavailable,
     /// **INSECURE** software key derived from the STM32 unique ID (`dev-key` feature only).
     #[cfg(feature = "dev-key")]
     Insecure(Zeroizing<[u8; 32]>),
+    /// `K_root` in the OPTIGA.
+    #[cfg_attr(feature = "dev-key", allow(dead_code))]
+    Optiga(SecureElement),
 }
 
 /// The STM32 RNG, read register by register so that every seed or clock error is reported
@@ -87,32 +98,43 @@ pub struct KeyPlatform<'d> {
     health: RngHealth,
     rng_failed: bool,
     root: RootKey,
+    /// The live-session check failed: possibly a replayed session on the bus. Every root
+    /// operation fails until the next power-up.
+    optiga_suspect: bool,
     flash: Region<'d>,
     counter: RecordLog<4>,
     epoch_log: RecordLog<32>,
     epoch: Zeroizing<[u8; 32]>,
     pin_log: RecordLog<PIN_RECORD_LEN>,
+    pairing_log: RecordLog<SECRET_LEN>,
 }
 
 impl<'d> KeyPlatform<'d> {
-    /// Mount the record logs, creating the epoch on first boot.
+    /// Mount the record logs, creating the epoch on first boot, and give the OPTIGA its
+    /// pairing secret if the unit is provisioned.
     ///
     /// # Errors
     /// Flash or RNG failure.
-    pub fn new(rng: TrueRng, root: RootKey, mut flash: Region<'d>) -> Result<Self, PlatformError> {
+    pub fn new(rng: TrueRng, mut root: RootKey, mut flash: Region<'d>) -> Result<Self, PlatformError> {
         let counter = RecordLog::<4>::mount(&mut flash, COUNTER_BASE)?;
         let epoch_log = RecordLog::<32>::mount(&mut flash, EPOCH_BASE)?;
         let pin_log = RecordLog::<PIN_RECORD_LEN>::mount(&mut flash, PIN_BASE)?;
+        let pairing_log = RecordLog::<SECRET_LEN>::mount(&mut flash, PAIRING_BASE)?;
+        if let (RootKey::Optiga(se), Some((_, p))) = (&mut root, pairing_log.latest()) {
+            se.set_pairing(Pairing::from_bytes(p));
+        }
         let mut p = Self {
             rng,
             health: RngHealth::new(),
             rng_failed: false,
             root,
+            optiga_suspect: false,
             flash,
             counter,
             epoch_log,
             epoch: Zeroizing::new([0; 32]),
             pin_log,
+            pairing_log,
         };
         match p.epoch_log.latest() {
             Some((_, e)) => p.epoch.copy_from_slice(e),
@@ -129,9 +151,101 @@ impl<'d> KeyPlatform<'d> {
         self.rng.fill(buf)
     }
 
-    /// Current persisted counter (diagnostics).
+    /// Whether the root is the OPTIGA and the unit holds a pairing secret.
+    pub fn is_provisioned(&self) -> bool {
+        matches!(&self.root, RootKey::Optiga(se) if se.is_paired()) && self.pairing_log.latest().is_some()
+    }
+
+    /// Whether the root is the OPTIGA (a production build).
+    pub fn uses_optiga(&self) -> bool {
+        matches!(self.root, RootKey::Optiga(_))
+    }
+
+    /// The OPTIGA with a live session: (re-)established here if needed, with a fresh nonce
+    /// from the health-tested RNG.
+    fn live_optiga(&mut self) -> Result<&mut SecureElement, PlatformError> {
+        if self.optiga_suspect {
+            return Err(PlatformError);
+        }
+        let live = match &mut self.root {
+            RootKey::Optiga(se) => se.optiga().is_live(),
+            _ => return Err(PlatformError),
+        };
+        if !live {
+            let mut nonce = [0u8; NONCE_LEN];
+            self.random_bytes(&mut nonce)?;
+            let RootKey::Optiga(se) = &mut self.root else { return Err(PlatformError) };
+            match se.connect(&nonce) {
+                Ok(()) => {}
+                Err(OptigaError::NotFresh) => {
+                    defmt::error!("OPTIGA session failed the live-session check: possible replay on the bus");
+                    self.optiga_suspect = true;
+                    return Err(PlatformError);
+                }
+                Err(e) => {
+                    defmt::warn!("OPTIGA session not established: {}", defmt::Debug2Format(&e));
+                    return Err(PlatformError);
+                }
+            }
+        }
+        match &mut self.root {
+            RootKey::Optiga(se) => Ok(se),
+            _ => Err(PlatformError),
+        }
+    }
+
+    /// Provision the OPTIGA (the `provision` build only; `jotakey_core::optiga::provision`),
+    /// then store the pairing secret, read back from flash before this returns.
+    ///
+    /// # Errors
+    /// [`ProvisionError`] from the OPTIGA, or a flash or RNG failure (as
+    /// [`ProvisionError::Optiga`] of [`OptigaError::Bus`]).
+    #[cfg_attr(not(feature = "provision"), allow(dead_code))]
+    pub fn provision(&mut self) -> Result<(), ProvisionError> {
+        let mut r = Zeroizing::new([0u8; MCU_RANDOM_LEN]);
+        self.random_bytes(r.as_mut()).map_err(|_| OptigaError::Bus)?;
+        let RootKey::Optiga(se) = &mut self.root else { return Err(OptigaError::NoSession.into()) };
+        se.hard_reset();
+        let pairing = provision::provision(se.optiga(), &r)?;
+        if let Err(PlatformError) = self.pairing_log.append(&mut self.flash, pairing.as_bytes()) {
+            if let Ok(l) = RecordLog::<SECRET_LEN>::mount(&mut self.flash, PAIRING_BASE) {
+                self.pairing_log = l;
+            }
+            return Err(OptigaError::Bus.into());
+        }
+        if let RootKey::Optiga(se) = &mut self.root {
+            se.set_pairing(pairing);
+        }
+        Ok(())
+    }
+
+    /// **IRREVERSIBLE.** Lock the provisioned OPTIGA (`provision-lock` build only).
+    ///
+    /// # Errors
+    /// No live session, or an OPTIGA error.
+    #[cfg_attr(not(feature = "provision-lock"), allow(dead_code))]
+    pub fn lock(&mut self) -> Result<(), PlatformError> {
+        let se = self.live_optiga()?;
+        provision::lock(se.optiga()).map_err(|_| PlatformError)
+    }
+
+    /// Current persisted counter of the flash log (diagnostics, `dev-key` builds).
     pub fn counter_value(&self) -> u32 {
         self.counter.latest().map_or(0, |l| l.0)
+    }
+
+    fn flash_increment_counter(&mut self) -> Result<u32, PlatformError> {
+        let next = self.counter_value().checked_add(1).ok_or(PlatformError)?;
+        match self.counter.append(&mut self.flash, &next.to_le_bytes()) {
+            Ok(seq) => Ok(seq),
+            Err(e) => {
+                // Re-mount so the in-memory view matches flash again.
+                if let Ok(c) = RecordLog::<4>::mount(&mut self.flash, COUNTER_BASE) {
+                    self.counter = c;
+                }
+                Err(e)
+            }
+        }
     }
 }
 
@@ -160,31 +274,51 @@ impl Platform for KeyPlatform<'_> {
         msg.get_mut(l.len()..e).ok_or(PlatformError)?.copy_from_slice(self.epoch.as_ref());
         msg.get_mut(e..n).ok_or(PlatformError)?.copy_from_slice(context);
         let msg = msg.get(..n).ok_or(PlatformError)?;
-        match &self.root {
-            RootKey::Unavailable => {
-                let _ = (msg, out);
-                Err(PlatformError)
+        if self.uses_optiga() {
+            // F = TLS1.2-PRF-SHA256(K_root, label ‖ epoch ‖ context), run by the OPTIGA
+            // (AGENTS.md §3). One retry over a new session if the first attempt failed.
+            for _ in 0..2 {
+                let se = self.live_optiga()?;
+                if se.optiga().derive(OID_ROOT, &[msg], out).is_ok() {
+                    return Ok(());
+                }
             }
+            out.fill(0);
+            return Err(PlatformError);
+        }
+        match &self.root {
             #[cfg(feature = "dev-key")]
             RootKey::Insecure(k) => {
                 *out = jotakey_core::crypto::hmac_sha256(k.as_ref(), &[msg]).map_err(|_| PlatformError)?;
                 Ok(())
             }
+            _ => {
+                let _ = (msg, out);
+                Err(PlatformError)
+            }
         }
     }
 
     fn increment_counter(&mut self) -> Result<u32, PlatformError> {
-        let next = self.counter_value().checked_add(1).ok_or(PlatformError)?;
-        match self.counter.append(&mut self.flash, &next.to_le_bytes()) {
-            Ok(seq) => Ok(seq),
-            Err(e) => {
-                // Re-mount so the in-memory view matches flash again.
-                if let Ok(c) = RecordLog::<4>::mount(&mut self.flash, COUNTER_BASE) {
-                    self.counter = c;
+        if !self.uses_optiga() {
+            return self.flash_increment_counter();
+        }
+        // The OPTIGA's monotonic counter 0xE120: counted, then read back through the live
+        // session, and released only above every value released since power-up (invariant 2;
+        // `formal/Jotakey/Shielded.lean`). A retry after a failure counts again, which only
+        // skips a value.
+        for _ in 0..2 {
+            let se = self.live_optiga()?;
+            match se.optiga().increment_counter() {
+                Ok(v) => return Ok(v),
+                Err(OptigaError::CounterNotIncreasing) => {
+                    defmt::error!("OPTIGA counter did not increase");
+                    return Err(PlatformError);
                 }
-                Err(e)
+                Err(_) => {}
             }
         }
+        Err(PlatformError)
     }
 
     fn rotate_epoch(&mut self) -> Result<(), PlatformError> {

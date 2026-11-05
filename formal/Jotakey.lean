@@ -12,7 +12,8 @@
 --   6. `Jotakey/ClientPin.lean`    PIN lockout; invariants carried through traces
 --   7. `Jotakey/Presence.lean`     when a touch counts; invariants over a reading history
 --   8. `Jotakey/RecordLog.lean`    the power-safe log; nondeterministic power cuts as a relation
---   9. `Main.lean`, `AxiomAudit.lean` the executable spec and the axiom check
+--   9. `Jotakey/Shielded.lean`     the OPTIGA session and counter; `Option` states, `Pairwise`
+--  10. `Main.lean`, `AxiomAudit.lean` the executable spec and the axiom check
 --
 -- Three kinds of comments appear throughout:
 --   `--` ...            a line comment, ignored by Lean (like `//` in Rust)
@@ -27,3 +28,4 @@ import Jotakey.Credential
 import Jotakey.ClientPin
 import Jotakey.Presence
 import Jotakey.RecordLog
+import Jotakey.Shielded

@@ -472,6 +472,8 @@ cargo test -p jotakey-core --test differential -- --nocapture
 # differential: 101536 CBOR queries agree (80069 accepted)
 # differential: 5000 presence sequences agree (3043 confirm)
 # differential: 2000 record-log appends agree
+# differential: 3000 shielded-session histories agree (4643 responses used)
+# differential: 2000 counter sequences agree
 ```
 ]
 

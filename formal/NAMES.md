@@ -128,6 +128,21 @@ Answers `presence <start> <ms>:<0|1> ...` in `jotakey-spec`.
 
 Answers `append <sector0> <sector1>` (mount, then a completed append) in `jotakey-spec`.
 
+## OPTIGA session and counter (`src/optiga/shielded.rs`, `src/optiga/device.rs` ↔ `Jotakey/Shielded.lean`)
+
+| Rust | Lean | Notes |
+|---|---|---|
+| `Session::accept` | `accept` | The tag check is the `Response.authentic` flag; the cryptography is not modelled. |
+| `Session { last_sseq, fresh }` (keys left out) | `Session { lastSseq, fresh }` | |
+| `Purpose` (`Freshness`, `Use`) | `Purpose` (`freshness`, `use`) | Same name. |
+| `in_window` | `inWindow` | |
+| `SEQ_WINDOW`, `SEQ_LIMIT`, `SCTR_RECORD` | `seqWindow`, `seqLimit`, `recordSctr` | |
+| `Optiga::establish` / `Optiga::command` (drop the session on any failure) | `step` over `Event` (`handshake`, `check`, `use`, `fail`) | |
+| `release_counter` | `release` | |
+| — | `stateAfter`, `usedAt`, `used`, `checkSinceHandshake`, `Bounded`, `markAfter`, `released` | Lean-only: histories (newest first). |
+
+Answers `shielded <event> ...` and `release <value> ...` in `jotakey-spec`.
+
 ## Properties: Rust tests ↔ Lean theorems
 
 | Rust test / fuzz oracle | Lean theorem |
@@ -146,3 +161,6 @@ Answers `append <sector0> <sector1>` (mount, then a completed append) in `jotake
 | `confirmation_needs_release_then_debounced_press`, `a_press_held_from_the_start_never_confirms` | `confirmed_needs_release_then_debounced_press`, `press_held_from_the_start_never_confirms` |
 | `deadline_is_thirty_seconds_after_the_request` | `timeout_at_deadline`, `timeout_is_final` |
 | `monotonic_across_power_cuts_any_unit`, `record_log` fuzz oracle | `trace_never_loses_confirmed`, `confirmed_strictly_increases` |
+| `accepted_sequence_numbers_increase` (proptest), `replays_forgeries_and_alerts_are_refused` | `accept_needs_everything`, `accept_moves_forward`, `used_strictly_increase` |
+| `a_replayed_session_is_not_live`, `nothing_is_used_before_the_session_is_live`, `optiga_bus` fuzz oracles | `live_needs_check`, `used_needs_live` |
+| `counter_release_rule`, `a_counter_that_goes_back_is_refused`, `optiga_bus` counter oracle | `released_strictly_increase` |

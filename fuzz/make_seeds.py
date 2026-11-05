@@ -121,6 +121,14 @@ def main():
         # config (unit 8; payload 4, 32 or 36), appends, a cut after 300 steps, remount.
         "record_log": {f"unit8_n{n}": bytes([1 | size << 1, 0, 3, 6, 1, 0x2C, 0x01, 2, 9, 2])
                        for size, n in enumerate((4, 32, 36))},
+        # mode, nonce, ops (counter, derive, re-establish), 0xFF, tap script (per read:
+        # 0 pass, 5 flip, 6 replay, 7 NACK).
+        "optiga_bus": {
+            "clean": bytes([0, 1, 0, 1, 0, 2, 0, 0xFF]),
+            "flips": bytes([0, 2, 0, 1, 0, 0, 0xFF] + [0, 0, 0, 0, 0, 0, 0, 0, 0x25, 3, 0, 0, 6, 1] * 8),
+            "nacks": bytes([0, 3, 0, 0, 0xFF] + [7, 0, 0] * 30),
+            "no_optiga": bytes([1, 4, 0, 1, 0xFF] + list(range(200))),
+        },
     }
     for target, files in seeds.items():
         d = HERE / target

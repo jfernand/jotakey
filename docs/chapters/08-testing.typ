@@ -145,11 +145,14 @@ with sorted keys before any credential logic runs. A target that only ever hits 
   needs its own test.
 ]
 
-=== The nine targets
+=== The ten targets
 
 Each target runs the real core code against `MockPlatform`, a deterministic stand-in for
 the hardware: its random numbers come from a seeded generator and its key store is
-software HMAC, so every crash reproduces exactly. Its failure switches (`fail_rng`,
+software HMAC, so every crash reproduces exactly. The OPTIGA driver's target runs against
+`SimOptiga` instead, a software OPTIGA Trust M (`optiga/sim.rs`): the slave side of the
+registers, the data link, the shielded connection, and the commands and access conditions
+the key uses, with switches to NACK, damage or drop frames. Its failure switches (`fail_rng`,
 `fail_counter`, `fail_derive`) are what the unit tests use for the fail-closed paths.
 
 #breakable-code[
@@ -164,7 +167,8 @@ software HMAC, so every crash reproduces exactly. Its failure switches (`fail_rn
   ([`credential_unwrap`], [A tag key, an `rpIdHash` and a candidate credential ID.], [An accepted ID is exactly what `wrap` mints for the recovered nonce at that RP; a minted ID always unwraps to its nonce.], [3]),
   ([`pin_protocol`], [A key-agreement scalar, the platform's COSE key, then a message.], [An accepted key re-encodes to the same key, and a key without extra labels is byte for byte the canonical encoding. `decrypt` accepts exactly `iv ‖ whole blocks`, and re-encrypting under the same IV gives the message back. `verify` accepts only `authenticate`'s tag. Checked with a planted bug (CBC chaining removed): caught on the first seed.], [4]),
   ([`client_pin`], [A script: key agreement, setPIN, changePIN, token requests, makeCredential and getAssertion with the token, power cycles, resets, failing storage. The target is a correct platform; the input only chooses what it does.], [A plain model of the CTAP 2.1 PIN rules predicts the exact status of every step; the stored retries, mismatch count, token and UV flags must match it. The stored counter must already be one lower when the PIN is first processed. A planted bug that compared before counting was caught.], [1, 10]),
-  ([`record_log`], [A programming unit (4 or 8) and payload size, then a script of appends, power cuts after a chosen number of steps, and remounts.], [A remount never goes below the last confirmed sequence number, and finds that record's payload intact; confirmed numbers strictly increase; with the power on every append succeeds, so the log never breaks the flash's programming rules (whole units, each programmed once), which the mock flash enforces. A planted bug that erases the sector holding the latest record is caught within seconds.], [2])
+  ([`record_log`], [A programming unit (4 or 8) and payload size, then a script of appends, power cuts after a chosen number of steps, and remounts.], [A remount never goes below the last confirmed sequence number, and finds that record's payload intact; confirmed numbers strictly increase; with the power on every append succeeds, so the log never breaks the flash's programming rules (whole units, each programmed once), which the mock flash enforces. A planted bug that erases the sector holding the latest record is caught within seconds.], [2]),
+  ([`optiga_bus`], [A mode, a nonce, a script of counter increments, derivations and new sessions, then a script for an attacker on the I2C bus: per read, pass, flip a bit, replay an earlier read, or NACK. In one mode the attacker sits in front of a simulated OPTIGA; in the other it *is* the bus.], [Every counter value the driver returns is the OPTIGA's real value and exceeds the last one; every derived secret is the real `PRF(K_root, input)`; with no OPTIGA behind the bus, no session is ever established. Checked with a planted bug (the sequence-number window removed): found in seconds.], [2, 4, 7]),
 )
 ]
 
@@ -289,8 +293,12 @@ which is test scaffolding. Mutants that make code loop forever are caught by tim
 == On-device test firmware
 
 Some properties exist only on silicon. For the jotakey key, no board is on the desk yet:
-USB enumeration, the touch thresholds, the ECC fault on a torn double-word and an
-on-device test firmware for the STM32 are listed as work for when the first boards arrive.
+USB enumeration, the touch thresholds, the ECC fault on a torn double-word, the OPTIGA on
+the wire (the simulator is written from the same specifications as the driver, so only a
+real chip can show that both read them right: frame timing, the checksum's byte order,
+which the code takes from Infineon's library, the first record's sequence number, the
+metadata encodings, provisioning end to end) and an on-device test firmware for the STM32
+are listed as work for when the first boards arrive.
 For the C6, `crates/jotakey-testfw` is a separate firmware
 built with `embedded-test` and run by `probe-rs` through the C6's built-in USB-JTAG. No
 extra debug probe is needed. Each test is flashed, the chip is reset, the test runs, and

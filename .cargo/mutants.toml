@@ -5,8 +5,9 @@
 test_package = ["jotakey-core"]
 examine_globs = ["crates/jotakey-core/src/**/*.rs"]
 
-# The mock platform is test scaffolding, never shipped.
-exclude_globs = ["crates/jotakey-core/src/mock.rs"]
+# The mock platform and the simulated OPTIGA are test scaffolding, never shipped (both exist
+# only under `cfg(test)` or the `mock` feature); the tests that use them pin their behaviour.
+exclude_globs = ["crates/jotakey-core/src/mock.rs", "crates/jotakey-core/src/optiga/sim.rs"]
 
 exclude_re = [
     # Default impls just call new(); no protocol logic.
@@ -24,4 +25,7 @@ exclude_re = [
     # Equivalent: `target > baseline` picks how the baseline drifts, up or down; when the two
     # are equal both branches move it by zero. (`feed` has no other `>`.)
     "touch.rs:.*replace > with >= in TouchDetector::feed",
+    # Untestable: zeroizing an APDU (which may hold a secret being written) on drop has no
+    # effect safe code can observe. It is kept for defence in depth (invariant 8).
+    "apdu.rs:.*replace <impl Drop for Apdu>::drop with \\(\\)",
 ]

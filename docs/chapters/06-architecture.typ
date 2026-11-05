@@ -66,12 +66,12 @@ The two ports have clean roles: "USB" carries the authenticator, "UART" carries 
 
 #layers(
   caption: "Crates and their trust levels",
-  ("jotakey-core", [`no_std`, no allocation, `#![forbid(unsafe_code)]`, no `unwrap`/`panic!`/unchecked indexing or arithmetic (enforced by Clippy). CBOR, CTAP2 commands, CTAPHID, BLE framing, serial framing, credential wrapping, power-safe storage, self tests. *All* bytes from the host are interpreted here.], "amber"),
+  ("jotakey-core", [`no_std`, no allocation, `#![forbid(unsafe_code)]`, no `unwrap`/`panic!`/unchecked indexing or arithmetic (enforced by Clippy). CBOR, CTAP2 commands, CTAPHID, BLE framing, serial framing, credential wrapping, power-safe storage, self tests, the OPTIGA driver. *All* bytes from the host, and from the OPTIGA's bus, are interpreted here.], "amber"),
   ("jotakey-fw", [ESP32-C6 firmware (esp-hal, embassy, trouBLE). Thin adapters: TRNG, eFuse HMAC key, flash, button, LED, USB-Serial/JTAG, BLE GATT. Implements the core's `Platform` trait.], "dark"),
-  ("jotakey-key-fw", [jotakey key firmware (embassy-stm32, embassy-usb). Thin adapters: RNG, internal flash, touch controller, LED, native USB HID; the OPTIGA from milestone 2. Implements the same `Platform` trait.], "dark"),
+  ("jotakey-key-fw", [jotakey key firmware (embassy-stm32, embassy-usb). Thin adapters: RNG, internal flash, touch controller, LED, native USB HID, the OPTIGA's I2C bus and reset line. Implements the same `Platform` trait.], "dark"),
   ("jotakey-testfw", [On-device test firmware (embedded-test + probe-rs).], "light"),
   ("jotakey-bridge", [Linux host daemon (serial ⇄ uhid).], "light"),
-  ("formal/", [Lean 4 models, proofs, and the executable specification (CBOR, presence gate, record log).], "light"),
+  ("formal/", [Lean 4 models, proofs, and the executable specification (CBOR, presence gate, record log, OPTIGA session and counter).], "light"),
 )
 
 The core is written so that it does not know it runs on a microcontroller. Hardware is
@@ -105,10 +105,10 @@ in Lean (§10.9) and checked against the model by the differential test.
 
 == The jotakey key's firmware
 
-`crates/jotakey-key-fw` runs on the STM32L432KC with embassy-stm32. It is built in two
-milestones.
+`crates/jotakey-key-fw` runs on the STM32L432KC with embassy-stm32. It was built in two
+milestones, both so far tested only off the board (against a simulated OPTIGA, §8).
 
-- *Milestone 1 (now).* Native USB full-speed with one HID interface carrying the FIDO
+- *Milestone 1.* Native USB full-speed with one HID interface carrying the FIDO
   report descriptor, so the key enumerates as an ordinary FIDO device with no bridge; the
   48 MHz USB clock comes from the internal HSI48 oscillator, trimmed against USB
   start-of-frame. The RNG peripheral feeds the core's health tests, and any seed or clock
@@ -116,14 +116,83 @@ milestones.
   the core's `touch::TouchDetector` turns its counts into touched or not, against a
   baseline taken at boot. The record logs live in the top 32 KB of internal flash. Logs
   go over SWD only.
-- *Milestone 2.* The OPTIGA Trust M driver: the shielded connection, `DeriveKey` for
-  `derive_secret`, the hardware counter `0xE120` for `increment_counter`, and on-device
-  provisioning.
+- *Milestone 2.* The OPTIGA Trust M driver (next section): the shielded connection with a
+  live-session check, `DeriveKey` for `derive_secret`, the hardware counter `0xE120` for
+  `increment_counter`, and on-device provisioning. USB moved to an interrupt-priority
+  executor, so that the authenticator's blocking work (about 50 ms per OPTIGA derivation)
+  never stalls it.
 
-Until milestone 2 there is no root key: a production build fails its boot probe and stays
-in the fault state, answering every request with `CTAP1_ERR_OTHER`. Only the *INSECURE*
-`dev-key` build, whose root is derived from the chip's unique ID, serves requests. It
-exists to test everything else end to end.
+A unit that has not been provisioned has no root: it fails its boot probe and stays in the
+fault state, answering every request with `CTAP1_ERR_OTHER`. The *INSECURE* `dev-key`
+build, whose root is derived from the chip's unique ID and whose counter is a flash record
+log, never drives the OPTIGA. It exists to test everything else end to end.
+
+=== Talking to the OPTIGA
+
+The OPTIGA sits on I2C, and the I2C bus runs over the board's copper, where anyone holding
+the key can attach a probe. So the driver treats the bus as hostile, exactly like USB: every
+byte read from it is parsed by total functions in the core (`jotakey_core::optiga`), and
+nothing it says is believed until the *shielded connection* has authenticated it. The driver
+is sans-IO, so the firmware only supplies the bus (`I2c` trait: write, read, wait) and the
+reset line.
+
+#layers(
+  caption: "The OPTIGA's protocol stack, as the MCU speaks it",
+  ("APDU (apdu.rs)", [Commands `Cmd ‖ Param ‖ Len ‖ Data`: `OpenApplication`, `GetDataObject`, `SetDataObject` (data, metadata, count), `GetRandom`, `DeriveKey`. Responses parsed totally.], "light"),
+  ("Shielded connection (shielded.rs)", [Handshake from the binding secret; then every command and response is AES-128-CCM-8 encrypted and authenticated, with sequence numbers. The acceptance rule is proved in Lean (§10.11).], "amber"),
+  ("Network / transport (link.rs)", [One header byte: channel, presentation layer present, chaining. Our APDUs always fit one packet; chained packets are refused.], "light"),
+  ("Data link (frame.rs, link.rs)", [Frames `FCTR ‖ LEN ‖ packet ‖ CRC-16`, numbered and acknowledged; damaged or lost frames are sent again, a bounded number of times.], "light"),
+  ("Physical (physical.rs)", [Registers at address `0x30`: data, data length, state. A busy OPTIGA does not acknowledge its address, and the master retries for a bounded time.], "dark"),
+)
+
+*The shielded connection.* At provisioning the MCU and the OPTIGA come to share a 64-byte
+*binding secret*. Each session begins with a handshake: the OPTIGA picks a random `RND`,
+both sides derive session keys `PRF(binding, "Platform Binding" ‖ RND)`, and each proves it
+holds them by encrypting `RND` and a sequence number. From then on every message carries a
+sequence number one above the last; the MCU accepts a response only if its number is in a
+small window above the last one it accepted *and* its tag verifies, and only then moves the
+window. Any failure ends the session, and a new handshake starts afresh.
+
+*The live-session check.* The handshake has a weakness: the master contributes no
+randomness, so the master's half of a session is a function of the OPTIGA's half. Someone
+who recorded a whole session on the bus can later play the OPTIGA's half back, and the MCU
+would accept the old session keys and then the old responses, including an old, lower
+counter value. Infineon's reference manual says so (§6.6: "the shielded connection does not
+provide an option to add random challenge/nonce from the host"). So after every handshake the
+MCU sends a fresh random nonce through the new session, asks the OPTIGA for
+`PRF(freshness secret, "jotakey/fresh/v1" ‖ nonce)`, and compares the answer with the same
+PRF computed itself. A recording cannot contain the answer for a nonce that did not exist
+when it was made. Until the check passes, the session is used for nothing else, and the Lean
+model proves that rule (§10.11).
+
+*The counter.* `increment_counter` counts the OPTIGA's counter up by one and reads it back
+through the session. The OPTIGA has stored the value before it answers, so the value is
+persisted before any signature carries it (invariant 2). The MCU releases it only if it
+exceeds every value it released since power-up, so even a misbehaving OPTIGA could not make
+the key sign with a counter that went back.
+
+*Cost.* Every `DeriveKey` on a stored secret is what the OPTIGA calls a *security event*:
+its security monitor allows one per 5 s for free, counts bursts, and slows such operations
+down once more than 128 have accumulated. A sign-in with a list of five credentials costs
+six derivations; a burst of registrations could reach the throttle. Each derivation takes
+about 50 ms.
+
+*Provisioning* runs on the device in two separate firmware images that a human flashes and
+confirms by holding the touch pad. `provision` (3 s hold) pairs the two chips: the MCU draws
+64 bytes from the OPTIGA's TRNG and 64 from its own, keeps the hash `P` in flash, and writes
+the binding and freshness secrets derived from `P` to the OPTIGA. These two travel in clear,
+because no shielded connection exists before them; provisioning happens at the bench. Then,
+through the new live session, it creates `K_root` from both chips' randomness, so `K_root`
+never crosses the bus in clear, and sets every access condition: `K_root` and the freshness
+secret can never be read or changed and work only through the shielded connection, the
+binding secret can never be read or changed, and the counter starts at 0 with threshold
+600 000 and can only count, only through the session. All of that can still be undone, because the
+OPTIGA lets an object's metadata change while the object's *life cycle state* is below
+"operational". `provision-lock` (10 s hold) is the one irreversible step: it moves the four
+objects to operational, which freezes their conditions for good. Until then, someone on the
+bus could reopen the conditions, so an unlocked unit is a development unit. The automation
+that builds and tests this project compiles both images and never flashes or runs them
+(AGENTS.md §4).
 
 == The key hierarchy
 
@@ -165,7 +234,7 @@ the tag function as a parameter.
 ]
 
 Nothing secret is ever *stored* in the microcontroller's flash except the epoch (and, on the
-key, the secret that encrypts the link to the OPTIGA). The epoch is useless without the
+key, the pairing secret from which the secrets of the link to the OPTIGA derive). The epoch is useless without the
 root, which the flash never holds.
 
 == Credential IDs. Keys by derivation
@@ -198,10 +267,10 @@ The nonce is not secret, and the private key is never in the ID, not even encryp
 == Persistent state
 
 On the jotakey key, the signature counter lives in the OPTIGA instead (§7.5): a hardware
-up-counter that can only increase, survives power loss by construction, and cannot be
-rolled back even by firmware an attacker controls. The record log described here holds the
-counter and the epoch on the C6, and the epoch and the PIN record on the key (plus, until
-the OPTIGA driver of milestone 2, the counter).
+up-counter that can only increase, survives power loss by construction, and, once the unit
+is locked, cannot be rolled back even by firmware an attacker controls. The record log
+described here holds the counter and the epoch on the C6, and the epoch, the PIN record and
+the pairing secret on the key (plus, in `dev-key` builds, the counter).
 
 On the C6, only two values persist: the signature counter and the epoch. Each lives in its own
 power-loss-safe *record log* of two flash sectors. A new value is appended as a record

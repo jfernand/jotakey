@@ -17,13 +17,19 @@ bench = false
 # key in software from the STM32 unique ID. Never enable for a device that holds real
 # credentials.
 dev-key = []
+# HUMAN-RUN provisioning image: pair the OPTIGA, create K_root, the freshness secret and the
+# counter (reversible until locked; src/provision.rs). Never flashed or run by automation.
+provision = []
+# HUMAN-RUN, IRREVERSIBLE: set the OPTIGA objects' life cycle to operational. Never flashed
+# or run by automation (AGENTS.md §4).
+provision-lock = []
 
 # Pinned together (AGENTS.md §4): embassy-stm32 0.6, embassy-executor 0.10, embassy-time 0.5,
 # embassy-usb 0.6. Upgrade them as a set.
 [dependencies]
 jotakey-core = { path = "../jotakey-core" }
 embassy-stm32 = { version = "0.6", features = ["stm32l432kc", "time-driver-any", "unstable-pac", "defmt"] }
-embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
 embassy-time = { version = "0.5", features = ["defmt"] }
 embassy-sync = "0.8"
 embassy-futures = "0.1"

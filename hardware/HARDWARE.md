@@ -34,7 +34,9 @@ stable 3.3 V rail.
   Across an open link's pads, an ammeter measures one rail's current.
   - The I2C pull-ups are on the OPTIGA's rail so that, with R7 open, they cannot power the
     OPTIGA through the input protection diodes of its SDA and SCL pins. For the same reason,
-    firmware run with R7 open keeps PA5 (the OPTIGA's reset) low or floating.
+    firmware run with R7 open keeps PA5 (the OPTIGA's reset) low or floating: run the
+    `dev-key` build, which never drives the OPTIGA. The production and provisioning builds
+    drive PA5 high to talk to it, so they need R7 fitted.
 
 ## 2. Crystal-less USB
 

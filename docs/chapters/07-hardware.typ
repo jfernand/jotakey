@@ -97,7 +97,7 @@ talk over I²C.
   ([OPTIGA data object `0xF1D0`], [Holds `K_root`, 64 bytes, as a pre-shared secret. After provisioning its access conditions say: never readable, never changeable, usable only over the shielded connection.]),
   ([OPTIGA `DeriveKey`], [Runs the TLS 1.2 PRF (HMAC-SHA256 inside) over `K_root` and returns the result: one credential's tag or seed (§6.3). About 50 ms each.]),
   ([OPTIGA monotonic counter `0xE120`], [The signature counter (invariant 2). The chip only lets it go up, survives power loss by construction, and freezes it at a threshold set to its rated 600 000 updates.]),
-  ([OPTIGA shielded connection], [Encrypts and authenticates the I²C traffic with a 64-byte platform binding secret shared between the two chips. A probe on the bus sees ciphertext; a swapped chip on either side cannot talk to the other.]),
+  ([OPTIGA shielded connection], [Encrypts and authenticates the I²C traffic with a 64-byte platform binding secret shared between the two chips. A probe on the bus sees ciphertext; a swapped chip on either side cannot talk to the other. A replayed recording of an old session fails the MCU's live-session check (§6.3).]),
   ([OPTIGA and STM32 random generators], [Both feed every random value, mixed with SHA-512, so one weak generator is not enough to weaken the key. The STM32's generator reports its own health errors (invariant 7).]),
   ([STM32 readout protection], [Level 2 on production units: the debug port, booting from RAM and the factory bootloader are disabled for good, and the flash cannot be read out. The setting is irreversible.]),
 )
@@ -114,7 +114,7 @@ datasheet (DS11451) and the reference manual (RM0394) in `hardware/datasheets`.
   columns: (1.1fr, 2.4fr),
   ("Feature", "Role in Jotakey"),
   ([Cortex-M4F, 80 MHz, MPU], [Runs CTAP, the USB stack and the ECDSA P-256 signatures in software (RustCrypto, the same code as on the C6). The memory protection unit can make the stack and data non-executable.]),
-  ([256 KB flash: 128 pages of 2 KB, ECC], [Firmware, plus the record logs for the epoch, the binding secret and the PIN record (§6.6). Error correction fixes single-bit errors and detects double-bit ones in every 64-bit word; the record logs add their own CRC on top.]),
+  ([256 KB flash: 128 pages of 2 KB, ECC], [Firmware, plus the record logs for the epoch, the pairing secret and the PIN record (§6.6). Error correction fixes single-bit errors and detects double-bit ones in every 64-bit word; the record logs add their own CRC on top.]),
   ([64 KB SRAM: 48 KB SRAM1 + 16 KB SRAM2], [The core does not allocate, so its buffers are fixed: the largest is a 1200-byte message. SRAM2 has hardware parity and can be write-protected in 1 KB pages. Candidate: hold the short-lived per-credential seeds there, where a glitch that flips a bit raises a parity error instead of going unnoticed.]),
   ([USB 2.0 full speed, crystal-less], [The key is a native USB HID device: no bridge. The 48 MHz USB clock comes from the internal HSI48 oscillator, which the clock recovery system (CRS) trims against the host's 1 ms start-of-frame packets, and the D+ pull-up is internal. No crystal, no resistors (`hardware/HARDWARE.md` §2).]),
   ([Touch sensing controller (TSC)], [User presence. Up to 3 channels in this package; the key uses one, the electrode on PB5 with its sampling capacitor on PB4 (group 2). The controller runs the charge-transfer measurement in hardware, with spread spectrum against noise and a max-count error flag for a faulty channel.]),
@@ -140,27 +140,36 @@ secrets live in the OPTIGA.
 
 === Provisioning
 
-Provisioning happens on the device itself, from a provisioning build of the firmware that
-a human starts. The secrets are generated on the device and never leave it:
+Provisioning happens on the device itself, from two provisioning builds of the firmware
+that a human flashes and confirms with a long touch (§6.3 has the details). The secrets are
+generated on the device and never leave it:
 
-+ *Pair.* Generate a 64-byte platform binding secret, write it into the OPTIGA (`0xE140`)
-  and into the STM32's flash, and lock the OPTIGA's copy.
-+ *Root.* Generate `K_root` from both random generators, write it into `0xF1D0`, and lock it.
-+ *Counter and epoch.* Set the counter's threshold; write a random epoch to flash.
-+ *Lock.* A human sets readout protection level 2 with STM32CubeProgrammer, over the SWD
-  test pads. From then on the firmware is frozen: Jotakey keys, like YubiKeys, are not
++ *Pair* (`provision` build). Mix 64 bytes from each chip's generator into the pairing
+  secret `P`, keep it in the STM32's flash, and write the binding and freshness secrets
+  derived from it into the OPTIGA (`0xE140`, `0xF1D1`).
++ *Root.* Through the new live session, generate `K_root` from both random generators and
+  write it into `0xF1D0`.
++ *Conditions and counter.* Make `K_root` and the freshness secret never readable, never
+  changeable, usable only over the shielded connection; make the binding secret never
+  readable or changeable; set the counter to 0, its threshold to 600 000, counting only over
+  the shielded connection and never rewritable. The epoch is written at first boot.
++ *Lock the OPTIGA* (`provision-lock` build). Move the four objects' life cycle to
+  operational, which freezes their conditions. Everything before this step can be redone.
++ *Lock the STM32.* A human sets readout protection level 2 with STM32CubeProgrammer, over
+  the SWD test pads. From then on the firmware is frozen: Jotakey keys, like YubiKeys, are not
   updated in the field. A security fix means a new key. (Signed updates are a roadmap
   exploration, §11.)
 
-Development boards stop before the last step and stay open to the debugger. `AGENTS.md`
-forbids automation from taking any of the irreversible steps: locking OPTIGA objects or
-setting readout protection.
+Development boards stop before the last two steps and stay open to the debugger; their
+OPTIGA conditions can still be reopened by someone on the bus, so they are not secure keys.
+`AGENTS.md` forbids automation from taking any of the irreversible steps: locking OPTIGA
+objects or setting readout protection.
 
 === What a physical attacker gets
 
 The STM32L432 is an ordinary microcontroller. Fault-injection attacks against STM32 readout
 protection have been published for several families. So we assume a well-equipped thief
-can, in the end, run their own code on it, with the binding secret and the epoch in hand.
+can, in the end, run their own code on it, with the pairing secret and the epoch in hand.
 What they can do at that point:
 
 #dtable(

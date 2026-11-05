@@ -57,9 +57,11 @@ The jotakey key (§7.5) delivered the two largest hardware steps of the original
 secure element holding the root, generated on the device, and native USB without a bridge.
 What follows:
 
-- *Firmware for the jotakey key.* The core already derives per credential (§6.3), on both
-  platforms. Next come the STM32 adapters: USB HID, the touch sensor, the LED, the OPTIGA
-  driver with its shielded connection, and the provisioning build.
+- *Bring-up of the jotakey key.* Its firmware is written (§6.3): USB HID, the touch sensor,
+  the LED, the OPTIGA driver with its shielded connection and live-session check, and the
+  provisioning builds, all tested against a simulated OPTIGA. Next is running it on a board:
+  the wire-level details only real chips can confirm, the touch thresholds, the torn-write
+  path, and an on-device test firmware for the key.
 - *Signed firmware updates (exploration).* Production keys are locked and never updated
   (§7.5). An alternative worth studying is a small, immutable bootloader that installs only
   firmware signed with an offline key. It would let fixes reach deployed keys, at the price

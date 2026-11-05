@@ -82,13 +82,15 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal -c clippy -t thumbv7em-none-eabihf
           rustup default stable
-      - name: Key firmware (just key-fw), both feature sets
+      # Production, dev-key, and the two human-run provisioning images. CI only compiles the
+      # provisioning images (so they keep building); nothing here ever flashes or runs them.
+      - name: Key firmware (just key-fw), every feature set
         working-directory: crates/jotakey-key-fw
         run: |
-          cargo build --release
-          cargo clippy --release -- -D warnings
-          cargo build --release --features dev-key
-          cargo clippy --release --features dev-key -- -D warnings
+          for f in "" dev-key provision provision-lock; do
+            cargo build --release ${f:+--features $f}
+            cargo clippy --release ${f:+--features $f} -- -D warnings
+          done
 
   # Lean models and proofs, the axiom audit, and the Rust decoder against the Lean spec.
   formal:
