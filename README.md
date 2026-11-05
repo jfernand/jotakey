@@ -31,9 +31,16 @@ It runs on two platforms:
 Hardware and firmware are versioned separately: hardware releases are tagged `hw-vX.Y.Z`,
 firmware releases `fw-vX.Y.Z`. Each release publishes both versions of the report.
 
-## Copyright
+## License
 
-(c) Javier Fernandez @ JotaSoft 2026. All rights reserved.
+Copyright (c) 2026 Javier Fernandez @ JotaSoft.
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT), at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion
+in this work, as defined in the Apache-2.0 license, shall be dual licensed as above, without any
+additional terms or conditions.
 
 Third-party documents cited by the design are not part of this repository; see
 `docs/references/README.md` and `hardware/datasheets/README.md` for where to obtain them.

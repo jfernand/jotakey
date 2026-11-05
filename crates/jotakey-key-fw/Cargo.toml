@@ -5,6 +5,7 @@ version = "0.1.0"
 authors = ["Javier Fernandez @ JotaSoft"]
 edition = "2024"
 publish = false
+license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "jotakey-key-fw"

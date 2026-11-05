@@ -22,7 +22,7 @@ allow = [
 ]
 confidence-threshold = 0.9
 
-# Our own crates are `publish = false`; their license is the owner's decision.
+# Our own crates are `publish = false` (MIT OR Apache-2.0); skip checking them.
 [licenses.private]
 ignore = true
 
