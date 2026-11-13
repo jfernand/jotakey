@@ -14,6 +14,7 @@ goes to fab/hw-v<HW_VERSION>/ (not tracked by git; rebuild it from the tagged so
 The build stops unless the schematic passes ERC and the board passes DRC with schematic parity.
 Only parts with an LCSC number are assembled; the edge connector, the touch electrode and
 the test pads are copper on the board and appear in neither the BOM nor the placement file.
+Parts marked "do not populate" (the 0R bring-up links R6 and R7) are left out of both too.
 
 Rotations are KiCad's. Check every part's orientation in JLCPCB's placement preview before
 paying (hardware/MANUFACTURING.md lists what to look for); record a needed correction in
@@ -71,7 +72,7 @@ def bom(out, stem):
     """Write the JLCPCB BOM; return {reference: LCSC part} for the assembled parts."""
     with tempfile.TemporaryDirectory() as tmp:
         raw = pathlib.Path(tmp, "bom.csv")
-        kicad("sch", "export", "bom", "--fields", "Value,Reference,Footprint,LCSC",
+        kicad("sch", "export", "bom", "--exclude-dnp", "--fields", "Value,Reference,Footprint,LCSC",
               "--labels", "Comment,Designator,Footprint,LCSC Part #",
               "--group-by", "Value,Footprint,LCSC", "--ref-range-delimiter", "",
               "-o", str(raw), f"{NAME}.kicad_sch")

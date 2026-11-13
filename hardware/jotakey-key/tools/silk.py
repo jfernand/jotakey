@@ -9,7 +9,8 @@
   Settings > Text Variables), the one place the hardware version is set; KiCad substitutes it
   when it draws or plots the board.
 - The chips on the top are labelled with their function, in the nearest free space.
-- The SWD test pads on the bottom are labelled with their signals, just below each pad.
+- The SWD and bring-up test pads on the bottom are labelled with their signals, just below
+  each pad.
 - A solid 2 x 10 mm block on the bottom silkscreen marks where JLCPCB prints the board's
   serial number. Order with "Mark on PCB: Serial number, specify position"; without that
   option JLCPCB prints nothing there.
@@ -36,8 +37,12 @@ VERSION_TEXT = ("HW ${HW_VERSION}", (100.0, 108.0), 1.0)  # text, position, heig
 # Bottom side, under the version; two lines because one would be wider than the board.
 COPYRIGHT_TEXT = ("(c) Javier Fernandez\n@ JotaSoft 2026", (100.0, 110.6), 0.8)
 
-# SWD test pads: reference -> label, printed under the pad. Three letters fit the 2.54 mm pitch.
-PAD_LABELS = {"TP1": "DIO", "TP2": "CLK", "TP3": "RST", "TP4": "3V3", "TP5": "GND"}
+# Test pads: reference -> label, printed under the pad. Three letters fit the 2.54 mm pitch of
+# the SWD row; the labels must differ (a rerun finds its texts by their content).
+PAD_LABELS = {"TP1": "DIO", "TP2": "CLK", "TP3": "RST", "TP4": "3V3", "TP5": "GND",
+              # Bring-up pads: VBUS, the LDO's output, the OPTIGA's rail, I2C, the OPTIGA's reset.
+              "TP6": "5V", "TP7": "LDO", "TP8": "VSE", "TP9": "SDA", "TP10": "SCL",
+              "TP11": "SRST"}
 PAD_LABEL_OFFSET = 1.25  # mm from the pad centre, towards the electrode
 PAD_LABEL_HEIGHT = 0.8  # the board's (and JLCPCB's) minimum
 
@@ -51,7 +56,7 @@ CHIP_LABELS = {
 CHIP_LABEL_HEIGHT = 0.8
 
 TITLE = "Jotakey key: STM32L432 + OPTIGA Trust M USB-A dongle"
-DATE = "2026-10-19"  # of the HW_VERSION release
+DATE = "2026-11-13"  # of the HW_VERSION release
 COMMENTS = ["Pin plan and parts: hardware/HARDWARE.md",
             "Fabrication and assembly: JLCPCB, 2 layers, 2.0 mm, ENIG",
             "(c) Javier Fernandez @ JotaSoft 2026"]

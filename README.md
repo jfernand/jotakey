@@ -7,7 +7,7 @@ security-critical state machines proved in Lean 4.
 It runs on two platforms:
 
 - **The jotakey key** (`hardware/`): a USB-A dongle with an STM32L432 microcontroller and an
-  Infineon OPTIGA Trust M secure element. Hardware 0.2.0 is designed and ready to order; its
+  Infineon OPTIGA Trust M secure element. Hardware 0.3.0 is designed and ready to order; its
   firmware (native USB, touch, and the OPTIGA over its shielded connection) is written and
   tested against a simulated OPTIGA, and awaits a board.
 - **The Espressif ESP32-C6 DevKit**: the development platform, where the MVP firmware runs

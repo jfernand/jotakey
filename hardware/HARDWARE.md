@@ -29,9 +29,11 @@ stable 3.3 V rail.
   - `+3V3_SE`: the OPTIGA's VCC, its decoupling and the two I2C pull-ups, fed from
     `+3V3_MCU` through R7.
 
-  JLCPCB fits both links. On a hand-assembled board, leave them off at first: check the LDO's
-  output with nothing on it, fit R6 and reach the MCU over SWD, then fit R7 for the OPTIGA.
-  Across an open link's pads, an ammeter measures one rail's current.
+  Both links are marked "do not populate" (hardware 0.3.0): JLCPCB leaves them off, and every
+  board is brought up by hand. Check the LDO's output with nothing on it (test pad `LDO`),
+  fit R6 and reach the MCU over SWD, then fit R7 for the OPTIGA (test pad `VSE`). Across an
+  open link's pads, an ammeter measures one rail's current. A board does nothing until both
+  are fitted (a solder bridge across the 0402 pads will do).
   - The I2C pull-ups are on the OPTIGA's rail so that, with R7 open, they cannot power the
     OPTIGA through the input protection diodes of its SDA and SCL pins. For the same reason,
     firmware run with R7 open keeps PA5 (the OPTIGA's reset) low or floating: run the
@@ -101,6 +103,19 @@ There is no separate VCC_IO pin; the I2C level follows VCC (1.62–5.5 V).
 - **NRST** (pin 4): 100 nF to GND.
 - **SWD:** PA13 (SWDIO), PA14 (SWCLK), NRST, 3V3 and GND on five test pads, for a pogo-pin
   jig with an ST-Link or J-Link. A dongle has no room for a header.
+- **Bring-up test pads** (hardware 0.3.0): six more 1 mm pads on the bottom, on the SWD
+  row's 2.54 mm grid, in two columns above its end pads. Each is labelled on the silkscreen.
+
+  | Pad | Label | Net | For |
+  |---|---|---|---|
+  | TP6 | `5V` | VBUS | the supply from the plug |
+  | TP7 | `LDO` | +3V3 | the LDO's output, before R6 |
+  | TP8 | `VSE` | +3V3_SE | the OPTIGA's rail, after R7 |
+  | TP9 | `SDA` | I2C_SDA | a logic analyser on the OPTIGA's bus |
+  | TP10 | `SCL` | I2C_SCL | |
+  | TP11 | `SRST` | SE_RST | the OPTIGA's reset (PA5) |
+
+  The MCU's rail between the links is the SWD row's `3V3` pad (TP4).
 
 ## 5. Parts and manufacturing
 
@@ -124,10 +139,10 @@ before ordering):
 | R1, R2 | 1 kΩ 1 %, 0402 | C11702 | Basic |
 | R3, R4 | 4.7 kΩ 1 %, 0402 | C25900 | Basic |
 | R5 | 10 kΩ 1 %, 0402 | C25744 | Basic |
-| R6, R7 | 0 Ω, 0402 (bring-up links, §1) | C17168 | Basic |
+| R6, R7 | 0 Ω, 0402 (bring-up links, §1): **do not populate**, fitted by hand | C17168 | Basic |
 
-J1 (edge contacts), E1 (touch electrode) and TP1–TP5 (SWD pads) are copper on the board, not
-parts. Four Extended parts each add JLCPCB's per-part setup fee.
+J1 (edge contacts), E1 (touch electrode) and TP1–TP11 (SWD and bring-up pads) are copper on
+the board, not parts. Four Extended parts each add JLCPCB's per-part setup fee.
 - **Missing parts:** if JLCPCB lacks one, it is sourced through JLCPCB global sourcing or
   consigned, and recorded in `MANUFACTURING.md`.
 - **Board:** 2 layers, 2.0 mm thick, ENIG finish, gold fingers with a bevelled edge, black
