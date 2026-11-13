@@ -25,8 +25,8 @@
     Lean 4 theorem prover is also covered. We assume no prior knowledge of formal methods.
   ],
   meta: (
-    ("Status", [MVP firmware on the ESP32-C6: CTAP 2.0, non-resident credentials, USB (via bridge) and BLE. Jotakey key: hardware 0.1.0; firmware port next]),
-    ("Hardware", [Jotakey key, hardware 0.1.0 (STM32L432KC + OPTIGA Trust M V1, USB-A); Espressif ESP32-C6-DevKitC-1 / M-1]),
+    ("Status", [MVP firmware on the ESP32-C6: CTAP 2.0, non-resident credentials, USB (via bridge) and BLE. Jotakey key: hardware 0.3.0; firmware written, tested against a simulated OPTIGA, not yet run on a board]),
+    ("Hardware", [Jotakey key, hardware 0.3.0 (STM32L432KC + OPTIGA Trust M V1, USB-A); Espressif ESP32-C6-DevKitC-1 / M-1]),
     ("Repository", [`crates/` (Rust), `formal/` (Lean 4), `docs/` (this report)]),
     ("Normative rules", [`AGENTS.md` — security invariants 1–9]),
   ),

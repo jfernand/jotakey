@@ -60,6 +60,8 @@ TRACKS = [
     ("VBUS", "F", 0.4, [(96.5, 78.5), (96.5, 82.6), (95.5, 83.6), (95.5, 84.68), (92.6, 84.68)]),
     ("VBUS", "B", 0.3, [(96.5, 82.6), (97.3, 83.4), (97.3, 84.8), (100.0, 87.5)]),
     ("VBUS", "F", 0.3, [(100.0, 86.14), (100.0, 87.5)]),
+    # The same via feeds the VBUS test pad (TP6) on the bottom.
+    ("VBUS", "B", 0.3, [(96.5, 82.6), (95.48, 82.6), (94.92, 83.16)]),
     # Under the MCU. NRST: pin 4 -> C8 -> a via between C4 and C8 -> TP3 on the bottom.
     ("/NRST", "F", 0.2, [(99.75, 95.94), (99.75, 97.22), (98.75, 97.22)]),
     ("/NRST", "B", 0.2, [(98.75, 97.22), (99.95, 98.42)]),
@@ -67,6 +69,10 @@ TRACKS = [
     # (+3V3_MCU) -> R7 -> the OPTIGA's (+3V3_SE).
     # LDO output -> R6, which sits beside it.
     ("+3V3", "F", 0.3, [(96.45, 86.64), (97.22, 86.64), (97.75, 86.11)]),
+    # ... and, through a via below R6, the LDO's test pad (TP7) on the bottom. (Left to the
+    # autorouter, this via lands beside C2's GND pad and cuts its thermal spokes.)
+    ("+3V3", "F", 0.3, [(97.22, 86.64), (97.0, 86.86), (97.0, 87.4)]),
+    ("+3V3", "B", 0.3, [(97.0, 87.4), (95.3, 85.7), (94.92, 85.7)]),
     # R6 -> R7 under U4, between its rows of pins; a via between them takes the MCU's rail
     # down the MCU's right side on the bottom.
     ("+3V3_MCU", "F", 0.3, [(97.75, 84.99), (102.44, 84.99), (102.55, 85.1)]),
@@ -89,12 +95,15 @@ TRACKS = [
     # R7 -> R3's 3V3 end, and over the top of U2 and down the board's edge to C9 and the
     # OPTIGA's VCC; SDA reaches U2 under it.
     ("+3V3_SE", "F", 0.2, [(102.55, 83.39), (103.4, 83.39), (103.4, 85.49)]),
-    ("+3V3_SE", "F", 0.2, [(103.4, 83.39), (107.9, 83.39), (108.2, 83.69), (108.2, 88.92),
+    ("+3V3_SE", "F", 0.2, [(103.4, 83.39), (106.2, 83.39), (107.9, 83.39), (108.2, 83.69), (108.2, 88.92),
                            (107.9, 89.22)]),
     # The OPTIGA's VCC and C9 sit beyond SE_RST: a bottom-layer hop from the R4 side.
     ("+3V3_SE", "F", 0.2, [(105.0, 91.11), (105.78, 90.7)]),
     ("+3V3_SE", "B", 0.2, [(105.78, 90.7), (107.1, 89.7)]),
     ("+3V3_SE", "F", 0.2, [(107.1, 89.7), (107.9, 89.22)]),
+    # The OPTIGA rail's test pad (TP8) hangs under the run over the top of U2, from a via at
+    # one of that run's corners (drop_dangling_vias keeps a via only at a track's end).
+    ("+3V3_SE", "B", 0.2, [(106.2, 83.39), (105.08, 83.16)]),
     # SE_RST leaves pin 11 straight, between pins 10 and 12, before Freerouting takes over.
     ("/SE_RST", "F", 0.2, [(102.44, 94.25), (103.4, 94.25)]),
     # BOOT0 pull-down, straight across.
@@ -114,6 +123,8 @@ VIAS = [
     ("+3V3_MCU", (102.55, 85.1)),
     ("+3V3_SE", (105.78, 90.7)),
     ("+3V3_SE", (107.1, 89.7)),
+    ("+3V3", (97.0, 87.4)),
+    ("+3V3_SE", (106.2, 83.39)),
 ]
 # GND is not autorouted: the pours carry it. These connect what the pours cannot reach.
 GND_TRACKS = [

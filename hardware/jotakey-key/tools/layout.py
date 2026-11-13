@@ -75,6 +75,15 @@ PLACEMENT = {
     "TP3": (100.00, 98.4, 0, "B"),
     "TP4": (102.54, 98.4, 0, "B"),
     "TP5": (105.08, 98.4, 0, "B"),
+    # Bring-up test pads on the bottom side, on the same 2.54 mm grid as the SWD row, in two
+    # columns above its end pads, each near its net. Left: the supply before the bring-up
+    # links. Right: the OPTIGA's rail, bus and reset.
+    "TP6": (94.92, 83.16, 0, "B"),    # VBUS
+    "TP7": (94.92, 85.70, 0, "B"),    # +3V3, the LDO's output (before R6)
+    "TP8": (105.08, 83.16, 0, "B"),   # +3V3_SE, the OPTIGA's rail (after R7)
+    "TP9": (105.08, 88.24, 0, "B"),   # I2C_SDA
+    "TP10": (105.08, 93.32, 0, "B"),  # I2C_SCL
+    "TP11": (105.08, 95.86, 0, "B"),  # SE_RST
 }
 
 
