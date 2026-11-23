@@ -263,8 +263,9 @@ KiCad project variable `HW_VERSION`, which the title blocks and the back of the 
 display.
 
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 10
 // body: 4673c1e88c89
 // activity: 2026-11-22 | r10 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r10 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

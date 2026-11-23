@@ -115,8 +115,9 @@ CTAPHID without channels: an initial fragment `CMD ‖ HLEN ‖ LLEN ‖ DATA`, 
 The link must be encrypted (LE Secure Connections) before the FIDO characteristics accept
 anything.
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 4
 // body: 9406486a2240
 // activity: 2026-11-22 | r4 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r4 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

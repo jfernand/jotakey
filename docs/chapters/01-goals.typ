@@ -121,8 +121,9 @@ tests and theorems.
   ([10], [At most 8 wrong PINs between correct ones, 3 per power cycle; every attempt is counted durably before the PIN is compared.], [⊢]),
 )
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 7
 // body: f5bd34242abb
 // activity: 2026-11-22 | r7 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r7 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

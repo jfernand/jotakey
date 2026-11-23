@@ -1063,8 +1063,9 @@ what the Lean theorems prove about the model.
 )
 ]
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 9
 // body: d69b5ae98444
 // activity: 2026-11-22 | r9 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r9 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

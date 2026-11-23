@@ -75,8 +75,9 @@ not need to send an ID ("username-less" passkeys), are the first item on the roa
   ("Authenticator", [The key: Jotakey. Holds or derives private keys, checks user presence, signs. Trusts nothing it receives.], "amber"),
 )
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 4
 // body: f9f0f08b5c27
 // activity: 2026-11-22 | r4 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r4 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

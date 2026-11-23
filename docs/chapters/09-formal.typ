@@ -512,8 +512,9 @@ broke. To *add* a property, state it as a `theorem`. If you get stuck, write `so
 continue exploring. Lean itself only warns about `sorry`, but `just lean` *rejects* it, so an
 unfinished proof cannot pass the project's checks.
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 9
 // body: 33eeb7c80434
 // activity: 2026-11-22 | r9 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r9 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

@@ -714,8 +714,9 @@ them); elsewhere, `scripts/99-jotakey.rules` shows the udev rule to add.
 
 Like the bridge, the explorer is Linux-only: it reads hidraw nodes and sysfs.
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 15
 // body: ed475d9cb5fc
 // activity: 2026-11-22 | r15 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r15 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

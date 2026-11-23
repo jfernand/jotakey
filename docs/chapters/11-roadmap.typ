@@ -88,8 +88,9 @@ What follows:
 - *Side-channel evaluation* of the signing path with a ChipWhisperer-class setup, to put
   numbers on chapter 7.
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 8
 // body: 0fb008d01c16
 // activity: 2026-11-22 | r8 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r8 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

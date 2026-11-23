@@ -105,8 +105,9 @@ matched. Jotakey compares tags with `subtle::ConstantTimeEq` and uses the RustCr
 crate, whose scalar arithmetic is written to be constant-time. Its own code never branches
 on secret data (invariant 9).
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 4
 // body: c41058e436c9
 // activity: 2026-11-22 | r4 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r4 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

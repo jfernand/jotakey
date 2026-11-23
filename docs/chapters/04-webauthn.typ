@@ -120,8 +120,9 @@ Jotakey uses *packed self-attestation*: the attestation statement is signed with
 credential's own private key. This proves possession of the key and nothing about the
 device. Most consumer RPs request no attestation (`"none"`) anyway.
 // chapter-status:begin
-// stage: early-draft
+// stage: research-done
 // revision: 3
 // body: cb560d8fd7a2
 // activity: 2026-11-22 | r3 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// activity: 2026-11-23 | r3 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end
