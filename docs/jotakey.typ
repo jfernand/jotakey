@@ -5,8 +5,7 @@
 #show: isss-doc.with(
   title: "Jotakey",
   subtitle: "A formally specified FIDO2 security key",
-  author: "Javier Fernandez",
-  contact: "",
+  author: "JAVIER FERNANDEZ, EDITOR",
   date: "2026-10-14",
   docid: "JK-TR-001 · rev 0.1",
   running: "Jotakey — FIDO2, passkeys and formal verification",

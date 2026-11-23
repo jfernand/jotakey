@@ -327,10 +327,13 @@
     #grid(
       columns: (1fr, 1fr, 1fr),
       column-gutter: 10pt,
-      [#label-sm(fill: c-steel-500)[Author] \ #v(2pt)
+      // The credit carries its own role, so its label is hidden; it still holds the baseline.
+      [#hide(label-sm[Author]) \ #v(2pt)
        #text(size: 9pt, fill: cover-ink, weight: 500)[#author]],
-      [#label-sm(fill: c-steel-500)[Contact] \ #v(2pt)
-       #text(font: font-mono, size: 8pt, fill: cover-ink)[#contact]],
+      ..if contact != "" {
+        ([#label-sm(fill: c-steel-500)[Contact] \ #v(2pt)
+          #text(font: font-mono, size: 8pt, fill: cover-ink)[#contact]],)
+      },
       [#label-sm(fill: c-steel-500)[Issued] \ #v(2pt)
        #text(font: font-mono, size: 8pt, fill: cover-ink)[#date]],
     )
