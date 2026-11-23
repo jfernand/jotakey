@@ -104,3 +104,9 @@ secret tag with `==`, which stops at the first differing byte and so leaks how m
 matched. Jotakey compares tags with `subtle::ConstantTimeEq` and uses the RustCrypto `p256`
 crate, whose scalar arithmetic is written to be constant-time. Its own code never branches
 on secret data (invariant 9).
+// chapter-status:begin
+// stage: early-draft
+// revision: 4
+// body: c41058e436c9
+// activity: 2026-11-22 | r4 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// chapter-status:end

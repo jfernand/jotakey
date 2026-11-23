@@ -351,3 +351,9 @@ accepted a registration and a sign-in with user verification required, UV flag s
 - `cargo deny`: no known-vulnerable or yanked crates, allowed licences only, crates.io
   only. Exceptions are documented with reasons: two unmaintained crates that run only at
   build time (a proc-macro and a build-script YAML parser) and never ship in the firmware.
+// chapter-status:begin
+// stage: early-draft
+// revision: 10
+// body: 813d245a1d61
+// activity: 2026-11-22 | r10 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// chapter-status:end

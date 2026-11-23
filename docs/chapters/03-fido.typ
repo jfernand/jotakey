@@ -74,3 +74,9 @@ not need to send an ID ("username-less" passkeys), are the first item on the roa
   ("Client / platform", [The browser plus the operating system. Knows the true origin of the page, builds `clientDataJSON`, talks to authenticators over USB, NFC, BLE or hybrid. Speaks WebAuthn upward and CTAP downward.], "dark"),
   ("Authenticator", [The key: Jotakey. Holds or derives private keys, checks user presence, signs. Trusts nothing it receives.], "amber"),
 )
+// chapter-status:begin
+// stage: early-draft
+// revision: 4
+// body: f9f0f08b5c27
+// activity: 2026-11-22 | r4 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// chapter-status:end

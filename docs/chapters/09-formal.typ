@@ -511,3 +511,9 @@ shows the exact goal it could not prove, which is usually the precise case your 
 broke. To *add* a property, state it as a `theorem`. If you get stuck, write `sorry` to
 continue exploring. Lean itself only warns about `sorry`, but `just lean` *rejects* it, so an
 unfinished proof cannot pass the project's checks.
+// chapter-status:begin
+// stage: early-draft
+// revision: 9
+// body: 33eeb7c80434
+// activity: 2026-11-22 | r9 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// chapter-status:end

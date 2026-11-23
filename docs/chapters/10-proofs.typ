@@ -1062,3 +1062,9 @@ what the Lean theorems prove about the model.
   ([`counter_release_rule`, `a_counter_that_goes_back_is_refused`, `optiga_bus` counter oracle], [`released_strictly_increase`]),
 )
 ]
+// chapter-status:begin
+// stage: early-draft
+// revision: 9
+// body: d69b5ae98444
+// activity: 2026-11-22 | r9 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// chapter-status:end

@@ -120,3 +120,9 @@ tests and theorems.
   ([9], [No secret-dependent branches or memory accesses in our code.], []),
   ([10], [At most 8 wrong PINs between correct ones, 3 per power cycle; every attempt is counted durably before the PIN is compared.], [⊢]),
 )
+// chapter-status:begin
+// stage: early-draft
+// revision: 7
+// body: f5bd34242abb
+// activity: 2026-11-22 | r7 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// chapter-status:end

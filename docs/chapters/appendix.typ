@@ -99,3 +99,9 @@ python3 scripts/fido2_check.py               # or register at https://webauthn.i
 - S. Ho, J. Protzenko. *Aeneas: Rust Verification by Functional Translation*, ICFP 2022.
 - L. de Moura, S. Ullrich. *The Lean 4 Theorem Prover and Programming Language*, CADE 2021.
 - E. W. Dijkstra. *Notes on Structured Programming*, 1970.
+// chapter-status:begin
+// stage: early-draft
+// revision: 13
+// body: 7e32d160e80a
+// activity: 2026-11-22 | r13 | stage | jotakey-session | note | adopted; existing text, no author review recorded
+// chapter-status:end
