@@ -25,8 +25,9 @@
 #let c-steel-500  = pv(rgb("#666666"), luma(102))
 #let c-steel-400  = pv(rgb("#888888"), luma(136))
 #let c-steel-300  = pv(rgb("#AAAAAA"), luma(170))
-#let c-steel-200  = pv(rgb("#CCCCCC"), luma(204))
-// Lulu's floor for Standard Color is a 20% tint, so the lightest print grey is luma(204).
+#let c-steel-200  = pv(rgb("#CCCCCC"), luma(185))
+// Lulu's floor for Standard Color is a 20% tint, so the lightest print grey is luma(204);
+// steel-200 sits at luma(185) so it never merges with steel-100 in print.
 #let c-steel-100  = pv(rgb("#E5E5E5"), luma(204))
 #let c-paper      = pv(rgb("#F0EBE1"), luma(255))
 #let c-white      = pv(rgb("#FAFAF8"), luma(255))
@@ -36,7 +37,7 @@
 #let c-amber-400  = rgb("#F5B800")
 #let c-amber-300  = rgb("#FFCC33")
 #let c-amber-200  = rgb("#FFE280")
-#let c-amber-100  = rgb("#FFF4CC")
+#let c-amber-100  = pv(rgb("#FFF4CC"), rgb("#FFEDB3"))  // print: a 30% yellow tint
 
 #let c-red        = rgb("#CC2200")
 #let c-red-light  = rgb("#FF3311")
