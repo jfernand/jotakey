@@ -266,7 +266,7 @@ just deny          # cargo deny (licences, advisories); firmware: cd crates/jota
 just bridge        # run the uhid bridge (Linux; needs /dev/uhid access)
 just explore       # terminal browser for attached FIDO keys, any make (read-only; --dump prints)
 just doc           # typst compile docs/jotakey.typ
-just doc-print     # the same, for paper: plain white pages (docs/jotakey-print.pdf)
+just doc-print     # print edition for Lulu, 7 x 10 in paperback (docs/jotakey-print.pdf)
 ```
 
 The `fw`, `flash`, `testfw`, `host-tests` and `bridge` recipes target the ESP32-C6; `key-fw`
@@ -294,6 +294,7 @@ docs/                    Typst document (ISSS design)
 hardware/                the jotakey key: HARDWARE.md, KiCad project, layout/route/silk scripts
 examples/webauthn-topcoat a demo relying party (Topcoat + webauthn-rs) for trying the key in a browser
 scripts/provision.sh     human-run, irreversible device provisioning (dry-run by default)
+scripts/doc-print.sh     builds the report's print edition (Lulu 7 x 10 in); `just doc-print`
 scripts/fido2_check.py   independent check with python-fido2 (client + RP server)
 scripts/fido2_pin_check.py the same for the PIN (no touch by default; --touch for UV sign-in)
 scripts/99-jotakey.rules udev rules for /dev/uhid and the bridge's hidraw device

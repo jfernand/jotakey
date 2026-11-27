@@ -207,4 +207,4 @@ jobs:
       - name: Build (just doc, just doc-print)
         run: |
           typst compile --font-path docs/fonts --ignore-system-fonts docs/jotakey.typ /tmp/jotakey.pdf
-          typst compile --font-path docs/fonts --ignore-system-fonts --input print=true docs/jotakey.typ /tmp/jotakey-print.pdf
+          scripts/doc-print.sh /tmp/jotakey-print.pdf

@@ -553,8 +553,8 @@ things: checking that the bridge and the firmware are alive, comparing a Jotakey
 other keys, and learning the protocol from real answers instead of tables.
 
 #figure(
-  block(width: 100%, fill: c-ink, inset: 8pt, radius: 2pt)[
-    #set text(font: font-mono, size: 6.1pt, fill: c-paper)
+  block(width: 100%, fill: pv(c-ink, none), stroke: pv(none, (left: 3pt + brand-primary)), inset: 8pt, radius: pv(2pt, 0pt))[
+    #set text(font: font-mono, size: 6.1pt, fill: pv(c-paper, c-ink))
     #set par(leading: 0.42em)
     #raw(block: true, " jotakey-explorer   FIDO security keys on this computer (read-only)
 ╭ Devices (1) ──────────────────╮╭ Jotakey FIDO2 (bridge) ───────────────────────────────────────╮
@@ -715,8 +715,8 @@ them); elsewhere, `scripts/99-jotakey.rules` shows the udev rule to add.
 Like the bridge, the explorer is Linux-only: it reads hidraw nodes and sysfs.
 // chapter-status:begin
 // stage: research-done
-// revision: 15
-// body: ed475d9cb5fc
+// revision: 16
+// body: 73e9b11d5aea
 // activity: 2026-11-22 | r15 | stage | jotakey-session | note | adopted; existing text, no author review recorded
 // activity: 2026-11-23 | r15 | stage | jotakey | note | early-draft -> research-done: not yet reviewed by Javier
 // chapter-status:end

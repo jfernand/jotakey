@@ -61,9 +61,9 @@ host-tests:
 doc:
     typst compile --font-path docs/fonts --ignore-system-fonts docs/jotakey.typ docs/jotakey.pdf
 
-# Print version: plain white pages, no black cover band.
+# Print edition: a Lulu paperback, 7 x 10 in with bleed, white paper, black-only neutrals.
 doc-print:
-    typst compile --font-path docs/fonts --ignore-system-fonts --input print=true docs/jotakey.typ docs/jotakey-print.pdf
+    scripts/doc-print.sh docs/jotakey-print.pdf
 
 deny:
     cargo deny check

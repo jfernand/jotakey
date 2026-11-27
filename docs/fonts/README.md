@@ -1,7 +1,8 @@
 # Fonts
 
 The fonts the document is set in, so every build (local or CI) produces the same PDF:
-`typst compile --font-path docs/fonts --ignore-system-fonts …` (`just doc`, `just doc-print`).
+`typst compile --font-path docs/fonts --ignore-system-fonts …` (`just doc`; `just doc-print` runs
+`scripts/doc-print.sh`, which passes the same flags).
 
 | Family | Files | Licence |
 |---|---|---|

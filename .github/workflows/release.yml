@@ -32,8 +32,7 @@ jobs:
           mkdir -p out
           typst compile --font-path docs/fonts --ignore-system-fonts \
             docs/jotakey.typ out/jotakey.pdf
-          typst compile --font-path docs/fonts --ignore-system-fonts --input print=true \
-            docs/jotakey.typ out/jotakey-print.pdf
+          scripts/doc-print.sh out/jotakey-print.pdf
 
       - uses: actions/upload-artifact@v4
         with:

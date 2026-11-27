@@ -4,20 +4,32 @@
 // Ported from colors_and_type.css (ISSSDesignSystem_f35b98)
 // ============================================================
 
+// ─── EDITION ───────────────────────────────────────────────
+// `ebook` (the default) is the A4 design. `print` is a Lulu paperback, 7 x 10 in with bleed,
+// built with `--input edition=print --input print-pages=N` (`scripts/doc-print.sh` and
+// print-check set both).
+#let edition = sys.inputs.at("edition", default: "ebook")
+#assert(edition in ("ebook", "print"), message: "edition must be ebook or print")
+#let for-print = edition == "print"
+// The value for the ebook, or for the print edition.
+#let pv(ebook, print) = if for-print { print } else { ebook }
+
 // ─── RAW COLOR PALETTE ─────────────────────────────────────
-#let c-black      = rgb("#0E0E0E")
-#let c-ink        = rgb("#1A1A1A")
-#let c-steel-900  = rgb("#242424")
-#let c-steel-800  = rgb("#2E2E2E")
-#let c-steel-700  = rgb("#3A3A3A")
-#let c-steel-600  = rgb("#4A4A4A")
-#let c-steel-500  = rgb("#666666")
-#let c-steel-400  = rgb("#888888")
-#let c-steel-300  = rgb("#AAAAAA")
-#let c-steel-200  = rgb("#CCCCCC")
-#let c-steel-100  = rgb("#E5E5E5")
-#let c-paper      = rgb("#F0EBE1")
-#let c-white      = rgb("#FAFAF8")
+// Print: neutrals are black ink only (luma), and the paper is the white sheet.
+#let c-black      = pv(rgb("#0E0E0E"), luma(0))
+#let c-ink        = pv(rgb("#1A1A1A"), luma(0))
+#let c-steel-900  = pv(rgb("#242424"), luma(36))
+#let c-steel-800  = pv(rgb("#2E2E2E"), luma(46))
+#let c-steel-700  = pv(rgb("#3A3A3A"), luma(58))
+#let c-steel-600  = pv(rgb("#4A4A4A"), luma(74))
+#let c-steel-500  = pv(rgb("#666666"), luma(102))
+#let c-steel-400  = pv(rgb("#888888"), luma(136))
+#let c-steel-300  = pv(rgb("#AAAAAA"), luma(170))
+#let c-steel-200  = pv(rgb("#CCCCCC"), luma(204))
+// Lulu's floor for Standard Color is a 20% tint, so the lightest print grey is luma(204).
+#let c-steel-100  = pv(rgb("#E5E5E5"), luma(204))
+#let c-paper      = pv(rgb("#F0EBE1"), luma(255))
+#let c-white      = pv(rgb("#FAFAF8"), luma(255))
 
 #let c-amber-600  = rgb("#C98A00")
 #let c-amber-500  = rgb("#E5A000")
@@ -31,13 +43,9 @@
 #let c-green      = rgb("#1A7A3C")
 #let c-blue       = rgb("#0A4A7A")
 
-// Print mode (`typst compile --input print=true`): plain white pages and a cover without
-// the black band, for paper. Everything else is unchanged.
-#let print-mode = sys.inputs.at("print", default: "false") == "true"
-
 // ─── SEMANTIC (light / print surface) ──────────────────────
 #let bg-base         = c-white
-#let bg-raised       = if print-mode { rgb("#FFFFFF") } else { c-paper }
+#let bg-raised       = c-paper
 #let bg-sunken       = rgb("#E8E3D8")
 #let fg-primary      = c-black
 #let fg-secondary    = c-steel-600
@@ -46,6 +54,8 @@
 #let brand-deep      = c-amber-600
 #let border-default  = c-steel-200
 #let border-strong   = c-steel-400
+// Amber that stays readable as text on white paper.
+#let amber-txt       = pv(c-amber-600, rgb("#8F6200"))
 
 // ─── FONT STACKS ───────────────────────────────────────────
 #let font-display = "Barlow"          // Barlow Condensed, stretch 75%
@@ -54,6 +64,21 @@
 #let font-math    = "DejaVu Math TeX Gyre"
 
 #let PAGE-MARGIN = 20mm
+
+// ─── PRINT GEOMETRY ────────────────────────────────────────
+// Lulu's 0.125 in bleed on every side of the 7 x 10 in trim, its 0.5 in safety margin, and
+// its gutter for the page count on the spine side.
+#let bleed = pv(0mm, 0.125in)
+#let print-pages = int(sys.inputs.at("print-pages", default: "0"))
+#assert(not for-print or print-pages > 0, message: "print edition needs --input print-pages=N")
+#let gutter = if print-pages > 600 { 0.75in } else if print-pages > 400 { 0.625in } else if print-pages > 150 { 0.5in } else if print-pages > 60 { 0.125in } else { 0in }
+// The ebook's measure is A4 less its margins. Print keeps 138 mm where the gutter and the
+// outside safety margin allow it; the extra 1 mm holds hyphens hung into the margin.
+#let text-width = pv(210mm - 2 * PAGE-MARGIN, calc.min(138mm, 7in - 0.5in - gutter - 0.5in - 1mm))
+#let page-margin-inside = pv(PAGE-MARGIN, 0.5in + gutter + bleed)
+#let page-margin-outside = pv(PAGE-MARGIN, 7in - 0.5in - gutter - text-width + bleed)
+#let page-margin-top = 22mm + bleed
+#let page-margin-bottom = 20mm + bleed
 
 // ─── TYPE HELPERS ──────────────────────────────────────────
 
@@ -64,7 +89,7 @@
 )[#upper(body)]
 
 // Label / UI — mono, uppercase, widest tracking
-#let label(fill: brand-deep, size: 7pt, body) = text(
+#let label(fill: amber-txt, size: 7pt, body) = text(
   font: font-mono, weight: 500, size: size, fill: fill, tracking: 1.4pt,
 )[#upper(body)]
 
@@ -77,7 +102,7 @@
 
 // ISSS-native emphasis (Space Grotesk ships no italic)
 #let key(body) = text(weight: 700, fill: fg-primary)[#body]
-#let hot(body) = text(weight: 700, fill: brand-deep)[#body]
+#let hot(body) = text(weight: 700, fill: amber-txt)[#body]
 
 // ─── COMPONENTS ────────────────────────────────────────────
 
@@ -95,15 +120,16 @@
 #let codepanel(title: none, body) = {
   block(width: 100%, breakable: false, above: 14pt, below: 14pt)[
     #if title != none {
-      block(width: 100%, fill: c-black, inset: (x: 10pt, y: 6pt), below: 0pt)[
-        #label(fill: brand-primary, size: 6.4pt, title)
+      block(width: 100%, fill: pv(c-black, none), stroke: pv(none, (left: 3pt + brand-primary, bottom: 0.5pt + border-default)),
+        inset: (x: 10pt, y: 6pt), below: 0pt)[
+        #label(fill: pv(brand-primary, amber-txt), size: 6.4pt, title)
       ]
     }
     #block(
-      width: 100%, fill: c-ink, inset: (x: 10pt, y: 10pt),
+      width: 100%, fill: pv(c-ink, none), stroke: pv(none, (left: 3pt + brand-primary)), inset: (x: 10pt, y: 10pt),
       radius: 0pt, breakable: false, above: 0pt,
     )[
-      #set text(font: font-mono, size: 7.8pt, fill: c-paper)
+      #set text(font: font-mono, size: 7.8pt, fill: pv(c-paper, c-ink))
       #set par(leading: 0.62em, justify: false)
       #body
     ]
@@ -115,13 +141,13 @@
   let accent = if kind == "trap" { c-red }
     else if kind == "ok" { c-green }
     else if kind == "info" { c-blue }
-    else { brand-deep }
+    else { pv(brand-deep, amber-txt) }
   let tint = if kind == "trap" { rgb(204, 34, 0, 16) }
     else if kind == "ok" { rgb(26, 122, 60, 16) }
     else if kind == "info" { rgb(10, 74, 122, 16) }
     else { rgb(245, 184, 0, 34) }
   block(
-    width: 100%, fill: tint, inset: (x: 11pt, y: 9pt),
+    width: 100%, fill: pv(tint, none), inset: (x: 11pt, y: 9pt),
     stroke: (left: 2.5pt + accent), radius: 0pt,
     above: 13pt, below: 13pt, breakable: false,
   )[
@@ -158,21 +184,25 @@
       align: align,
       inset: (x: 7pt, y: 5.5pt),
       stroke: (x, y) => (
-        top: if y == 0 { none } else if y == 1 { 1.2pt + fg-primary }
+        top: if y == 0 { pv(none, 1.5pt + fg-primary) } else if y == 1 { 1.2pt + fg-primary }
              else { 0.4pt + border-default },
         bottom: none, left: none, right: none,
       ),
-      fill: (x, y) => if y == 0 { c-black } else { none },
+      fill: (x, y) => if y == 0 and not for-print { c-black } else { none },
       // `set text` inside the header too, so that a header cell containing
       // math is shrunk to label size rather than rendering at body size.
       table.header(
         ..head.map(h => {
           set text(size: 6.2pt)
-          show math.equation: set text(size: 6.6pt, fill: brand-primary)
-          label(fill: brand-primary, size: 6.2pt, h)
+          show math.equation: set text(size: 6.6pt, fill: pv(brand-primary, c-ink))
+          label(fill: pv(brand-primary, c-ink), size: 6.2pt, h)
         })
       ),
-      ..rows.pos().flatten().map(c => text(size: 8.3pt)[#c])
+      // Print: cells are ragged right; justified, the narrower measure's columns open wide gaps.
+      ..rows.pos().flatten().map(c => if for-print {
+        set par(justify: false)
+        text(size: 8.3pt)[#c]
+      } else { text(size: 8.3pt)[#c] })
     )
   ]
 }
@@ -184,7 +214,7 @@
       columns: (1fr, auto),
       align: (center + horizon, right + horizon),
       body,
-      if tag != none { label(fill: brand-deep, size: 6.8pt)[(#tag)] } else { [] },
+      if tag != none { label(fill: amber-txt, size: 6.8pt)[(#tag)] } else { [] },
     )
   ]
 }
@@ -204,9 +234,12 @@
   body,
 ) = {
   set page(
-    paper: "a4",
-    margin: (x: PAGE-MARGIN, top: 22mm, bottom: 20mm),
-    fill: bg-raised,
+    width: pv(210mm, 7in + 2 * bleed), height: pv(297mm, 10in + 2 * bleed),
+    margin: pv((x: PAGE-MARGIN, top: 22mm, bottom: 20mm), (inside: page-margin-inside,
+      outside: page-margin-outside, top: page-margin-top, bottom: page-margin-bottom)),
+    fill: pv(bg-raised, none),
+    // Print keeps the running head and folio inside Lulu's 0.5 in safety margin.
+    header-ascent: pv(30%, 4mm), footer-descent: pv(30%, 4mm),
     header: context {
       if counter(page).get().first() > 1 {
         block(width: 100%)[
@@ -245,7 +278,7 @@
   show math.equation: set text(font: font-math, size: 9.6pt)
 
   // Links
-  show link: it => text(fill: brand-deep, weight: 500)[#it]
+  show link: it => text(fill: pv(brand-deep, c-ink), weight: 500)[#it]
 
   // Lists
   set list(indent: 6pt, body-indent: 6pt, spacing: 0.72em)
@@ -253,8 +286,9 @@
   show list.item: it => block(inset: (left: 0pt))[#it]
 
   // Inline raw
+  set raw(theme: "isss-print.tmTheme") if for-print
   show raw.where(block: false): it => box(
-    fill: bg-sunken, inset: (x: 2.6pt, y: 1pt), outset: (y: 2.4pt), radius: 0pt,
+    fill: pv(bg-sunken, none), inset: (x: 2.6pt, y: 1pt), outset: (y: 2.4pt), radius: 0pt,
     text(font: font-mono, size: 8.1pt, fill: c-ink)[#it],
   )
 
@@ -291,7 +325,7 @@
       columns: (auto, 1fr),
       column-gutter: 8pt,
       align: (left + horizon, left + horizon),
-      label(fill: brand-deep, size: 7.4pt)[#counter(heading).display("1.1")],
+      label(fill: amber-txt, size: 7.4pt)[#counter(heading).display("1.1")],
       text(font: font-display, stretch: 75%, weight: 700, size: 14.5pt)[
         #upper(it.body)
       ],
@@ -306,13 +340,13 @@
   // ── TITLE PAGE ──
   // `pad` with negative offsets (rather than `place`) so the band stays in
   // the layout flow and the abstract below it cannot be overlapped.
-  let cover-fill = if print-mode { none } else { c-black }
-  let cover-ink = if print-mode { c-black } else { c-paper }
-  let cover-sub = if print-mode { c-steel-600 } else { c-steel-300 }
-  pad(x: -PAGE-MARGIN, top: -22mm, bottom: 12mm, block(
-    width: 210mm, fill: cover-fill, inset: (x: PAGE-MARGIN, top: 26mm, bottom: 18mm),
+  let cover-ink = pv(c-paper, c-ink)
+  let cover-sub = pv(c-steel-300, c-steel-600)
+  let band = block(
+    width: pv(210mm, 100%), fill: pv(c-black, none),
+    inset: pv((x: PAGE-MARGIN, top: 26mm, bottom: 18mm), (top: 8mm, bottom: 10mm)),
   )[
-    #label(fill: if print-mode { brand-deep } else { brand-primary }, size: 7pt)[Industrial Strength Software Services]
+    #label(fill: pv(brand-primary, amber-txt), size: 7pt)[Industrial Strength Software Services]
     #v(2pt)
     #label-sm(fill: c-steel-500)[Technical Report · #docid]
     #v(16pt)
@@ -341,7 +375,8 @@
       v(14pt)
       label-sm(fill: c-steel-500)[#copyright]
     }
-  ])
+  ]
+  if for-print { block(below: 12mm, band) } else { pad(x: -PAGE-MARGIN, top: -22mm, bottom: 12mm, band) }
 
   if abstract != none {
     block(width: 100%, inset: (left: 0pt))[
@@ -368,4 +403,6 @@
   // rule + amber number chip already reads as a section break mid-page.
   pagebreak()
   body
+  // The print edition's length, for `typst query` (scripts/doc-print.sh picks the gutter).
+  if for-print { context [#metadata(counter(page).final().first()) <print-page-count>] }
 }

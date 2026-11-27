@@ -12,12 +12,13 @@
       gutter: 0pt,
       ..fs.enumerate().map(((i, f)) => block(
         width: 100%, height: 30pt, inset: 4pt,
-        fill: if calc.rem(i, 2) == 0 { c-ink } else { c-steel-800 },
-        stroke: (right: 0.6pt + c-steel-600),
+        // Print: white fields in hairline boxes instead of dark ones.
+        fill: pv(if calc.rem(i, 2) == 0 { c-ink } else { c-steel-800 }, none),
+        stroke: pv((right: 0.6pt + c-steel-600), 0.6pt + c-steel-600),
       )[
         #align(center + horizon)[
-          #text(font: font-mono, size: 6.8pt, fill: c-paper, weight: 600)[#f.at(0)] \
-          #text(font: font-mono, size: 6pt, fill: brand-primary)[#f.at(1)]
+          #text(font: font-mono, size: 6.8pt, fill: pv(c-paper, c-ink), weight: 600)[#f.at(0)] \
+          #text(font: font-mono, size: 6pt, fill: pv(brand-primary, amber-txt))[#f.at(1)]
         ]
       ])
     )
@@ -47,16 +48,16 @@
           columns: if fwd { (1fr, auto) } else { (auto, 1fr) },
           align: horizon,
           ..if fwd {
-            (line(length: 100%, stroke: 1pt + fg-primary), text(size: 8pt, fill: brand-deep)[#sym.triangle.filled.r])
+            (line(length: 100%, stroke: 1pt + fg-primary), text(size: 8pt, fill: amber-txt)[#sym.triangle.filled.r])
           } else {
-            (text(size: 8pt, fill: brand-deep)[#sym.triangle.filled.l], line(length: 100%, stroke: 1pt + fg-primary))
+            (text(size: 8pt, fill: amber-txt)[#sym.triangle.filled.l], line(length: 100%, stroke: 1pt + fg-primary))
           }
         )
       ]
     })
   }
   let note(txt) = block(width: 100%, height: row-h, inset: (x: 4pt, y: 3pt))[
-    #block(width: 100%, height: 100%, fill: rgb(245, 184, 0, 46), stroke: (left: 2pt + brand-primary), inset: (x: 4pt))[
+    #block(width: 100%, height: 100%, fill: pv(rgb(245, 184, 0, 46), none), stroke: (left: 2pt + brand-primary), inset: (x: 4pt))[
       #align(center + horizon)[#text(size: 6.8pt)[#txt]]
     ]
   ]
@@ -64,8 +65,8 @@
     #grid(
       columns: (1fr,) * n,
       row-gutter: 0pt,
-      ..actors.map(a => block(width: 100%, fill: c-black, inset: 5pt)[
-        #align(center)[#label(fill: brand-primary, size: 6.4pt, a)]
+      ..actors.map(a => block(width: 100%, fill: pv(c-black, none), stroke: pv(none, 0.8pt + c-ink), inset: 5pt)[
+        #align(center)[#label(fill: pv(brand-primary, c-ink), size: 6.4pt, a)]
       ]),
       ..msgs.map(m => {
         let (a, b, txt) = m
@@ -94,10 +95,13 @@
     #for l in ls.pos() {
       let (title, detail, tone) = l
       let (bg, fg) = if tone == "dark" { (c-ink, c-paper) } else if tone == "amber" { (brand-primary, c-black) } else { (c-steel-100, c-black) }
-      block(width: 100%, fill: bg, inset: (x: 9pt, y: 6pt), below: 2pt)[
+      // Print: no fills; the tone becomes the colour of a left rule in a hairline box.
+      let rule = if tone == "amber" { brand-primary } else if tone == "dark" { c-ink } else { c-steel-400 }
+      block(width: 100%, fill: pv(bg, none), inset: (x: 9pt, y: 6pt), below: 2pt,
+        stroke: pv(none, (left: 3pt + rule, rest: 0.5pt + border-default)))[
         #grid(columns: (34%, 1fr), column-gutter: 10pt,
-          text(font: font-display, stretch: 75%, weight: 700, size: 11pt, fill: fg)[#upper(title)],
-          text(size: 7.6pt, fill: fg)[#detail])
+          text(font: font-display, stretch: 75%, weight: 700, size: 11pt, fill: pv(fg, c-ink))[#upper(title)],
+          text(size: 7.6pt, fill: pv(fg, c-ink))[#detail])
       ]
     }
     #if caption != none {
@@ -122,13 +126,15 @@
 }
 
 // Images side by side, each with its own label, and one caption under the row.
-// Paths are relative to this file (docs/).
+// Paths are relative to this file (docs/). Lulu takes no transparency, so the print edition
+// uses copies flattened onto white in figures/print/, made with
+// `convert IN.png -background white -alpha remove -alpha off figures/print/IN.png`.
 #let board-views(caption: none, height: 9cm, ..views) = {
   block(width: 100%, above: 12pt, below: 12pt, breakable: false)[
     #grid(columns: views.pos().len(), column-gutter: 14pt, align: center + bottom,
       ..views.pos().map(v => {
         let (path, label) = v
-        stack(spacing: 5pt, image(path, height: height), label-sm[#label])
+        stack(spacing: 5pt, image(pv(path, path.replace("figures/", "figures/print/")), height: height), label-sm[#label])
       }))
     #if caption != none {
       v(4pt)
