@@ -122,15 +122,17 @@
   block(width: 100%, breakable: false, above: 14pt, below: 14pt)[
     #if title != none {
       block(width: 100%, fill: pv(c-black, none), stroke: pv(none, (left: 3pt + brand-primary, bottom: 0.5pt + border-default)),
-        inset: (x: 10pt, y: 6pt), below: 0pt)[
+        inset: (x: pv(10pt, 6pt), y: 6pt), below: 0pt)[
         #label(fill: pv(brand-primary, amber-txt), size: 6.4pt, title)
       ]
     }
     #block(
-      width: 100%, fill: pv(c-ink, none), stroke: pv(none, (left: 3pt + brand-primary)), inset: (x: 10pt, y: 10pt),
+      width: 100%, fill: pv(c-ink, none), stroke: pv(none, (left: 3pt + brand-primary)),
+      // Print: narrower side padding so listings fit the 7 in measure.
+      inset: (x: pv(10pt, 6pt), y: 10pt),
       radius: 0pt, breakable: false, above: 0pt,
     )[
-      #set text(font: font-mono, size: 7.8pt, fill: pv(c-paper, c-ink))
+      #set text(font: font-mono, size: pv(7.8pt, 7.4pt), fill: pv(c-paper, c-ink))  // print: 0.95x
       #set par(leading: 0.62em, justify: false)
       #body
     ]
